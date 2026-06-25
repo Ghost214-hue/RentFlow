@@ -66,7 +66,7 @@ function isActive($uri, $path) {
                 <p class="text-sm font-medium text-white truncate"><?php echo htmlspecialchars($user['name'] ?? 'User'); ?></p>
                 <p class="text-xs text-white/60 capitalize"><?php echo $role; ?></p>
             </div>
-            <a href="#" onclick="event.preventDefault();localStorage.removeItem('rf_token');window.location.href='/signin'" class="text-white/50 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
+            <a href="#" onclick="event.preventDefault();logout()" class="text-white/50 hover:text-white transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
         </div>
     </div>
 </aside>

@@ -1,18 +1,5 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-
-// Verify token and get user
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
-
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'owner';
+require_once __DIR__ . '/../includes/auth.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">

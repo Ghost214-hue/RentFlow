@@ -22,6 +22,33 @@ $pageDisplay = ucwords(str_replace('-', ' ', $pageName));
             <i class="fas fa-search text-slate-400 text-sm mr-2"></i>
             <input type="text" placeholder="Search..." class="bg-transparent border-none outline-none text-sm w-40 text-slate-700 placeholder-slate-400">
         </div>
-        <button onclick="event.preventDefault();localStorage.removeItem('rf_token');window.location.href='/signin'" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
+        <button onclick="event.preventDefault();logout()" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
     </div>
 </header>
+<script>
+function deleteRfTokenCookie() {
+    document.cookie = 'rf_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+}
+
+async function logout() {
+    try {
+        await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'}
+        });
+    } catch (err) {
+        console.warn('Logout request failed', err);
+    }
+    deleteRfTokenCookie();
+    if (window.sessionStorage) window.sessionStorage.clear();
+    window.location.href = '/signin';
+}
+
+window.addEventListener('pageshow', (event) => {
+    const backNav = event.persisted || (performance.getEntriesByType && performance.getEntriesByType('navigation').length && performance.getEntriesByType('navigation')[0].type === 'back_forward');
+    if (backNav) {
+        // User navigated back - force fresh page load to re-validate session
+        window.location.reload();
+    }
+});
+</script>

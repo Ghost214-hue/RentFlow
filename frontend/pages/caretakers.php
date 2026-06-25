@@ -1,16 +1,6 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'owner';
-if ($role !== 'owner') { header('Location: /signin'); exit; }
+require_once __DIR__ . '/../includes/auth.php';
+if ($userRole !== 'owner') { header('Location: /signin'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -53,7 +43,7 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
     <div id="caretakerModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeCaretakerModal()">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onclick="event.stopPropagation()">
             <div class="flex items-center justify-between mb-4">
-                <div><h3 class="text-lg font-bold text-slate-900">Add Caretaker</h3><p class="text-sm text-slate-500 mt-1">Add a caretaker and assign properties they can manage.</p></div>
+                <div><h3 id="caretakerModalTitle" class="text-lg font-bold text-slate-900">Add Caretaker</h3><p class="text-sm text-slate-500 mt-1">Add a caretaker and assign properties they can manage.</p></div>
                 <button onclick="closeCaretakerModal()" class="text-slate-400 hover:text-slate-600 transition-colors"><i class="fas fa-times text-xl"></i></button>
             </div>
             <form id="caretakerForm" class="space-y-4">
@@ -82,9 +72,33 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
+    const API = (BASE || '') + '/api';
+    
+    // Get token from cookie (current request's auth)
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+    }
+    
+    const token = getCookie('rf_token');
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    
+    let caretakersCache = [];
+    let currentCaretakerId = null;
+
+    async function parseJsonResponse(res) {
+        const text = await res.text();
+        if (!text) return {};
+        try {
+            return JSON.parse(text);
+        } catch (err) {
+            console.error('JSON parse failed', err, text);
+            return { error: text || 'Invalid server response' };
+        }
+    }
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -99,17 +113,26 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
     async function loadCaretakers() {
         try {
             const res = await fetch(`${API}/caretakers`, { headers });
-            const data = await res.json();
+            const data = await parseJsonResponse(res);
             const tbody = document.getElementById('caretakersTable');
-            if (!res.ok) throw new Error(data.error || 'Failed to load caretakers');
+            
+            if (!res.ok) {
+                if (res.status === 401) {
+                    window.location.href = '/signin';
+                    return;
+                }
+                throw new Error(data.error || `Failed to load caretakers (${res.status})`);
+            }
+            
             if (data.caretakers && data.caretakers.length) {
+                caretakersCache = data.caretakers;
                 tbody.innerHTML = data.caretakers.map(c => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
                         <td class="px-6 py-4"><div class="flex items-center gap-3"><div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold">${(c.name||'CT').split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><div><p class="text-sm font-medium text-slate-900">${c.name}</p></div></div></td>
                         <td class="px-6 py-4 text-sm text-slate-600">${c.email || 'N/A'}</td>
                         <td class="px-6 py-4 text-sm text-slate-600">${c.phone || 'N/A'}</td>
-                        <td class="px-6 py-4 text-sm text-slate-900">${c.property_count || 0}</td>
-                        <td class="px-6 py-4"><button onclick="deleteCaretaker(${c.id})" class="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors">Remove</button></td>
+                        <td class="px-6 py-4 text-sm text-slate-900">${c.property_count || 0}${c.assigned_property_names && c.assigned_property_names.length ? `<div class="text-xs text-slate-500 mt-1">${c.assigned_property_names.slice(0,3).join(', ')}${c.assigned_property_names.length > 3 ? '...' : ''}</div>` : ''}</td>
+                        <td class="px-6 py-4 flex items-center gap-2"><button onclick="openCaretakerModal(${c.id})" class="px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors">Edit</button><button onclick="deleteCaretaker(${c.id})" class="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors">Remove</button></td>
                     </tr>
                 `).join('');
             } else {
@@ -117,19 +140,18 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
             }
         } catch(e) {
             console.error('loadCaretakers error:', e);
-            document.getElementById('caretakersTable').innerHTML = `<tr><td colspan="5" class="px-6 py-12 text-center text-red-400">Error: ${e.message}</td></tr>`;
-            if (e.message.includes('401')) window.location.href = '/signin';
+            document.getElementById('caretakersTable').innerHTML = `<tr><td colspan="5" class="px-6 py-12 text-center text-red-400"><strong>Error:</strong> ${e.message}</td></tr>`;
         }
     }
 
-    async function loadProperties() {
+    async function loadProperties(selectedIds = []) {
         try {
             const res = await fetch(`${API}/properties`, { headers });
-            const data = await res.json();
+            const data = await parseJsonResponse(res);
             const select = document.getElementById('caretakerProperties');
-            if (!res.ok) throw new Error(data.error || 'Failed to load properties');
+            if (!res.ok) throw new Error(data.error || `Failed to load properties (${res.status})`);
             if (data.properties && data.properties.length) {
-                select.innerHTML = data.properties.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+                select.innerHTML = data.properties.map(p => `<option value="${p.id}" ${selectedIds.includes(p.id.toString()) ? 'selected' : ''}>${p.name}</option>`).join('');
             } else {
                 select.innerHTML = '<option value="">No properties available</option>';
             }
@@ -139,37 +161,71 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
         }
     }
 
-    function openCaretakerModal() {
+    async function openCaretakerModal(id = null) {
+        currentCaretakerId = id;
+        const title = document.getElementById('caretakerModalTitle');
+        const submitButton = document.querySelector('#caretakerForm button[type="submit"]');
+        const form = document.getElementById('caretakerForm');
+        form.reset();
+        document.getElementById('caretakerPassword').value = '';
+
+        if (id) {
+            const caretaker = caretakersCache.find(c => c.id === id);
+            title.textContent = 'Edit Caretaker';
+            submitButton.textContent = 'Save Changes';
+            if (caretaker) {
+                document.getElementById('caretakerName').value = caretaker.name || '';
+                document.getElementById('caretakerEmail').value = caretaker.email || '';
+                document.getElementById('caretakerPhone').value = caretaker.phone || '';
+                document.getElementById('caretakerId').value = caretaker.id_number || '';
+                const assignedIds = (caretaker.assigned_properties || '').split(',').filter(Boolean);
+                await loadProperties(assignedIds);
+            } else {
+                await loadProperties();
+            }
+        } else {
+            title.textContent = 'Add Caretaker';
+            submitButton.textContent = 'Save Caretaker';
+            await loadProperties();
+        }
+
         document.getElementById('caretakerModal').classList.remove('hidden');
-        document.getElementById('caretakerForm').reset();
-        loadProperties();
     }
 
     function closeCaretakerModal() {
+        currentCaretakerId = null;
         document.getElementById('caretakerModal').classList.add('hidden');
     }
 
     document.getElementById('caretakerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const selectedOptions = Array.from(document.getElementById('caretakerProperties').selectedOptions).map(opt => opt.value);
-        const data = {
+        const payload = {
             name: document.getElementById('caretakerName').value.trim(),
             email: document.getElementById('caretakerEmail').value.trim(),
             phone: document.getElementById('caretakerPhone').value.trim() || null,
             id_number: document.getElementById('caretakerId').value.trim(),
-            password: document.getElementById('caretakerPassword').value || null,
             assigned_properties: selectedOptions.join(','),
         };
+        const passwordValue = document.getElementById('caretakerPassword').value;
+        if (!currentCaretakerId) {
+            payload.password = passwordValue || payload.id_number;
+        } else if (passwordValue) {
+            payload.password = passwordValue;
+        }
+
+        const method = currentCaretakerId ? 'PUT' : 'POST';
+        const url = currentCaretakerId ? `${API}/caretakers/${currentCaretakerId}` : `${API}/caretakers`;
 
         try {
-            const res = await fetch(`${API}/caretakers`, { method: 'POST', headers, body: JSON.stringify(data) });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to save caretaker');
-            toast('Caretaker added successfully!');
+            const res = await fetch(url, { method, headers, body: JSON.stringify(payload) });
+            const result = await parseJsonResponse(res);
+            if (!res.ok) throw new Error(result.error || `Failed to save caretaker (${res.status})`);
+            toast(currentCaretakerId ? 'Caretaker updated successfully!' : 'Caretaker added successfully!');
             closeCaretakerModal();
             loadCaretakers();
         } catch(err) {
-            console.error('create caretaker error:', err);
+            console.error('save caretaker error:', err);
             toast(err.message, 'error');
         }
     });
@@ -178,8 +234,8 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
         if (!confirm('Remove this caretaker?')) return;
         try {
             const res = await fetch(`${API}/caretakers/${id}`, { method: 'DELETE', headers });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to remove caretaker');
+            const result = await parseJsonResponse(res);
+            if (!res.ok) throw new Error(result.error || `Failed to remove caretaker (${res.status})`);
             toast('Caretaker removed');
             loadCaretakers();
         } catch(err) {

@@ -11,20 +11,56 @@ class CaretakerController
 {
     public function index(): void
     {
-        Router::requireOwner();
-        $ownerId = Router::getAuthUserId();
-        $db = Database::getInstance();
+        try {
+            Router::requireOwner();
+            $ownerId = Router::getAuthUserId();
+            $db = Database::getInstance();
 
-        $caretakers = $db->fetchAll(
-            "SELECT c.id, c.owner_id, c.name, c.email, c.phone, c.id_number, c.avatar, c.assigned_properties, c.created_at, c.updated_at,
-                    (SELECT COUNT(*) FROM properties WHERE FIND_IN_SET(id, c.assigned_properties)) as property_count
+            $caretakers = $db->fetchAll(
+                "SELECT c.id, c.owner_id, c.name, c.email, c.phone, c.avatar, c.assigned_properties, c.created_at, c.updated_at
              FROM caretakers c 
              WHERE c.owner_id = ? 
              ORDER BY c.name ASC",
-            [$ownerId]
-        );
+                [$ownerId]
+            );
 
-        Router::jsonResponse(['caretakers' => $caretakers]);
+            $propertyIds = [];
+            foreach ($caretakers as $caretaker) {
+                $ids = array_filter(array_map('intval', explode(',', (string) $caretaker['assigned_properties'])));
+                $propertyIds = array_merge($propertyIds, $ids);
+            }
+            $propertyIds = array_unique(array_filter($propertyIds));
+
+            $propertyMap = [];
+            if (!empty($propertyIds)) {
+                $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+                $props = $db->fetchAll(
+                    "SELECT id, name FROM properties WHERE owner_id = ? AND id IN ($placeholders)",
+                    array_merge([$ownerId], $propertyIds)
+                );
+                foreach ($props as $prop) {
+                    $propertyMap[(int) $prop['id']] = $prop['name'];
+                }
+            }
+
+            foreach ($caretakers as &$caretaker) {
+                $ids = array_filter(array_map('intval', explode(',', (string) $caretaker['assigned_properties'])));
+                $names = [];
+                foreach ($ids as $id) {
+                    if (isset($propertyMap[$id])) {
+                        $names[] = $propertyMap[$id];
+                    }
+                }
+                $caretaker['assigned_property_names'] = $names;
+                $caretaker['property_count'] = count($names);
+            }
+            unset($caretaker);
+
+            Router::jsonResponse(['caretakers' => $caretakers]);
+        } catch (\Throwable $e) {
+            error_log('CaretakerController@index error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Caretaker list failed'], 500);
+        }
     }
 
     public function store(): void
@@ -65,13 +101,12 @@ class CaretakerController
             'name'                 => $data['name'],
             'email'                => $data['email'],
             'phone'                => $data['phone'] ?? null,
-            'id_number'            => $data['id_number'],
             'password'             => $hashedPassword,
             'avatar'               => 'CT',
             'assigned_properties'  => $propertyIds ? implode(',', $propertyIds) : null,
         ]);
 
-        $caretaker = $db->fetchOne("SELECT id, name, email, phone, id_number, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+        $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
         Router::jsonResponse(['message' => 'Caretaker added', 'caretaker' => $caretaker], 201);
     }
 
@@ -89,7 +124,7 @@ class CaretakerController
         }
 
         $updateData = [];
-        foreach (['name', 'email', 'phone', 'id_number', 'assigned_properties'] as $field) {
+        foreach (['name', 'email', 'phone', 'assigned_properties'] as $field) {
             if (isset($data[$field])) {
                 $updateData[$field] = $data[$field];
             }
@@ -107,7 +142,7 @@ class CaretakerController
             $db->update('caretakers', $updateData, 'id = ?', [$caretakerId]);
         }
 
-        $caretaker = $db->fetchOne("SELECT id, name, email, phone, id_number, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+        $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
         Router::jsonResponse(['message' => 'Caretaker updated', 'caretaker' => $caretaker]);
     }
 

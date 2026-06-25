@@ -1,18 +1,6 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-
-// Verify token - use static method properly
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$user = \App\Core\JWT::decode($token);
-if (!$user) { header('Location: /signin'); exit; }
-
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'owner';
-if ($role !== 'owner') { header('Location: /signin'); exit; }
+require_once __DIR__ . '/../includes/auth.php';
+if ($userRole !== 'owner') { header('Location: /signin'); exit; }
 $propertyId = $_GET['property_id'] ?? null;
 ?>
 <!DOCTYPE html>

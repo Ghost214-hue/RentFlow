@@ -1,12 +1,5 @@
 <?php
-// Redirect to /signin if accessed directly
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
-$requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$expectedPath = $basePath . '/signin';
-if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
-    header('Location: /signin');
-    exit;
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -14,7 +7,7 @@ if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css?v=2">
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -67,7 +60,7 @@ if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
                             <div class="relative">
-                                <i class="fas fa-lock absolute le●●●●●●●●●ft-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                <i class="fas fa-lock absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                                 <input type="password" id="loginPassword" class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Enter password" required>
                                 <button type="button" onclick="togglePass()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><i class="fas fa-eye" id="passIcon"></i></button>
                             </div>
@@ -79,7 +72,7 @@ if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
                         <button type="submit" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:from-blue-700 hover:to-blue-800 transition-all">Sign In</button>
                     </form>
                     <div class="mt-6 text-center">
-                        <p class="text-sm text-slate-500">Don't have an account? <a href="/signup" class="font-medium text-blue-600 hover:text-blue-700">Sign up</a></p>
+                        <p class="text-sm text-slate-500">Don't have an account? <a href="<?php echo $basePath; ?>/signup" class="font-medium text-blue-600 hover:text-blue-700">Sign up</a></p>
                     </div>
                    
                 </div>
@@ -134,20 +127,20 @@ if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
                 throw new Error(data.error || 'Login failed');
             }
             
-            // Store token in both localStorage AND a cookie for PHP to read
-            localStorage.setItem('rf_token', data.token);
+            // Store token in cookie only (primary auth method)
             document.cookie = 'rf_token=' + encodeURIComponent(data.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Lax';
             
             toast('Login successful! Redirecting...', 'success');
             
+            const base = window.location.pathname.replace(/\/[^\/]*$/, '');
             const role = data.user.role || 'owner';
             console.log('Redirecting to dashboard for role:', role);
             
             // Redirect WITHOUT token in URL - cookie handles auth now
             setTimeout(() => {
-                const dashboard = role === 'tenant' ? '/tenant-dashboard' : 
-                                  role === 'caretaker' ? '/caretaker-dashboard' : 
-                                  '/dashboard';
+                const dashboard = role === 'tenant' ? base + '/tenant-dashboard' : 
+                                  role === 'caretaker' ? base + '/caretaker-dashboard' : 
+                                  base + '/dashboard';
                 window.location.href = dashboard;
             }, 500);
         } catch(err) {

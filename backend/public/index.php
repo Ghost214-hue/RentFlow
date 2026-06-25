@@ -47,6 +47,7 @@ $router = new Router();
 // ==================== AUTH ROUTES ====================
 $router->post('/auth/login', ['App\Controllers\AuthController', 'login']);
 $router->post('/auth/register', ['App\Controllers\AuthController', 'register']);
+$router->post('/auth/logout', ['App\Controllers\AuthController', 'logout']);
 $router->get('/auth/me', ['App\Controllers\AuthController', 'me'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== DASHBOARD ROUTES ====================
