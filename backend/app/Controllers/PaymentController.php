@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\EmailService;
 
 class PaymentController
 {
@@ -119,6 +120,18 @@ class PaymentController
         }
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
+        
+        // Send payment confirmation email
+        try {
+            $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
+            if ($tenant && $tenant['email']) {
+                $emailService = new EmailService();
+                $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+            }
+        } catch (\Exception $e) {
+            error_log('Failed to send payment confirmation email: ' . $e->getMessage());
+        }
+        
         Router::jsonResponse(['message' => 'Payment recorded', 'payment' => $payment], 201);
     }
 

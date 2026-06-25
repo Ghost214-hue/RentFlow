@@ -1,4 +1,4 @@
-<?php
+aints <?php
 /**
  * Tenant Controller - Owner-scoped CRUD with onboarding
  */
@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\EmailService;
 
 class TenantController
 {
@@ -208,6 +209,21 @@ class TenantController
 
             $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
             $db->commit();
+            
+            // Send welcome email to tenant
+            try {
+                $property = $db->fetchOne("SELECT name FROM properties WHERE id = ?", [$tenant['property_id']]);
+                $house = $db->fetchOne("SELECT unit FROM houses WHERE id = ?", [$tenant['house_id']]);
+                $emailService = new EmailService();
+                $emailService->sendTenantWelcome(
+                    $ownerId,
+                    $tenant,
+                    $property['name'] ?? 'N/A',
+                    $house['unit'] ?? 'N/A'
+                );
+            } catch (\Exception $e) {
+                error_log('Failed to send tenant welcome email: ' . $e->getMessage());
+            }
         } catch (\Throwable $e) {
             $db->rollback();
             Router::jsonResponse(['error' => $e->getMessage()], 400);

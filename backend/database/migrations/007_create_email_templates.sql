@@ -1,17 +1,15 @@
-gi-- Email logs table for tracking sent emails
-CREATE TABLE IF NOT EXISTS email_logs (
+-- Email templates table
+CREATE TABLE IF NOT EXISTS email_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     owner_id INT NOT NULL,
-    to_email VARCHAR(255) NOT NULL,
-    to_name VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    type ENUM('email', 'whatsapp', 'sms') DEFAULT 'email',
     subject VARCHAR(500) NOT NULL,
     body TEXT NOT NULL,
-    status ENUM('sent', 'failed', 'pending') DEFAULT 'sent',
-    error_message TEXT,
-    sent_at DATETIME NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_template (owner_id, name, type),
     INDEX idx_owner_id (owner_id),
-    INDEX idx_to_email (to_email),
-    INDEX idx_sent_at (sent_at)
+    INDEX idx_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

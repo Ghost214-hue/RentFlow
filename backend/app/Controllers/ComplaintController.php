@@ -1,11 +1,12 @@
 <?php
 /**
- * Complaint Controller - Owner-scoped
+ * Complaint Controller
  */
 namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\EmailService;
 
 class ComplaintController
 {
@@ -101,6 +102,18 @@ class ComplaintController
         ]);
 
         $complaint = $db->fetchOne("SELECT * FROM complaints WHERE id = ?", [$complaintId]);
+        
+        // Send complaint confirmation email to tenant
+        try {
+            $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
+            if ($tenant && $tenant['email']) {
+                $emailService = new EmailService();
+                $emailService->sendComplaintUpdate($ownerId, $tenant, $complaint);
+            }
+        } catch (\Exception $e) {
+            error_log('Failed to send complaint confirmation email: ' . $e->getMessage());
+        }
+        
         Router::jsonResponse(['message' => 'Complaint submitted', 'complaint' => $complaint], 201);
     }
 
@@ -199,6 +212,19 @@ class ComplaintController
         $complaint = $db->fetchOne("SELECT * FROM complaints WHERE id = ?", [$complaintId]);
         $complaint['timeline'] = json_decode($complaint['timeline'] ?? '[]', true);
         $complaint['comments'] = json_decode($complaint['comments'] ?? '[]', true);
+        
+        // Send complaint update email to tenant if there's a reply
+        if (!empty($data['comments'])) {
+            try {
+                $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$complaint['tenant_id']]);
+                if ($tenant && $tenant['email']) {
+                    $emailService = new EmailService();
+                    $emailService->sendComplaintUpdate($ownerId, $tenant, $complaint, $data['comments']);
+                }
+            } catch (\Exception $e) {
+                error_log('Failed to send complaint update email: ' . $e->getMessage());
+            }
+        }
 
         Router::jsonResponse(['message' => 'Complaint updated', 'complaint' => $complaint]);
     }

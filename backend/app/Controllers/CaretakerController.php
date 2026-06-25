@@ -105,8 +105,15 @@ class CaretakerController
             'avatar'               => 'CT',
             'assigned_properties'  => $propertyIds ? implode(',', $propertyIds) : null,
         ]);
-
-        $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+        
+        // Send welcome email to caretaker
+        try {
+            $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+            $emailService = new EmailService();
+            $emailService->sendCaretakerWelcome($ownerId, $caretaker);
+        } catch (\Exception $e) {
+            error_log('Failed to send caretaker welcome email: ' . $e->getMessage());
+        }
         Router::jsonResponse(['message' => 'Caretaker added', 'caretaker' => $caretaker], 201);
     }
 
