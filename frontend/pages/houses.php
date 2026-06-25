@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-if ($userRole !== 'owner') { header('Location: /signin'); exit; }
 $propertyId = $_GET['property_id'] ?? null;
 ?>
 <!DOCTYPE html>
@@ -20,7 +19,9 @@ $propertyId = $_GET['property_id'] ?? null;
         <main class="flex-1 overflow-y-auto p-4 lg:p-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div><h1 class="text-2xl font-bold text-slate-900">Houses & Units</h1><p class="text-slate-500 mt-1">Manage individual units</p></div>
+                <?php if ($role === 'owner'): ?>
                 <button onclick="openModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>Add Unit</button>
+                <?php endif; ?>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 overflow-hidden">
                 <div class="overflow-x-auto">
@@ -93,7 +94,7 @@ $propertyId = $_GET['property_id'] ?? null;
                         <td class="px-6 py-4">${h.tenant_name ? `<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${h.tenant_name.split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm text-slate-700">${h.tenant_name}</span></div>` : '<span class="text-sm text-slate-400">-</span>'}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">KES ${(h.rent||0).toLocaleString()}</td>
                         <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${h.status==='occupied'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${h.status}</span></td>
-                        <td class="px-6 py-4"><button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><i class="fas fa-edit"></i></button></td>
+                        <td class="px-6 py-4"><?php if ($role === 'owner'): ?><button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><i class="fas fa-edit"></i></button><?php endif; ?></td>
                     </tr>
                 `).join('');
             } else {

@@ -216,6 +216,14 @@ class Router
         }
     }
 
+    public static function requireOwnerOrCaretaker(): void
+    {
+        $role = self::getAuthRole();
+        if ($role !== 'owner' && $role !== 'caretaker') {
+            self::jsonResponse(['error' => 'Only owners and caretakers can perform this action'], 403);
+        }
+    }
+
     public static function getCaretakerPropertyIds(Database $db): array
     {
         if (self::getAuthRole() !== 'caretaker') {

@@ -40,22 +40,41 @@ class PaymentController
 
     public function store(): void
     {
-        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
 
-        if (empty($data['tenant_id']) || empty($data['amount'])) {
-            Router::jsonResponse(['error' => 'Tenant ID and amount are required'], 400);
+        if (empty($data['amount'])) {
+            Router::jsonResponse(['error' => 'Amount is required'], 400);
         }
 
-        // Verify tenant belongs to owner
-        $tenant = $db->fetchOne(
-            "SELECT id, house_id FROM tenants WHERE id = ? AND owner_id = ?",
-            [$data['tenant_id'], $ownerId]
-        );
-        if (!$tenant) {
-            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        // Tenants can only record payments for themselves
+        if ($role === 'tenant') {
+            $tenantId = Router::getAuthTenantId();
+            $tenant = $db->fetchOne(
+                "SELECT id, house_id FROM tenants WHERE id = ? AND owner_id = ?",
+                [$tenantId, $ownerId]
+            );
+            if (!$tenant) {
+                Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            }
+            $data['tenant_id'] = $tenantId;
+            $data['house_id'] = $tenant['house_id'];
+        } else {
+            // Owners and caretakers must specify tenant_id
+            if (empty($data['tenant_id'])) {
+                Router::jsonResponse(['error' => 'Tenant ID is required'], 400);
+            }
+            // Verify tenant belongs to owner
+            $tenant = $db->fetchOne(
+                "SELECT id, house_id FROM tenants WHERE id = ? AND owner_id = ?",
+                [$data['tenant_id'], $ownerId]
+            );
+            if (!$tenant) {
+                Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            }
+            $data['house_id'] = $tenant['house_id'];
         }
 
         $receipt = 'RCP-' . date('Y') . '-' . str_pad((time() % 10000), 4, '0', STR_PAD_LEFT);

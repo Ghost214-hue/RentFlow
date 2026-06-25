@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-if ($userRole !== 'owner') { header('Location: /signin'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">

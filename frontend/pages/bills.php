@@ -10,7 +10,6 @@ $user = $jwt->decode($token);
 if (!$user) { header('Location: /signin'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
-if ($role !== 'owner') { header('Location: /signin'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">

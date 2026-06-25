@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-if ($userRole !== 'owner') { header('Location: /signin'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -160,7 +159,9 @@ if ($userRole !== 'owner') { header('Location: /signin'); exit; }
         <main class="flex-1 overflow-y-auto p-4 lg:p-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div><h1 class="text-2xl font-bold text-slate-900">Tenants</h1><p class="text-slate-500 mt-1">Manage your tenants</p></div>
+                <?php if ($role === 'owner'): ?>
                 <button onclick="openTenantModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>Add Tenant</button>
+                <?php endif; ?>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 overflow-hidden">
                 <div class="overflow-x-auto">
@@ -446,9 +447,11 @@ if ($userRole !== 'owner') { header('Location: /signin'); exit; }
                     <p class="text-sm text-slate-500 mt-1">Review the tenant profile and lease information.</p>
                 </div>
                 <div class="flex items-center gap-2">
+                    <?php if ($role === 'owner'): ?>
                     <button id="tenantEditBtn" onclick="enableTenantEdit()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 hover:bg-slate-50">Edit</button>
                     <button id="tenantSaveBtn" onclick="saveTenantEdits()" class="hidden px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-sm">Save</button>
                     <button id="tenantCancelBtn" onclick="cancelTenantEdit()" class="hidden px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
+                    <?php endif; ?>
                     <button onclick="closeTenantDetailsModal()" class="text-slate-400 hover:text-slate-600 transition-colors ml-2"><i class="fas fa-times text-xl"></i></button>
                 </div>
             </div>
