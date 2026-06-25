@@ -97,6 +97,14 @@ $router->post('/caretakers', ['App\Controllers\CaretakerController', 'store'], [
 $router->put('/caretakers/{id}', ['App\Controllers\CaretakerController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/caretakers/{id}', ['App\Controllers\CaretakerController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
 
+// ==================== DOCUMENT ROUTES ====================
+$router->get('/documents', ['App\Controllers\DocumentController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/documents/{id}', ['App\Controllers\DocumentController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/documents', ['App\Controllers\DocumentController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
+$router->put('/documents/{id}', ['App\Controllers\DocumentController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
+$router->delete('/documents/{id}', ['App\Controllers\DocumentController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/documents/{id}/pdf', ['App\Controllers\DocumentController', 'downloadPdf'], [function() { AuthMiddleware::authenticate(); }]);
+
 // ==================== REPORT ROUTES ====================
 $router->get('/reports', ['App\Controllers\ReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
 

@@ -17,83 +17,92 @@ class AuthController
      */
     public function register(): void
     {
-        $data = Router::getRequestBody();
+        try {
+            $data = Router::getRequestBody();
 
-        // Validate required fields
-        $required = ['name', 'email', 'password'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                Router::jsonResponse(['error' => "Field '{$field}' is required"], 400);
+            // Validate required fields
+            $required = ['name', 'email', 'password'];
+            foreach ($required as $field) {
+                if (empty($data[$field])) {
+                    Router::jsonResponse(['error' => "Field '{$field}' is required"], 400);
+                }
             }
-        }
 
-        // Validate email format
-        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-            Router::jsonResponse(['error' => 'Invalid email format'], 400);
-        }
-
-        // Validate password strength
-        if (strlen($data['password']) < 6) {
-            Router::jsonResponse(['error' => 'Password must be at least 6 characters'], 400);
-        }
-
-        $db = Database::getInstance();
-
-        // Check if email already exists
-        $existing = $db->fetchOne(
-            "SELECT id FROM owners WHERE email = ?",
-            [$data['email']]
-        );
-
-        if ($existing) {
-            Router::jsonResponse(['error' => 'An account with this email already exists'], 409);
-        }
-
-        // Hash password
-        $hashedPassword = password_hash($data['password'], PASSWORD_BCRYPT);
-
-        // Generate avatar initials
-        $nameParts = explode(' ', trim($data['name']));
-        $initials = '';
-        foreach ($nameParts as $part) {
-            if (!empty($part)) {
-                $initials .= strtoupper($part[0]);
+            // Validate email format
+            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+                Router::jsonResponse(['error' => 'Invalid email format'], 400);
             }
+
+            // Validate password strength
+            if (strlen($data['password']) < 6) {
+                Router::jsonResponse(['error' => 'Password must be at least 6 characters'], 400);
+            }
+
+            $db = Database::getInstance();
+
+            // Check if email already exists
+            $existing = $db->fetchOne(
+                "SELECT id FROM owners WHERE email = ?",
+                [$data['email']]
+            );
+
+            if ($existing) {
+                Router::jsonResponse(['error' => 'An account with this email already exists'], 409);
+            }
+
+            // Hash password
+            $hashedPassword = password_hash($data['password'], PASSWORD_BCRYPT);
+
+            // Generate avatar initials
+            $nameParts = explode(' ', trim($data['name']));
+            $initials = '';
+            foreach ($nameParts as $part) {
+                if (!empty($part)) {
+                    $initials .= strtoupper($part[0]);
+                }
+            }
+            $initials = substr($initials, 0, 2);
+
+            // Insert owner
+            $ownerId = $db->insert('owners', [
+                'name'     => $data['name'],
+                'email'    => $data['email'],
+                'password' => $hashedPassword,
+                'phone'    => $data['phone'] ?? null,
+                'avatar'   => $initials ?: 'OW',
+            ]);
+
+            // Generate JWT token
+            $token = JWT::encode([
+                'owner_id' => $ownerId,
+                'email'    => $data['email'],
+                'role'     => 'owner',
+                'name'     => $data['name'],
+            ]);
+
+            // Generate onboarding templates for this owner (non-critical, don't fail registration if this fails)
+            try {
+                $this->createDefaultTemplates($db, $ownerId);
+            } catch (\Exception $e) {
+                error_log('Failed to create default templates: ' . $e->getMessage());
+            }
+
+            Router::jsonResponse([
+                'message' => 'Registration successful',
+                'token'   => $token,
+                'user'    => [
+                    'id'     => $ownerId,
+                    'name'   => $data['name'],
+                    'email'  => $data['email'],
+                    'phone'  => $data['phone'] ?? '',
+                    'avatar' => $initials ?: 'OW',
+                    'role'   => 'owner',
+                ],
+            ], 201);
+        } catch (\Exception $e) {
+            error_log('Registration error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Registration failed. Please try again.'], 500);
         }
-        $initials = substr($initials, 0, 2);
-
-        // Insert owner
-        $ownerId = $db->insert('owners', [
-            'name'     => $data['name'],
-            'email'    => $data['email'],
-            'password' => $hashedPassword,
-            'phone'    => $data['phone'] ?? null,
-            'avatar'   => $initials ?: 'OW',
-        ]);
-
-        // Generate JWT token
-        $token = JWT::encode([
-            'owner_id' => $ownerId,
-            'email'    => $data['email'],
-            'role'     => 'owner',
-            'name'     => $data['name'],
-        ]);
-
-        // Generate onboarding templates for this owner
-        $this->createDefaultTemplates($db, $ownerId);
-
-        Router::jsonResponse([
-            'message' => 'Registration successful',
-            'token'   => $token,
-            'user'    => [
-                'id'     => $ownerId,
-                'name'   => $data['name'],
-                'email'  => $data['email'],
-                'phone'  => $data['phone'] ?? '',
-                'avatar' => $initials ?: 'OW',
-                'role'   => 'owner',
-            ],
-        ], 201);
     }
 
     /**
@@ -285,6 +294,15 @@ class AuthController
      */
     private function createDefaultTemplates(Database $db, int $ownerId): void
     {
+        // Check if templates table exists
+        $tableExists = $db->fetchOne(
+            "SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'templates'"
+        );
+        
+        if (!$tableExists || $tableExists['count'] == 0) {
+            return; // Table doesn't exist yet, skip template creation
+        }
+
         $templates = [
             [
                 'name'    => 'Rent Reminder',
@@ -319,7 +337,11 @@ class AuthController
         ];
 
         foreach ($templates as $template) {
-            $db->insert('templates', array_merge($template, ['owner_id' => $ownerId]));
+            try {
+                $db->insert('templates', array_merge($template, ['owner_id' => $ownerId]));
+            } catch (\Exception $e) {
+                error_log('Failed to insert template: ' . $e->getMessage());
+            }
         }
     }
 }

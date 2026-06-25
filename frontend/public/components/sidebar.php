@@ -13,6 +13,7 @@ $ownerNav = [
     ['/bills','fa-file-invoice-dollar','Bills'],
     ['/complaints','fa-exclamation-triangle','Complaints'],
     ['/communications','fa-comments','Messages'],
+    ['/documents','fa-file-alt','Rules'],
     ['/reports','fa-chart-pie','Reports'],
 ];
 
@@ -24,6 +25,7 @@ $caretakerNav = [
     ['/payments','fa-money-bill-wave','Payments'],
     ['/bills','fa-file-invoice-dollar','Bills'],
     ['/complaints','fa-exclamation-triangle','Complaints'],
+    ['/documents','fa-file-alt','Rules'],
 ];
 
 $tenantNav = [
@@ -32,6 +34,7 @@ $tenantNav = [
     ['/payments','fa-money-bill-wave','My Payments'],
     ['/bills','fa-file-invoice-dollar','My Bills'],
     ['/complaints','fa-exclamation-triangle','My Complaints'],
+    ['/documents','fa-file-alt','Rules'],
 ];
 
 $nav = match($role) {

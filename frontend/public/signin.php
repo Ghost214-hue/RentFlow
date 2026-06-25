@@ -120,7 +120,16 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                 body: JSON.stringify({email, password})
             });
             
-            const data = await res.json();
+            // Check if response is JSON before parsing
+            const contentType = res.headers.get('content-type');
+            let data;
+            if (contentType && contentType.includes('application/json')) {
+                data = await res.json();
+            } else {
+                const text = await res.text();
+                console.error('Non-JSON response:', text);
+                throw new Error('Server returned an invalid response. Please try again.');
+            }
             console.log('Login response:', data);
             
             if (!res.ok) {

@@ -96,7 +96,17 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                 headers: {'Content-Type':'application/json'},
                 body: JSON.stringify(data)
             });
-            const result = await res.json();
+            
+            // Check if response is JSON before parsing
+            const contentType = res.headers.get('content-type');
+            let result;
+            if (contentType && contentType.includes('application/json')) {
+                result = await res.json();
+            } else {
+                const text = await res.text();
+                console.error('Non-JSON response:', text);
+                throw new Error('Server returned an invalid response. Please try again.');
+            }
             if(!res.ok) throw new Error(result.error || 'Registration failed');
             
             // Store token in cookie only (primary auth method)

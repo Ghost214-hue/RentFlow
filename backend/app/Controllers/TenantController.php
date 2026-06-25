@@ -1,7 +1,5 @@
-aints <?php
-/**
- * Tenant Controller - Owner-scoped CRUD with onboarding
- */
+<?php
+
 namespace App\Controllers;
 
 use App\Core\Database;
