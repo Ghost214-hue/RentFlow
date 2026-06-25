@@ -1,0 +1,13 @@
+{
+  "name": "rentalflow",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tailwindcss -i ./frontend/src/css/input.css -o ./frontend/public/css/output.css --minify",
+    "watch": "tailwindcss -i ./frontend/src/css/input.css -o ./frontend/public/css/output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19",
+    "postcss": "^8.5.15",
+    "autoprefixer": "^10.5.0"
+  }
+}

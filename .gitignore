@@ -1,0 +1,37 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+vendor/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Cache
+backend/storage/cache/
+backend/storage/sessions/
+
+# Uploads
+backend/public/uploads/*
+!backend/public/uploads/.gitkeep
+
+# Build
+frontend/public/css/output.css
+dist/
+build/
+
+# Database (keep migrations)
+*.sqlite
+*.db
