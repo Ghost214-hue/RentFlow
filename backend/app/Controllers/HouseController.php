@@ -15,6 +15,7 @@ class HouseController
     public function index(): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
 
         $status = $_GET['status'] ?? '';
@@ -37,6 +38,17 @@ class HouseController
             $params[] = $propertyId;
         }
 
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['houses' => []]);
+            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $params = array_merge($params, $propertyIds);
+        } elseif ($role === 'tenant') {
+            $sql .= " AND h.id = (SELECT house_id FROM tenants WHERE id = ? AND owner_id = ?)";
+            $params[] = Router::getAuthTenantId();
+            $params[] = $ownerId;
+        }
+
         $sql .= " ORDER BY p.name, h.unit";
 
         $houses = $db->fetchAll($sql, $params);
@@ -48,6 +60,7 @@ class HouseController
      */
     public function store(): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
@@ -92,6 +105,7 @@ class HouseController
      */
     public function update(array $params): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $houseId = (int) ($params['id'] ?? 0);
         $data = Router::getRequestBody();
@@ -125,6 +139,7 @@ class HouseController
      */
     public function destroy(array $params): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $houseId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();

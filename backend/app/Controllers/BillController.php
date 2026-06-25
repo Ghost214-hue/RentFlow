@@ -12,20 +12,31 @@ class BillController
     public function index(): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
 
         $month = $_GET['month'] ?? date('Y-m');
 
-        $bills = $db->fetchAll(
-            "SELECT b.*, h.unit as house_unit, p.name as property_name, t.name as tenant_name
+        $sql = "SELECT b.*, b.total as amount, 0 as paid, b.total as balance, h.unit as house_unit, h.unit, p.name as property_name, t.name as tenant_name
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
              LEFT JOIN tenants t ON h.tenant_id = t.id
-             WHERE b.owner_id = ? AND b.month = ?
-             ORDER BY p.name, h.unit",
-            [$ownerId, $month]
-        );
+             WHERE b.owner_id = ? AND b.month = ?";
+        $queryParams = [$ownerId, $month];
+
+        if ($role === 'tenant') {
+            $sql .= " AND t.id = ?";
+            $queryParams[] = Router::getAuthTenantId();
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['bills' => []]);
+            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        }
+
+        $sql .= " ORDER BY p.name, h.unit";
+        $bills = $db->fetchAll($sql, $queryParams);
 
         Router::jsonResponse(['bills' => $bills]);
     }
@@ -35,6 +46,7 @@ class BillController
      */
     public function generate(): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
         $db = Database::getInstance();

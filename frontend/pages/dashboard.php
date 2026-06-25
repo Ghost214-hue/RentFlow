@@ -75,7 +75,8 @@ $role = $user['role'] ?? 'owner';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
+    const API = (BASE || '') + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $role; ?>';

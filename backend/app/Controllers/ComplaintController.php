@@ -12,6 +12,7 @@ class ComplaintController
     public function index(): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
 
         $status = $_GET['status'] ?? '';
@@ -23,6 +24,16 @@ class ComplaintController
                 LEFT JOIN properties p ON h.property_id = p.id
                 WHERE c.owner_id = ?";
         $params = [$ownerId];
+
+        if ($role === 'tenant') {
+            $sql .= " AND c.tenant_id = ?";
+            $params[] = Router::getAuthTenantId();
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['complaints' => []]);
+            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $params = array_merge($params, $propertyIds);
+        }
 
         if ($status && in_array($status, ['open', 'in-progress', 'resolved'])) {
             $sql .= " AND c.status = ?";
@@ -38,11 +49,18 @@ class ComplaintController
     public function store(): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
 
-        if (empty($data['title']) || empty($data['tenant_id'])) {
-            Router::jsonResponse(['error' => 'Title and tenant ID are required'], 400);
+        if (empty($data['title'])) {
+            Router::jsonResponse(['error' => 'Title is required'], 400);
+        }
+
+        if ($role === 'tenant') {
+            $data['tenant_id'] = Router::getAuthTenantId();
+        } elseif (empty($data['tenant_id'])) {
+            Router::jsonResponse(['error' => 'Tenant ID is required'], 400);
         }
 
         // Verify tenant belongs to owner
@@ -52,6 +70,16 @@ class ComplaintController
         );
         if (!$tenant) {
             Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            $allowed = $db->fetchOne(
+                "SELECT h.id FROM houses h WHERE h.id = ? AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")",
+                array_merge([$tenant['house_id']], $propertyIds)
+            );
+            if (!$allowed) {
+                Router::jsonResponse(['error' => 'Tenant is outside your assigned properties'], 403);
+            }
         }
 
         $timeline = json_encode([
@@ -79,18 +107,27 @@ class ComplaintController
     public function show(array $params): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $complaintId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
-        $complaint = $db->fetchOne(
-            "SELECT c.*, t.name as tenant_name, t.phone as tenant_phone, h.unit, p.name as property_name
+        $sql = "SELECT c.*, t.name as tenant_name, t.phone as tenant_phone, h.unit, p.name as property_name
              FROM complaints c
              LEFT JOIN tenants t ON c.tenant_id = t.id
              LEFT JOIN houses h ON c.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             WHERE c.id = ? AND c.owner_id = ?",
-            [$complaintId, $ownerId]
-        );
+             WHERE c.id = ? AND c.owner_id = ?";
+        $queryParams = [$complaintId, $ownerId];
+        if ($role === 'tenant') {
+            $sql .= " AND c.tenant_id = ?";
+            $queryParams[] = Router::getAuthTenantId();
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['error' => 'Complaint not found'], 404);
+            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        }
+        $complaint = $db->fetchOne($sql, $queryParams);
 
         if (!$complaint) {
             Router::jsonResponse(['error' => 'Complaint not found'], 404);
@@ -106,16 +143,28 @@ class ComplaintController
     public function update(array $params): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $complaintId = (int) ($params['id'] ?? 0);
         $data = Router::getRequestBody();
         $db = Database::getInstance();
 
-        $existing = $db->fetchOne(
-            "SELECT * FROM complaints WHERE id = ? AND owner_id = ?",
-            [$complaintId, $ownerId]
-        );
+        if ($role === 'tenant') {
+            Router::jsonResponse(['error' => 'Tenants can submit complaints but cannot reply or update them'], 403);
+        }
+
+        $existing = $db->fetchOne("SELECT * FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
         if (!$existing) {
             Router::jsonResponse(['error' => 'Complaint not found'], 404);
+        }
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            $allowed = $db->fetchOne(
+                "SELECT c.id FROM complaints c LEFT JOIN houses h ON c.house_id = h.id WHERE c.id = ? AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")",
+                array_merge([$complaintId], $propertyIds)
+            );
+            if (!$allowed) {
+                Router::jsonResponse(['error' => 'Complaint is outside your assigned properties'], 403);
+            }
         }
 
         $updateData = [];
@@ -135,8 +184,8 @@ class ComplaintController
         if (isset($data['comments'])) {
             $comments = json_decode($existing['comments'] ?? '[]', true);
             $comments[] = [
-                'user' => $data['comment_user'] ?? 'System',
-                'role' => $data['comment_role'] ?? 'owner',
+                'user' => $data['comment_user'] ?? ucfirst($role),
+                'role' => $role,
                 'date' => date('Y-m-d'),
                 'text' => $data['comments'],
             ];

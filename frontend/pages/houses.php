@@ -2,12 +2,14 @@
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
 if (!$token) { header('Location: /signin'); exit; }
+
+// Verify token - use static method properly
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
+$user = \App\Core\JWT::decode($token);
 if (!$user) { header('Location: /signin'); exit; }
+
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
 if ($role !== 'owner') { header('Location: /signin'); exit; }
@@ -66,7 +68,8 @@ $propertyId = $_GET['property_id'] ?? null;
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
+    const API = (BASE || '') + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const urlParams = new URLSearchParams(window.location.search);
@@ -84,10 +87,15 @@ $propertyId = $_GET['property_id'] ?? null;
 
     async function loadHouses() {
         try {
+            console.log('Fetching houses from:', `${API}/houses${filterPropId ? `?property_id=${filterPropId}` : ''}`);
             const qs = filterPropId ? `?property_id=${filterPropId}` : '';
             const res = await fetch(`${API}/houses${qs}`, { headers });
             const data = await res.json();
+            console.log('Houses API response:', data);
             const tbody = document.getElementById('housesTable');
+            if (!res.ok) {
+                throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
+            }
             if (data.houses && data.houses.length) {
                 tbody.innerHTML = data.houses.map(h => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
@@ -103,18 +111,35 @@ $propertyId = $_GET['property_id'] ?? null;
             } else {
                 tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No units found</td></tr>';
             }
-        } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+        } catch(e) {
+            console.error('loadHouses error:', e);
+            document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;
+            if (e.message.includes('401') || e.message.includes('Authentication')) {
+                toast('Session expired. Redirecting...', 'error');
+                setTimeout(() => window.location.href = '/signin', 1500);
+            }
+        }
     }
 
     async function loadProperties() {
         try {
+            console.log('Fetching properties...');
             const res = await fetch(`${API}/properties`, { headers });
             const data = await res.json();
-            const select = document.getElementById('houseProperty');
-            if (data.properties) {
-                select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${p.id}" ${filterPropId==p.id?'selected':''}>${p.name}</option>`).join('');
+            console.log('Properties API response:', data);
+            if (!res.ok) {
+                throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
             }
-        } catch(e) { console.error(e); }
+            const select = document.getElementById('houseProperty');
+            if (data.properties && data.properties.length) {
+                select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${p.id}" ${filterPropId==p.id?'selected':''}>${p.name}</option>`).join('');
+            } else {
+                select.innerHTML = '<option value="">No properties available - create one first</option>';
+            }
+        } catch(e) {
+            console.error('loadProperties error:', e);
+            toast('Could not load properties: ' + e.message, 'error');
+        }
     }
 
     function openModal() { 
@@ -140,29 +165,47 @@ $propertyId = $_GET['property_id'] ?? null;
     document.getElementById('houseForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const houseId = document.getElementById('houseId').value;
+        const propertyId = parseInt(document.getElementById('houseProperty').value);
+        
+        if (!propertyId) {
+            toast('Please select a property', 'error');
+            return;
+        }
+        
         const data = {
-            property_id: parseInt(document.getElementById('houseProperty').value),
-            unit: document.getElementById('houseUnit').value,
+            property_id: propertyId,
+            unit: document.getElementById('houseUnit').value.trim(),
             type: document.getElementById('houseType').value,
-            rent: parseFloat(document.getElementById('houseRent').value),
+            rent: parseFloat(document.getElementById('houseRent').value) || 0,
             status: document.getElementById('houseStatus').value,
         };
+        
+        if (!data.unit) {
+            toast('Please enter a unit number', 'error');
+            return;
+        }
+        
         try {
             const isEdit = !!houseId;
             const url = isEdit ? `${API}/houses/${houseId}` : `${API}/houses`;
             const method = isEdit ? 'PUT' : 'POST';
+            console.log(`Saving house: ${method} ${url}`, data);
             const res = await fetch(url, { method, headers, body:JSON.stringify(data) });
             const text = await res.text();
             console.log('Response text:', text);
             let result;
-            try { result = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server: ' + text.substring(0, 100)); }
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            try { result = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server: ' + text.substring(0, 200)); }
+            if(!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
             toast(isEdit ? 'Unit updated!' : 'Unit added!');
             closeModal();
             loadHouses();
-        } catch(err) { console.error('Form error:', err); toast(err.message, 'error'); }
+        } catch(err) {
+            console.error('Form submit error:', err);
+            toast(err.message, 'error');
+        }
     });
 
+    // Load data on page ready
     loadProperties();
     loadHouses();
     </script>

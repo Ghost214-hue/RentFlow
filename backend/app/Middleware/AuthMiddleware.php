@@ -34,8 +34,9 @@ class AuthMiddleware
             Router::jsonResponse(['error' => 'Invalid or expired token.'], 401);
         }
 
-        // Attach owner_id to the request for downstream use
+        // Attach owner_id plus the logged-in actor id for downstream use.
         $_REQUEST['auth_user_id'] = (int) ($payload['owner_id'] ?? $payload['user_id'] ?? 0);
+        $_REQUEST['auth_actor_id'] = (int) ($payload['actor_id'] ?? $payload['tenant_id'] ?? $payload['caretaker_id'] ?? $_REQUEST['auth_user_id']);
         $_REQUEST['auth_user_role'] = $payload['role'] ?? 'owner';
 
         if ($_REQUEST['auth_user_id'] <= 0) {

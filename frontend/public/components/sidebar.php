@@ -8,6 +8,7 @@ $ownerNav = [
     ['/properties','fa-building','Properties'],
     ['/houses','fa-home','Houses'],
     ['/tenants','fa-users','Tenants'],
+    ['/caretakers','fa-user-shield','Caretakers'],
     ['/payments','fa-money-bill-wave','Payments'],
     ['/bills','fa-file-invoice-dollar','Bills'],
     ['/complaints','fa-exclamation-triangle','Complaints'],

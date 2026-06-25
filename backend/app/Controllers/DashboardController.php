@@ -16,30 +16,80 @@ class DashboardController
     public function index(): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
+
+        if ($role === 'tenant') {
+            $tenantId = Router::getAuthTenantId();
+            $tenant = $db->fetchOne(
+                "SELECT t.*, p.name as property_name, h.unit as house_unit
+                 FROM tenants t
+                 LEFT JOIN properties p ON t.property_id = p.id
+                 LEFT JOIN houses h ON t.house_id = h.id
+                 WHERE t.id = ? AND t.owner_id = ?",
+                [$tenantId, $ownerId]
+            );
+            $paid = $db->fetchOne(
+                "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE owner_id = ? AND tenant_id = ? AND status = 'completed'",
+                [$ownerId, $tenantId]
+            );
+            $payments = $db->fetchAll(
+                "SELECT * FROM payments WHERE owner_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 5",
+                [$ownerId, $tenantId]
+            );
+            $complaints = $db->fetchAll(
+                "SELECT * FROM complaints WHERE owner_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 5",
+                [$ownerId, $tenantId]
+            );
+            Router::jsonResponse([
+                'tenant' => $tenant,
+                'paid' => (float) ($paid['total'] ?? 0),
+                'recentPayments' => $payments,
+                'activeComplaints' => $complaints,
+            ]);
+        }
+
+        $propertyFilter = '';
+        $propertyParams = [];
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) {
+                Router::jsonResponse([
+                    'properties' => ['total' => 0, 'total_units' => 0, 'occupied' => 0],
+                    'houses' => ['total' => 0, 'occupied' => 0, 'vacant' => 0],
+                    'revenue' => 0,
+                    'outstanding' => 0,
+                    'tenants' => 0,
+                    'recentPayments' => [],
+                    'activeComplaints' => [],
+                ]);
+            }
+            $propertyFilter = " AND property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $propertyParams = $propertyIds;
+        }
 
         // Properties count
         $props = $db->fetchOne(
-            "SELECT COUNT(*) as total, COALESCE(SUM(units), 0) as total_units, COALESCE(SUM(occupied), 0) as total_occupied FROM properties WHERE owner_id = ?",
-            [$ownerId]
+            "SELECT COUNT(*) as total, COALESCE(SUM(units), 0) as total_units, COALESCE(SUM(occupied), 0) as total_occupied FROM properties WHERE owner_id = ?" . ($propertyFilter ? " AND id IN (" . implode(',', array_fill(0, count($propertyParams), '?')) . ")" : ""),
+            array_merge([$ownerId], $propertyParams)
         );
 
         // Houses stats
         $houses = $db->fetchOne(
-            "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'occupied' THEN 1 ELSE 0 END) as occupied FROM houses WHERE owner_id = ?",
-            [$ownerId]
+            "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'occupied' THEN 1 ELSE 0 END) as occupied FROM houses WHERE owner_id = ?" . $propertyFilter,
+            array_merge([$ownerId], $propertyParams)
         );
 
         // Revenue
         $revenue = $db->fetchOne(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE owner_id = ? AND status = 'completed' AND type = 'Rent' AND MONTH(date) = MONTH(CURRENT_DATE()) AND YEAR(date) = YEAR(CURRENT_DATE())",
-            [$ownerId]
+            "SELECT COALESCE(SUM(payments.amount), 0) as total FROM payments LEFT JOIN houses ON payments.house_id = houses.id WHERE payments.owner_id = ? AND payments.status = 'completed' AND payments.type = 'Rent' AND MONTH(payments.date) = MONTH(CURRENT_DATE()) AND YEAR(payments.date) = YEAR(CURRENT_DATE())" . ($propertyFilter ? " AND houses.property_id IN (" . implode(',', array_fill(0, count($propertyParams), '?')) . ")" : ""),
+            array_merge([$ownerId], $propertyParams)
         );
 
         // Outstanding rent (bills not fully paid)
         $outstanding = $db->fetchOne(
-            "SELECT COALESCE(SUM(total), 0) as total FROM bills WHERE owner_id = ? AND status IN ('pending', 'partial', 'overdue')",
-            [$ownerId]
+            "SELECT COALESCE(SUM(bills.total), 0) as total FROM bills LEFT JOIN houses ON bills.house_id = houses.id WHERE bills.owner_id = ? AND bills.status IN ('pending', 'partial', 'overdue')" . ($propertyFilter ? " AND houses.property_id IN (" . implode(',', array_fill(0, count($propertyParams), '?')) . ")" : ""),
+            array_merge([$ownerId], $propertyParams)
         );
 
         // Recent payments
@@ -48,9 +98,9 @@ class DashboardController
              FROM payments p
              LEFT JOIN tenants t ON p.tenant_id = t.id
              LEFT JOIN houses h ON p.house_id = h.id
-             WHERE p.owner_id = ?
+             WHERE p.owner_id = ?" . ($propertyFilter ? " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyParams), '?')) . ")" : "") . "
              ORDER BY p.created_at DESC LIMIT 5",
-            [$ownerId]
+            array_merge([$ownerId], $propertyParams)
         );
 
         // Active complaints
@@ -59,15 +109,15 @@ class DashboardController
              FROM complaints c
              LEFT JOIN tenants t ON c.tenant_id = t.id
              LEFT JOIN houses h ON c.house_id = h.id
-             WHERE c.owner_id = ? AND c.status != 'resolved'
+             WHERE c.owner_id = ? AND c.status != 'resolved'" . ($propertyFilter ? " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyParams), '?')) . ")" : "") . "
              ORDER BY c.created_at DESC LIMIT 5",
-            [$ownerId]
+            array_merge([$ownerId], $propertyParams)
         );
 
         // Tenant count
         $tenants = $db->fetchOne(
-            "SELECT COUNT(*) as total FROM tenants WHERE owner_id = ?",
-            [$ownerId]
+            "SELECT COUNT(*) as total FROM tenants WHERE owner_id = ?" . $propertyFilter,
+            array_merge([$ownerId], $propertyParams)
         );
 
         Router::jsonResponse([

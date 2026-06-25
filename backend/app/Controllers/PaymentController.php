@@ -12,23 +12,35 @@ class PaymentController
     public function index(): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
 
-        $payments = $db->fetchAll(
-            "SELECT p.*, t.name as tenant_name, h.unit as house_unit
+        $sql = "SELECT p.*, t.name as tenant_name, h.unit as house_unit
              FROM payments p
              LEFT JOIN tenants t ON p.tenant_id = t.id
              LEFT JOIN houses h ON p.house_id = h.id
-             WHERE p.owner_id = ?
-             ORDER BY p.created_at DESC",
-            [$ownerId]
-        );
+             WHERE p.owner_id = ?";
+        $queryParams = [$ownerId];
+
+        if ($role === 'tenant') {
+            $sql .= " AND p.tenant_id = ?";
+            $queryParams[] = Router::getAuthTenantId();
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['payments' => []]);
+            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        }
+
+        $sql .= " ORDER BY p.created_at DESC";
+        $payments = $db->fetchAll($sql, $queryParams);
 
         Router::jsonResponse(['payments' => $payments]);
     }
 
     public function store(): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
         $db = Database::getInstance();

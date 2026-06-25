@@ -88,7 +88,7 @@ if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
@@ -121,7 +121,7 @@ if ($requestUri !== $expectedPath && strpos($requestUri, '/signin') === false) {
         btn.textContent = 'Signing in...';
         
         try {
-            const res = await fetch('/api/auth/login', {
+            const res = await fetch(API + '/auth/login', {
                 method: 'POST',
                 headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({email, password})

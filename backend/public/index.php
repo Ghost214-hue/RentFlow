@@ -8,17 +8,6 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
-// CORS headers
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-
-// Handle preflight
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
-
 // Autoload
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';
@@ -38,21 +27,19 @@ spl_autoload_register(function ($class) {
 });
 
 // Load environment
-$envFile = __DIR__ . '/../../.env';
-if (file_exists($envFile)) {
-    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (strpos(trim($line), '#') === 0) continue;
-        if (strpos($line, '=') !== false) {
-            list($key, $value) = explode('=', $line, 2);
-            $_ENV[trim($key)] = trim($value);
-        }
-    }
-}
+App\Core\Env::load(__DIR__ . '/../../.env');
 
 use App\Core\Router;
 use App\Core\Database;
 use App\Middleware\AuthMiddleware;
+
+Router::sendBaseHeaders();
+
+// Handle preflight
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
 
 // Initialize router
 $router = new Router();
@@ -106,6 +93,8 @@ $router->post('/communications', ['App\Controllers\CommunicationController', 'st
 // ==================== CARETAKER ROUTES ====================
 $router->get('/caretakers', ['App\Controllers\CaretakerController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/caretakers', ['App\Controllers\CaretakerController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
+$router->put('/caretakers/{id}', ['App\Controllers\CaretakerController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
+$router->delete('/caretakers/{id}', ['App\Controllers\CaretakerController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== REPORT ROUTES ====================
 $router->get('/reports', ['App\Controllers\ReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
@@ -122,10 +111,22 @@ $router->post('/upload', function() {
     }
     
     $file = $_FILES['file'];
-    $allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    $allowedTypes = [
+        'pdf'  => 'application/pdf',
+        'jpg'  => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png'  => 'image/png',
+    ];
     $maxSize = 10 * 1024 * 1024; // 10MB
-    
-    if (!in_array($file['type'], $allowedTypes)) {
+
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        Router::jsonResponse(['error' => 'Invalid upload'], 400);
+    }
+
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $detectedType = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']) ?: '';
+
+    if (!isset($allowedTypes[$ext]) || $allowedTypes[$ext] !== $detectedType) {
         Router::jsonResponse(['error' => 'Invalid file type. Allowed: PDF, JPG, PNG'], 400);
     }
     
@@ -133,21 +134,25 @@ $router->post('/upload', function() {
         Router::jsonResponse(['error' => 'File too large. Max 10MB'], 400);
     }
     
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $filename = uniqid('doc_') . '_' . time() . '.' . $ext;
+    $filename = 'doc_' . bin2hex(random_bytes(16)) . '.' . $ext;
     $uploadDir = __DIR__ . '/uploads/';
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+        Router::jsonResponse(['error' => 'Upload directory is not available'], 500);
+    }
     
     if (!move_uploaded_file($file['tmp_name'], $uploadDir . $filename)) {
         Router::jsonResponse(['error' => 'Failed to upload file'], 500);
     }
+
+    chmod($uploadDir . $filename, 0644);
     
     Router::jsonResponse([
         'message' => 'File uploaded',
         'file' => [
-            'name' => $file['name'],
+            'name' => basename($file['name']),
             'url' => '/uploads/' . $filename,
             'size' => $file['size'],
-            'type' => $file['type'],
+            'type' => $detectedType,
         ]
     ]);
 }, [function() { \App\Middleware\AuthMiddleware::authenticate(); }]);

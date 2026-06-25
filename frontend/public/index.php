@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/">
     <title>RentFlow - Property Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -27,7 +28,9 @@
 
 <script>
 // ==================== API CLIENT ====================
-const API_BASE = '/api';
+// Detect base path for subdirectory deployment (e.g. /RentFlow/)
+const BASE_PATH = window.location.pathname.replace(/\/[^\/]*$/, '') || '';
+const API_BASE = BASE_PATH + '/api';
 const Api = {
     token: localStorage.getItem('rf_token') || null,
     setToken(t) { this.token = t; t ? localStorage.setItem('rf_token', t) : localStorage.removeItem('rf_token'); },
@@ -105,7 +108,15 @@ const toast = (msg, type='success') => {
     setTimeout(() => { Store.toast = null; render(); }, 3000);
 };
 
-const navigate = (screen) => { Store.screen = screen; Store.sidebarOpen = false; render(); };
+const navigate = (screen, pushHistory = true) => { 
+    Store.screen = screen; 
+    Store.sidebarOpen = false; 
+    render(); 
+    if(pushHistory) {
+        const path = screen === 'dashboard' ? '/' : '/' + screen;
+        window.history.pushState({ screen }, '', path);
+    }
+};
 
 const openModal = (name, data) => { Store.modals.push({ name, data }); render(); };
 const closeModal = () => { Store.modals.pop(); render(); };
@@ -880,6 +891,31 @@ const initCharts = () => {
     }
 };
 
+// ==================== ROUTING ====================
+const pathToScreen = (path) => {
+    const p = path.replace(/^\/+|\/+$/g, '') || 'dashboard';
+    const validScreens = ['dashboard', 'properties', 'houses', 'tenants', 'billing', 'payments', 'complaints', 'communications', 'reports', 'settings'];
+    return validScreens.includes(p) ? p : 'dashboard';
+};
+
+// Handle browser back/forward buttons
+window.addEventListener('popstate', (e) => {
+    if(e.state && e.state.screen) {
+        Store.screen = e.state.screen;
+        Store.sidebarOpen = false;
+        render();
+        // Load screen data
+        switch(Store.screen) {
+            case 'dashboard': DashboardScreen(); break;
+            case 'properties': PropertiesScreen(); break;
+            case 'houses': HousesScreen(); break;
+            case 'tenants': TenantsScreen(); break;
+            case 'payments': PaymentsScreen(); break;
+            case 'complaints': ComplaintsScreen(); break;
+        }
+    }
+});
+
 // ==================== INIT ====================
 // Auto-login if token exists
 const init = async () => {
@@ -887,9 +923,18 @@ const init = async () => {
         try {
             const res = await Api.getProfile();
             Store.user = res.user;
-            Store.screen = 'dashboard';
+            Store.screen = pathToScreen(window.location.pathname);
             render();
-            DashboardScreen();
+            // Load data for initial screen
+            switch(Store.screen) {
+                case 'dashboard': DashboardScreen(); break;
+                case 'properties': PropertiesScreen(); break;
+                case 'houses': HousesScreen(); break;
+                case 'tenants': TenantsScreen(); break;
+                case 'payments': PaymentsScreen(); break;
+                case 'complaints': ComplaintsScreen(); break;
+                default: DashboardScreen();
+            }
             return;
         } catch(e) {
             Api.setToken(null);

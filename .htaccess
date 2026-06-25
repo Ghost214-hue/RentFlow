@@ -1,0 +1,27 @@
+# RentFlow - Apache Rewrite Rules
+RewriteEngine On
+RewriteBase /RentFlow/
+
+# Route /api/* requests to backend entry point
+RewriteRule ^api/(.*)$ backend/public/index.php [QSA,L]
+
+# Route signin/signup pages
+RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
+RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
+
+# Route standalone page files (houses, properties, dashboard, etc.)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{DOCUMENT_ROOT}/RentFlow/frontend/pages/$0.php -f
+RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L]
+
+# Route /css/* to static files in frontend/public/css/
+RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
+
+# Route /js/* to static files in frontend/src/js/
+RewriteRule ^js/(.*)$ frontend/src/js/$1 [QSA,L]
+
+# All other non-file, non-directory routes go to the SPA (frontend/public/index.php)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
