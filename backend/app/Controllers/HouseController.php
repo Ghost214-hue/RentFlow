@@ -14,44 +14,69 @@ class HouseController
      */
     public function index(array $params = []): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
 
-        $status = $_GET['status'] ?? '';
-        $propertyId = (int) ($_GET['property_id'] ?? 0);
+        $propertyId = isset($_GET['property_id']) ? (int) $_GET['property_id'] : null;
 
-        $sql = "SELECT h.*, p.name as property_name, t.name as tenant_name, t.phone as tenant_phone
-                FROM houses h
-                LEFT JOIN properties p ON h.property_id = p.id
-                LEFT JOIN tenants t ON h.tenant_id = t.id
+        $sql = "SELECT h.*, p.name as property_name, t.name as tenant_name 
+                FROM houses h 
+                LEFT JOIN properties p ON h.property_id = p.id 
+                LEFT JOIN tenants t ON h.tenant_id = t.id 
                 WHERE h.owner_id = ?";
-        $params = [$ownerId];
+        $queryParams = [$ownerId];
 
-        if ($status && in_array($status, ['occupied', 'vacant'])) {
-            $sql .= " AND h.status = ?";
-            $params[] = $status;
-        }
-
-        if ($propertyId > 0) {
+        if ($propertyId) {
             $sql .= " AND h.property_id = ?";
-            $params[] = $propertyId;
+            $queryParams[] = $propertyId;
         }
 
         if ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) Router::jsonResponse(['houses' => []]);
+            if (!$propertyIds) {
+                Router::jsonResponse(['houses' => []]);
+                return;
+            }
             $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
-            $params = array_merge($params, $propertyIds);
-        } elseif ($role === 'tenant') {
-            $sql .= " AND h.id = (SELECT house_id FROM tenants WHERE id = ? AND owner_id = ?)";
-            $params[] = Router::getAuthTenantId();
-            $params[] = $ownerId;
+            $queryParams = array_merge($queryParams, $propertyIds);
         }
 
-        $sql .= " ORDER BY p.name, h.unit";
+        $sql .= " ORDER BY h.created_at DESC";
+        $houses = $db->fetchAll($sql, $queryParams);
 
-        $houses = $db->fetchAll($sql, $params);
+        Router::jsonResponse(['houses' => $houses]);
+    }
+
+    /**
+     * GET /api/houses/available
+     * Get houses that are not occupied by a tenant
+     */
+    public function available(array $params = []): void
+    {
+        Router::requireOwner();
+        $ownerId = Router::getAuthUserId();
+        $db = Database::getInstance();
+
+        $propertyId = isset($_GET['property_id']) ? (int) $_GET['property_id'] : null;
+
+        $sql = "SELECT h.id, h.property_id, h.unit, h.type, h.rent, p.name as property_name
+                FROM houses h
+                LEFT JOIN properties p ON h.property_id = p.id
+                WHERE h.owner_id = ?
+                  AND h.status = 'vacant'
+                  AND h.tenant_id IS NULL";
+        $queryParams = [$ownerId];
+
+        if ($propertyId) {
+            $sql .= " AND h.property_id = ?";
+            $queryParams[] = $propertyId;
+        }
+
+        $sql .= " ORDER BY p.name ASC, h.unit ASC";
+        $houses = $db->fetchAll($sql, $queryParams);
+
         Router::jsonResponse(['houses' => $houses]);
     }
 

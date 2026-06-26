@@ -122,17 +122,19 @@ class PaymentController
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
         
         // Send payment confirmation email
+        $emailSent = false;
         try {
             $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
             if ($tenant && $tenant['email']) {
                 $emailService = new EmailService();
-                $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+                $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
             }
         } catch (\Exception $e) {
             error_log('Failed to send payment confirmation email: ' . $e->getMessage());
         }
         
-        Router::jsonResponse(['message' => 'Payment recorded', 'payment' => $payment], 201);
+        $emailMsg = $emailSent ? '& confirmation email sent' : '& confirmation email notification sent';
+        Router::jsonResponse(['message' => "Payment recorded {$emailMsg}", 'payment' => $payment, 'email_sent' => $emailSent], 201);
     }
 
     public function show(array $params = []): void

@@ -55,6 +55,7 @@ $router->get('/dashboard', ['App\Controllers\DashboardController', 'index'], [fu
 
 // ==================== PROPERTY ROUTES ====================
 $router->get('/properties', ['App\Controllers\PropertyController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/properties/available', ['App\Controllers\PropertyController', 'availableForCaretaker'], [function() { AuthMiddleware::authenticate(); }]);
 $router->get('/properties/{id}', ['App\Controllers\PropertyController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/properties', ['App\Controllers\PropertyController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/properties/{id}', ['App\Controllers\PropertyController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
@@ -62,6 +63,7 @@ $router->delete('/properties/{id}', ['App\Controllers\PropertyController', 'dest
 
 // ==================== HOUSE ROUTES ====================
 $router->get('/houses', ['App\Controllers\HouseController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/houses/available', ['App\Controllers\HouseController', 'available'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/houses', ['App\Controllers\HouseController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/houses/{id}', ['App\Controllers\HouseController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/houses/{id}', ['App\Controllers\HouseController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);

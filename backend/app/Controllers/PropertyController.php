@@ -155,6 +155,32 @@ class PropertyController
     }
 
     /**
+     * GET /api/properties/available
+     * Get properties without an assigned caretaker
+     */
+    public function availableForCaretaker(array $params = []): void
+    {
+        Router::requireOwner();
+        $ownerId = Router::getAuthUserId();
+        $db = Database::getInstance();
+
+        $sql = "SELECT p.id, p.name, p.address
+                FROM properties p
+                WHERE p.owner_id = ?
+                  AND p.caretaker_id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM caretakers c
+                      WHERE c.owner_id = ?
+                        AND c.assigned_properties IS NOT NULL
+                        AND FIND_IN_SET(p.id, c.assigned_properties)
+                  )
+                ORDER BY p.name ASC";
+
+        $properties = $db->fetchAll($sql, [$ownerId, $ownerId]);
+        Router::jsonResponse(['properties' => $properties]);
+    }
+
+    /**
      * DELETE /api/properties/{id}
      */
     public function destroy(array $params): void

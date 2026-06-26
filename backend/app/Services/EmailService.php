@@ -22,16 +22,27 @@ class EmailService
     public function __construct()
     {
         $this->db = Database::getInstance();
-        $this->fromEmail = $_ENV['MAIL_FROM_EMAIL'] ?? 'noreply@rentflow.com';
-        $this->fromName = $_ENV['MAIL_FROM_NAME'] ?? 'RentFlow';
+        
+        // Helper to read from $_ENV with getenv() fallback (web vs CLI compatibility)
+        $env = function(string $key, mixed $default = null): mixed {
+            return $_ENV[$key] ?? getenv($key) ?: $default;
+        };
+        
+        $this->fromEmail = $env('MAIL_FROM_EMAIL', 'noreply@rentflow.com');
+        $this->fromName = $env('MAIL_FROM_NAME', 'RentFlow');
         
         // SMTP configuration
-        $this->useSMTP = filter_var($_ENV['MAIL_USE_SMTP'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $this->smtpHost = $_ENV['MAIL_HOST'] ?? 'smtp.gmail.com';
-        $this->smtpPort = (int) ($_ENV['MAIL_PORT'] ?? 587);
-        $this->smtpUsername = $_ENV['MAIL_USERNAME'] ?? '';
-        $this->smtpPassword = $_ENV['MAIL_PASSWORD'] ?? '';
-        $this->smtpEncryption = $_ENV['MAIL_ENCRYPTION'] ?? 'tls';
+        $this->useSMTP = filter_var($env('MAIL_USE_SMTP', false), FILTER_VALIDATE_BOOLEAN);
+        $this->smtpHost = $env('MAIL_HOST', 'smtp.gmail.com');
+        $this->smtpPort = (int) $env('MAIL_PORT', 587);
+        $this->smtpUsername = $env('MAIL_USERNAME', '');
+        $this->smtpPassword = $env('MAIL_PASSWORD', '');
+        $this->smtpEncryption = $env('MAIL_ENCRYPTION', 'tls');
+        
+        // Log configuration for debugging
+        error_log("EMAIL CONFIG: useSMTP=" . ($this->useSMTP ? 'true' : 'false') . 
+                   ", host={$this->smtpHost}, port={$this->smtpPort}, " .
+                   "username={$this->smtpUsername}, encryption={$this->smtpEncryption}");
     }
     
     /**
@@ -75,7 +86,7 @@ class EmailService
             '{{password}}' => $data['password'] ?? '',
             '{{national_id}}' => $data['national_id'] ?? '',
             '{{phone}}' => $data['phone'] ?? '',
-            '{{link}}' => $data['link'] ?? $_ENV['APP_URL'] ?? 'http://localhost',
+            '{{link}}' => $data['link'] ?? getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost',
             '{{owner_name}}' => $data['owner_name'] ?? '',
             '{{days_until_due}}' => $data['days_until_due'] ?? '',
             '{{reply_text}}' => $data['reply_text'] ?? '',
@@ -110,52 +121,64 @@ class EmailService
         $logId = null;
         
         try {
-            // Log email to database first
-            $logId = $this->db->insert('email_logs', [
-                'owner_id' => Router::getAuthUserId() ?? 0,
-                'to_email' => $toEmail,
-                'to_name' => $toName,
-                'subject' => $subject,
-                'body' => $body,
-                'status' => 'pending',
-                'sent_at' => date('Y-m-d H:i:s')
-            ]);
-            
-            $sent = false;
-            
-            if ($this->useSMTP && !empty($this->smtpUsername) && !empty($this->smtpPassword)) {
-                $sent = $this->sendViaSMTP($toEmail, $toName, $subject, $body);
-            } else {
-                // Fallback to PHP mail() function
-                $sent = $this->sendViaMail($toEmail, $toName, $subject, $body);
+            // Try to log email to database (optional - don't fail if table doesn't exist)
+            try {
+                $logId = $this->db->insert('email_logs', [
+                    'owner_id' => Router::getAuthUserId() ?? 0,
+                    'to_email' => $toEmail,
+                    'to_name' => $toName,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'status' => 'pending',
+                    'sent_at' => date('Y-m-d H:i:s')
+                ]);
+            } catch (\Exception $logException) {
+                // If email_logs table doesn't exist, continue without logging
+                error_log("EMAIL LOGGING DISABLED: " . $logException->getMessage());
+                error_log("TIP: Run 'php backend/database/migrate.php' to create email_logs table");
             }
             
-            // Update log status
+            $sent = false;
+            $errorMsg = '';
+            
+            if ($this->useSMTP && !empty($this->smtpUsername) && !empty($this->smtpPassword)) {
+                error_log("EMAIL: Attempting SMTP send to {$toEmail}");
+                $sent = $this->sendViaSMTP($toEmail, $toName, $subject, $body);
+                if (!$sent) {
+                    $errorMsg = 'SMTP delivery failed - check /var/log/apache2/error.log or run: tail -f /var/log/apache2/error.log';
+                }
+            } else {
+                // Fallback to PHP mail() function
+                error_log("EMAIL: Attempting PHP mail() send to {$toEmail}");
+                $sent = $this->sendViaMail($toEmail, $toName, $subject, $body);
+                if (!$sent) {
+                    $errorMsg = 'PHP mail() function failed - check server mail configuration';
+                }
+            }
+            
+            // Update log status if logging is available
             if ($logId) {
-                $this->db->update('email_logs', [
-                    'status' => $sent ? 'sent' : 'failed'
-                ], 'id = ?', [$logId]);
+                try {
+                    $this->db->update('email_logs', [
+                        'status' => $sent ? 'sent' : 'failed',
+                        'error' => $sent ? null : $errorMsg
+                    ], 'id = ?', [$logId]);
+                } catch (\Exception $updateException) {
+                    error_log("EMAIL LOG UPDATE FAILED: " . $updateException->getMessage());
+                }
             }
             
             if ($sent) {
-                error_log("EMAIL SENT: To: $toEmail, Subject: $subject");
+                error_log("EMAIL SENT SUCCESSFULLY: To: $toEmail, Subject: $subject");
             } else {
-                error_log("EMAIL FAILED: To: $toEmail, Subject: $subject");
+                error_log("EMAIL FAILED: To: $toEmail, Subject: $subject. $errorMsg");
             }
             
             return $sent;
             
         } catch (\Exception $e) {
-            error_log("EMAIL ERROR: " . $e->getMessage());
-            
-            // Update log with error
-            if ($logId) {
-                $this->db->update('email_logs', [
-                    'status' => 'failed',
-                    'error' => $e->getMessage()
-                ], 'id = ?', [$logId]);
-            }
-            
+            $errorMsg = "Exception: " . $e->getMessage();
+            error_log("EMAIL ERROR: " . $errorMsg . "\nTrace: " . $e->getTraceAsString());
             return false;
         }
     }
@@ -166,62 +189,123 @@ class EmailService
     private function sendViaSMTP(string $toEmail, string $toName, string $subject, string $body): bool
     {
         try {
+            error_log("SMTP: Attempting to connect to {$this->smtpHost}:{$this->smtpPort}");
+            
             $socket = fsockopen($this->smtpHost, $this->smtpPort, $errno, $errstr, 30);
             
             if (!$socket) {
-                error_log("SMTP connection failed: $errstr ($errno)");
+                error_log("SMTP CONNECTION FAILED: $errstr (Error code: $errno)");
+                error_log("SMTP: Check if port {$this->smtpPort} is open and firewall allows outbound connections");
                 return false;
             }
             
+            error_log("SMTP: Connected successfully");
             $response = fgets($socket, 515);
+            error_log("SMTP Initial response: " . trim($response));
+            
             if (substr($response, 0, 3) != '220') {
+                error_log("SMTP: Unexpected initial response code: " . substr($response, 0, 3));
                 fclose($socket);
                 return false;
             }
             
             // EHLO
             fputs($socket, "EHLO " . gethostname() . "\r\n");
-            $response = fgets($socket, 515);
+            $response = $this->readMultiLineResponse($socket);
+            error_log("SMTP EHLO response: " . trim($response));
             
             // AUTH LOGIN
-            if ($this->smtpEncryption === 'tls') {
+            if ($this->smtpEncryption === 'tls' || $this->smtpEncryption === 'ssl') {
+                error_log("SMTP: Starting TLS encryption");
                 fputs($socket, "STARTTLS\r\n");
                 $response = fgets($socket, 515);
+                error_log("SMTP STARTTLS response: " . trim($response));
+                
                 if (substr($response, 0, 3) != '220') {
+                    error_log("SMTP: STARTTLS failed");
                     fclose($socket);
                     return false;
                 }
-                stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+                
+                $cryptoResult = stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+                if ($cryptoResult === false) {
+                    error_log("SMTP: Failed to enable TLS encryption");
+                    fclose($socket);
+                    return false;
+                }
+                error_log("SMTP: TLS encryption enabled");
+                
+                fputs($socket, "EHLO " . gethostname() . "\r\n");
+                $response = $this->readMultiLineResponse($socket);
+                error_log("SMTP EHLO (after TLS) response: " . trim($response));
             }
             
-            fputs($socket, "EHLO " . gethostname() . "\r\n");
-            fgets($socket, 515);
-            
+            error_log("SMTP: Attempting authentication");
             fputs($socket, "AUTH LOGIN\r\n");
-            fgets($socket, 515);
-            
-            fputs($socket, base64_encode($this->smtpUsername) . "\r\n");
-            fgets($socket, 515);
-            
-            fputs($socket, base64_encode($this->smtpPassword) . "\r\n");
             $response = fgets($socket, 515);
+            error_log("SMTP AUTH LOGIN response: " . trim($response));
             
-            if (substr($response, 0, 3) != '235') {
+            if (substr($response, 0, 3) != '334') {
+                error_log("SMTP: AUTH LOGIN not accepted");
                 fclose($socket);
                 return false;
             }
             
+            fputs($socket, base64_encode($this->smtpUsername) . "\r\n");
+            $response = fgets($socket, 515);
+            error_log("SMTP Username response: " . trim($response));
+            
+            if (substr($response, 0, 3) != '334') {
+                error_log("SMTP: Username rejected");
+                fclose($socket);
+                return false;
+            }
+            
+            fputs($socket, base64_encode($this->smtpPassword) . "\r\n");
+            $response = fgets($socket, 515);
+            error_log("SMTP Password response: " . trim($response));
+            
+            if (substr($response, 0, 3) != '235') {
+                error_log("SMTP: Authentication FAILED - Check username/password");
+                error_log("SMTP: For Gmail, use an App Password if 2FA is enabled");
+                fclose($socket);
+                return false;
+            }
+            
+            error_log("SMTP: Authentication successful");
+            
             // From
             fputs($socket, "MAIL FROM: <{$this->fromEmail}>\r\n");
-            fgets($socket, 515);
+            $response = fgets($socket, 515);
+            error_log("SMTP MAIL FROM response: " . trim($response));
+            
+            if (substr($response, 0, 3) != '250') {
+                error_log("SMTP: MAIL FROM rejected");
+                fclose($socket);
+                return false;
+            }
             
             // To
             fputs($socket, "RCPT TO: <{$toEmail}>\r\n");
-            fgets($socket, 515);
+            $response = fgets($socket, 515);
+            error_log("SMTP RCPT TO response: " . trim($response));
+            
+            if (substr($response, 0, 3) != '250') {
+                error_log("SMTP: RCPT TO rejected - Recipient may not exist");
+                fclose($socket);
+                return false;
+            }
             
             // Data
             fputs($socket, "DATA\r\n");
-            fgets($socket, 515);
+            $response = fgets($socket, 515);
+            error_log("SMTP DATA response: " . trim($response));
+            
+            if (substr($response, 0, 3) != '354') {
+                error_log("SMTP: DATA command not accepted");
+                fclose($socket);
+                return false;
+            }
             
             // Headers and body
             $headers = [
@@ -230,25 +314,49 @@ class EmailService
                 "To: {$toName} <{$toEmail}>",
                 "Subject: {$subject}",
                 "MIME-Version: 1.0",
-                "Content-Type: text/plain; charset=UTF-8",
-                "X-Mailer: RentFlow/" . ($_ENV['APP_VERSION'] ?? '1.0')
+                "Content-Type: text/html; charset=UTF-8",
+                "X-Mailer: RentFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
             ];
             
-            $message = implode("\r\n", $headers) . "\r\n\r\n" . $body . "\r\n.\r\n";
+            $message = implode("\r\n", $headers) . "\r\n\r\n" . nl2br($body) . "\r\n.\r\n";
             fputs($socket, $message);
             
             $response = fgets($socket, 515);
+            error_log("SMTP Message sent response: " . trim($response));
             
             // Quit
             fputs($socket, "QUIT\r\n");
             fclose($socket);
             
-            return substr($response, 0, 3) == '250';
+            $success = substr($response, 0, 3) == '250';
+            if ($success) {
+                error_log("SMTP: Email sent successfully to {$toEmail}");
+            } else {
+                error_log("SMTP: Email not accepted by server");
+            }
+            
+            return $success;
             
         } catch (\Exception $e) {
-            error_log("SMTP error: " . $e->getMessage());
+            error_log("SMTP EXCEPTION: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return false;
         }
+    }
+    
+    /**
+     * Read multi-line SMTP response (response code followed by lines starting with whitespace)
+     */
+    private function readMultiLineResponse($socket): string
+    {
+        $response = '';
+        while (($line = fgets($socket, 515)) !== false) {
+            $response .= $line;
+            // SMTP multi-line responses end with code followed by space (not hyphen)
+            if (preg_match('/^\d{3} /', $line)) {
+                break;
+            }
+        }
+        return $response;
     }
     
     /**
@@ -261,7 +369,7 @@ class EmailService
             "Reply-To: {$this->fromEmail}",
             "MIME-Version: 1.0",
             "Content-Type: text/plain; charset=UTF-8",
-            "X-Mailer: RentFlow/" . ($_ENV['APP_VERSION'] ?? '1.0')
+            "X-Mailer: RentFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
         ];
         
         $headerString = implode("\r\n", $headers);
@@ -281,7 +389,7 @@ class EmailService
             'email' => $tenant['email'],
             'password' => $tenant['temp_password'] ?? $tenant['id_number'],
             'national_id' => $tenant['id_number'] ?? '',
-            'link' => $_ENV['APP_URL'] ?? 'http://localhost'
+            'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
         return $this->sendTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
@@ -297,7 +405,7 @@ class EmailService
             'email' => $caretaker['email'],
             'password' => $caretaker['temp_password'] ?? $caretaker['id_number'],
             'national_id' => $caretaker['id_number'] ?? '',
-            'link' => $_ENV['APP_URL'] ?? 'http://localhost'
+            'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
         return $this->sendTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);

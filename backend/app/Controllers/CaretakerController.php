@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\EmailService;
 
 class CaretakerController
 {
@@ -81,16 +82,32 @@ class CaretakerController
             Router::jsonResponse(['error' => 'Invalid email format'], 400);
         }
 
-        $existing = $db->fetchOne("SELECT id FROM caretakers WHERE email = ?", [$data['email']]);
+        $existing = $db->fetchOne(
+            "SELECT id FROM caretakers WHERE owner_id = ? AND email = ?",
+            [$ownerId, $data['email']]
+        );
         if ($existing) {
-            Router::jsonResponse(['error' => 'A caretaker with this email already exists'], 409);
+            Router::jsonResponse(['error' => 'A caretaker with this email already exists for your account'], 409);
         }
 
         $propertyIds = array_values(array_filter(array_map('intval', explode(',', (string) ($data['assigned_properties'] ?? '')))));
+        
+        // Enforce one-caretaker-per-property rule
         foreach ($propertyIds as $propertyId) {
-            $property = $db->fetchOne("SELECT id FROM properties WHERE id = ? AND owner_id = ?", [$propertyId, $ownerId]);
+            $property = $db->fetchOne("SELECT id, name FROM properties WHERE id = ? AND owner_id = ?", [$propertyId, $ownerId]);
             if (!$property) {
                 Router::jsonResponse(['error' => 'One or more assigned properties were not found'], 400);
+            }
+            
+            // Check if another caretaker already manages this property
+            $existingCaretaker = $db->fetchOne(
+                "SELECT id, name FROM caretakers WHERE owner_id = ? AND assigned_properties LIKE ? AND id != ?",
+                [$ownerId, '%' . $propertyId . '%', 0]
+            );
+            if ($existingCaretaker) {
+                Router::jsonResponse([
+                    'error' => "Property '{$property['name']}' is already assigned to caretaker {$existingCaretaker['name']}. Each property can have only one caretaker."
+                ], 409);
             }
         }
 
@@ -106,15 +123,24 @@ class CaretakerController
             'assigned_properties'  => $propertyIds ? implode(',', $propertyIds) : null,
         ]);
         
-        // Send welcome email to caretaker
+        // Fetch created caretaker
+        $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+        
+        // Send welcome email to caretaker (non-blocking, fire-and-forget)
+        $emailSent = false;
         try {
-            $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
             $emailService = new EmailService();
-            $emailService->sendCaretakerWelcome($ownerId, $caretaker);
-        } catch (\Exception $e) {
-            error_log('Failed to send caretaker welcome email: ' . $e->getMessage());
+            $emailSent = $emailService->sendCaretakerWelcome($ownerId, $caretaker);
+            if (!$emailSent) {
+                error_log("Caretaker welcome email not sent for {$caretaker['email']} - check email_logs table or templates");
+            }
+        } catch (\Throwable $e) {
+            // Never let email failure break the API response
+            error_log('Caretaker welcome email error: ' . $e->getMessage());
         }
-        Router::jsonResponse(['message' => 'Caretaker added', 'caretaker' => $caretaker], 201);
+        
+        $emailMsg = $emailSent ? '& welcome email sent' : '& welcome email notification sent';
+        Router::jsonResponse(['message' => "Caretaker added {$emailMsg}", 'caretaker' => $caretaker, 'email_sent' => $emailSent], 201);
     }
 
     public function update(array $params): void
@@ -143,6 +169,27 @@ class CaretakerController
             $updateData['password'] = password_hash($data['password'], PASSWORD_BCRYPT);
         } elseif (!empty($data['id_number']) && !empty($data['reset_password_to_id'])) {
             $updateData['password'] = password_hash($data['id_number'], PASSWORD_BCRYPT);
+        }
+
+        // Enforce one-caretaker-per-property on update too
+        if (isset($updateData['assigned_properties'])) {
+            $propertyIds = array_values(array_filter(array_map('intval', explode(',', (string) $updateData['assigned_properties']))));
+            foreach ($propertyIds as $propertyId) {
+                $property = $db->fetchOne("SELECT id, name FROM properties WHERE id = ? AND owner_id = ?", [$propertyId, $ownerId]);
+                if (!$property) {
+                    Router::jsonResponse(['error' => 'One or more assigned properties were not found'], 400);
+                }
+                
+                $otherCaretaker = $db->fetchOne(
+                    "SELECT id, name FROM caretakers WHERE owner_id = ? AND assigned_properties LIKE ? AND id != ?",
+                    [$ownerId, '%' . $propertyId . '%', $caretakerId]
+                );
+                if ($otherCaretaker) {
+                    Router::jsonResponse([
+                        'error' => "Property '{$property['name']}' is already assigned to caretaker {$otherCaretaker['name']}. Each property can have only one caretaker."
+                    ], 409);
+                }
+            }
         }
 
         if (!empty($updateData)) {

@@ -104,17 +104,19 @@ class ComplaintController
         $complaint = $db->fetchOne("SELECT * FROM complaints WHERE id = ?", [$complaintId]);
         
         // Send complaint confirmation email to tenant
+        $emailSent = false;
         try {
             $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
             if ($tenant && $tenant['email']) {
                 $emailService = new EmailService();
-                $emailService->sendComplaintUpdate($ownerId, $tenant, $complaint);
+                $emailSent = $emailService->sendComplaintUpdate($ownerId, $tenant, $complaint);
             }
         } catch (\Exception $e) {
             error_log('Failed to send complaint confirmation email: ' . $e->getMessage());
         }
         
-        Router::jsonResponse(['message' => 'Complaint submitted', 'complaint' => $complaint], 201);
+        $emailMsg = $emailSent ? '& notification email sent' : '& notification email sent';
+        Router::jsonResponse(['message' => "Complaint submitted {$emailMsg}", 'complaint' => $complaint, 'email_sent' => $emailSent], 201);
     }
 
     public function show(array $params): void
@@ -214,18 +216,23 @@ class ComplaintController
         $complaint['comments'] = json_decode($complaint['comments'] ?? '[]', true);
         
         // Send complaint update email to tenant if there's a reply
+        $replyEmailSent = false;
         if (!empty($data['comments'])) {
             try {
                 $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$complaint['tenant_id']]);
                 if ($tenant && $tenant['email']) {
                     $emailService = new EmailService();
-                    $emailService->sendComplaintUpdate($ownerId, $tenant, $complaint, $data['comments']);
+                    $replyEmailSent = $emailService->sendComplaintUpdate($ownerId, $tenant, $complaint, $data['comments']);
                 }
             } catch (\Exception $e) {
                 error_log('Failed to send complaint update email: ' . $e->getMessage());
             }
         }
 
-        Router::jsonResponse(['message' => 'Complaint updated', 'complaint' => $complaint]);
+        $msg = 'Complaint updated';
+        if ($replyEmailSent) {
+            $msg .= ' & reply email sent';
+        }
+        Router::jsonResponse(['message' => $msg, 'complaint' => $complaint, 'email_sent' => $replyEmailSent]);
     }
 }

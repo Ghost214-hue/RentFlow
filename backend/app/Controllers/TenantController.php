@@ -205,25 +205,27 @@ class TenantController
             $db->commit();
             
             // Send welcome email to tenant
+            $emailSent = false;
             try {
                 $property = $db->fetchOne("SELECT name FROM properties WHERE id = ?", [$tenant['property_id']]);
                 $house = $db->fetchOne("SELECT unit FROM houses WHERE id = ?", [$tenant['house_id']]);
                 $emailService = new EmailService();
-                $emailService->sendTenantWelcome(
+                $emailSent = $emailService->sendTenantWelcome(
                     $ownerId,
                     $tenant,
                     $property['name'] ?? 'N/A',
                     $house['unit'] ?? 'N/A'
                 );
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 error_log('Failed to send tenant welcome email: ' . $e->getMessage());
             }
         } catch (\Throwable $e) {
-            $db->rollback();
+            if ($db->inTransaction()) $db->rollback();
             Router::jsonResponse(['error' => $e->getMessage()], 400);
         }
 
-        Router::jsonResponse(['message' => 'Tenant registered', 'tenant' => $tenant], 201);
+        $emailMsg = $emailSent ? '& welcome email sent' : '& but welcome email could not be sent';
+        Router::jsonResponse(['message' => "Tenant registered {$emailMsg}", 'tenant' => $tenant, 'email_sent' => $emailSent], 201);
     }
 
     /**
