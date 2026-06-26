@@ -19,15 +19,15 @@ class DocumentController
         $role = Router::getAuthRole();
         $db = Database::getInstance();
 
-        $sql = "SELECT * FROM property_documents WHERE owner_id = ?";
+        $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.owner_id = ?";
         $params = [$ownerId];
 
         // Tenants and caretakers only see active documents
         if ($role === 'tenant' || $role === 'caretaker') {
-            $sql .= " AND is_active = 1";
+            $sql .= " AND pd.is_active = 1";
         }
 
-        $sql .= " ORDER BY type, created_at DESC";
+        $sql .= " ORDER BY pd.type, pd.created_at DESC";
         $documents = $db->fetchAll($sql, $params);
 
         Router::jsonResponse(['documents' => $documents]);
@@ -43,12 +43,12 @@ class DocumentController
         $documentId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
-        $sql = "SELECT * FROM property_documents WHERE id = ? AND owner_id = ?";
+        $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.id = ? AND pd.owner_id = ?";
         $queryParams = [$documentId, $ownerId];
 
         // Tenants and caretakers can only view active documents
         if ($role === 'tenant' || $role === 'caretaker') {
-            $sql .= " AND is_active = 1";
+            $sql .= " AND pd.is_active = 1";
         }
 
         $document = $db->fetchOne($sql, $queryParams);
@@ -172,23 +172,29 @@ class DocumentController
      */
     public function downloadPdf(array $params): void
     {
+        // No JSON content type - this is a binary download
+        header('Content-Type: text/html; charset=UTF-8');
+        
+        // Don't send JSON headers - allow binary PDF response
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $documentId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
-        $sql = "SELECT * FROM property_documents WHERE id = ? AND owner_id = ?";
+        $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.id = ? AND pd.owner_id = ?";
         $queryParams = [$documentId, $ownerId];
 
         // Tenants and caretakers can only download active documents
         if ($role === 'tenant' || $role === 'caretaker') {
-            $sql .= " AND is_active = 1";
+            $sql .= " AND pd.is_active = 1";
         }
 
         $document = $db->fetchOne($sql, $queryParams);
 
         if (!$document) {
-            Router::jsonResponse(['error' => 'Document not found'], 404);
+            http_response_code(404);
+            echo 'Document not found';
+            exit;
         }
 
         // Generate PDF (simple HTML-to-PDF conversion)
@@ -205,6 +211,7 @@ class DocumentController
         $type = ucfirst($document['type']);
         $version = $document['version'];
         $publishedDate = $document['published_at'] ? date('F j, Y', strtotime($document['published_at'])) : 'N/A';
+        $propertyName = $document['property_name'] ?? 'All Properties';
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -213,32 +220,39 @@ class DocumentController
     <meta charset="UTF-8">
     <title>{$title}</title>
     <style>
+        @page { margin: 2cm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #333; }
+        .page { background: white; }
         .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 30px; }
-        .header h1 { color: #2563eb; margin: 0; font-size: 28px; }
-        .header .meta { color: #666; margin-top: 10px; font-size: 14px; }
-        .content { line-height: 1.8; font-size: 14px; white-space: pre-wrap; }
-        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 12px; }
-        .badge { display: inline-block; padding: 5px 15px; background: #2563eb; color: white; border-radius: 20px; font-size: 12px; margin-bottom: 20px; }
+        .header h1 { color: #2563eb; margin: 0 0 15px 0; font-size: 28px; }
+        .property-name { font-size: 16px; font-weight: 600; color: #1e40af; margin-bottom: 10px; }
+        .meta-info { color: #666; font-size: 13px; margin-top: 15px; }
+        .meta-item { display: inline-block; margin: 0 10px; padding: 4px 12px; background: #f1f5f9; border-radius: 4px; }
+        .content { line-height: 1.8; font-size: 14px; margin-top: 30px; white-space: pre-wrap; }
+        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 11px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>{$title}</h1>
-        <div class="meta">
-            <span class="badge">{$type}</span>
-            <span>Version {$version}</span> | 
-            <span>Published: {$publishedDate}</span>
+    <div class="page">
+        <div class="header">
+            <div class="property-name">{$propertyName}</div>
+            <h1>{$title}</h1>
+            <div class="meta-info">
+                <span class="meta-item">{$type}</span>
+                <span class="meta-item">Version {$version}</span>
+                <span class="meta-item">{$publishedDate}</span>
+            </div>
         </div>
-    </div>
-    
-    <div class="content">
-        {$content}
-    </div>
-    
-    <div class="footer">
-        <p>This document is confidential and intended for authorized recipients only.</p>
-        <p>Generated by RentFlow Property Management System</p>
+        
+        <div class="content">
+            {$content}
+        </div>
+        
+        <div class="footer">
+            <p>RentFlow Property Management System</p>
+            <p>Generated on {date('F j, Y')}</p>
+        </div>
     </div>
 </body>
 </html>
@@ -257,10 +271,10 @@ HTML;
             $dompdf->stream($filename, ['Attachment' => true]);
             exit;
         } catch (\Exception $e) {
-            // Fallback to HTML if Dompdf fails
             error_log('PDF generation error: ' . $e->getMessage());
-            header('Content-Type: text/html');
-            echo $html;
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Failed to generate PDF: ' . $e->getMessage()]);
+            http_response_code(500);
             exit;
         }
     }
