@@ -13,7 +13,7 @@ class DashboardController
     /**
      * GET /api/dashboard
      */
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();

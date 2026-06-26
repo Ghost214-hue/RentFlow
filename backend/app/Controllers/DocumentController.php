@@ -13,7 +13,7 @@ class DocumentController
      * GET /api/documents
      * List all documents (filtered by role)
      */
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -64,7 +64,7 @@ class DocumentController
      * POST /api/documents
      * Create new document (owner only)
      */
-    public function store(): void
+    public function store(array $params = []): void
     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();

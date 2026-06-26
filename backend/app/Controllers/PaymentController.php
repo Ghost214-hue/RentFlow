@@ -10,7 +10,7 @@ use App\Services\EmailService;
 
 class PaymentController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -39,7 +39,7 @@ class PaymentController
         Router::jsonResponse(['payments' => $payments]);
     }
 
-    public function store(): void
+    public function store(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -135,7 +135,7 @@ class PaymentController
         Router::jsonResponse(['message' => 'Payment recorded', 'payment' => $payment], 201);
     }
 
-    public function show(array $params): void
+    public function show(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $paymentId = (int) ($params['id'] ?? 0);

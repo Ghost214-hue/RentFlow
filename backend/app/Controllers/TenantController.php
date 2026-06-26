@@ -8,10 +8,8 @@ use App\Services\EmailService;
 
 class TenantController
 {
-    /**
-     * GET /api/tenants
-     */
-    public function index(): void
+   
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -22,29 +20,27 @@ class TenantController
              LEFT JOIN properties p ON t.property_id = p.id
              LEFT JOIN houses h ON t.house_id = h.id
              WHERE t.owner_id = ?";
-        $params = [$ownerId];
+        $queryParams = [$ownerId];
 
         if ($role === 'tenant') {
             $sql .= " AND t.id = ?";
-            $params[] = Router::getAuthTenantId();
+            $queryParams[] = Router::getAuthTenantId();
         } elseif ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
             if (!$propertyIds) {
                 Router::jsonResponse(['tenants' => []]);
             }
             $sql .= " AND t.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
-            $params = array_merge($params, $propertyIds);
+            $queryParams = array_merge($queryParams, $propertyIds);
         }
 
         $sql .= " ORDER BY t.name ASC";
-        $tenants = $db->fetchAll($sql, $params);
+        $tenants = $db->fetchAll($sql, $queryParams);
 
         Router::jsonResponse(['tenants' => $tenants]);
     }
 
-    /**
-     * GET /api/tenants/{id}
-     */
+   
     public function show(array $params): void
     {
         $ownerId = Router::getAuthUserId();
@@ -93,7 +89,7 @@ class TenantController
     /**
      * POST /api/tenants - Complete tenant onboarding
      */
-    public function store(): void
+    public function store(array $params = []): void
     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();

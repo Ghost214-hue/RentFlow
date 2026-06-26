@@ -1,8 +1,8 @@
 -- Property documents (rules, regulations, policies)
 CREATE TABLE IF NOT EXISTS property_documents (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    owner_id INT NOT NULL,
-    property_id INT,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    owner_id INT UNSIGNED NOT NULL,
+    property_id INT UNSIGNED,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     type ENUM('rules', 'regulations', 'policy', 'other') DEFAULT 'rules',
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS property_documents (
     published_at DATETIME,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES owners(id) ON DELETE CASCADE,
     FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE SET NULL,
     INDEX idx_owner_id (owner_id),
     INDEX idx_property_id (property_id),

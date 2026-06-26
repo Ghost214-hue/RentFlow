@@ -19,8 +19,8 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                 <path d="M0 100 C 40 20 60 20 100 100 Z" fill="white" opacity="0.5"/>
             </svg>
         </div>
-        <div class="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row">
-            <div class="lg:w-5/12 bg-gradient-to-br from-blue-600 to-blue-800 p-8 lg:p-12 flex flex-col justify-between text-white relative">
+    <div class="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col-reverse lg:flex-row">
+        <div class="lg:w-5/12 bg-gradient-to-br from-blue-600 to-blue-800 p-6 sm:p-8 lg:p-12 flex flex-col justify-between text-white relative">
                 <div class="absolute inset-0 opacity-5">
                     <svg viewBox="0 0 200 200" class="w-full h-full"><path d="M0 200 C 50 0 150 0 200 200 Z" fill="white"/></svg>
                 </div>
@@ -29,10 +29,10 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                         <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center font-bold text-lg backdrop-blur">RF</div>
                         <span class="font-bold text-xl">RentalFlow</span>
                     </div>
-                    <h1 class="text-3xl lg:text-4xl font-bold mb-4 leading-tight">Property Management<br/><span class="text-blue-200">Made Simple</span></h1>
-                    <p class="text-blue-100/80 text-lg mb-10">Streamline your rental operations with our all-in-one platform.</p>
+                    <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold mb-3 sm:mb-4 leading-tight">Property Management<br/><span class="text-blue-200">Made Simple</span></h1>
+                    <p class="text-blue-100/80 text-sm sm:text-base lg:text-lg mb-6 sm:mb-10">Streamline your rental operations with our all-in-one platform.</p>
                 </div>
-                <div class="relative space-y-3">
+                <div class="hidden sm:block relative space-y-3">
                     <div class="flex items-center gap-3 bg-white/10 rounded-xl p-3 backdrop-blur">
                         <i class="fas fa-building text-blue-200 text-lg"></i>
                         <div><p class="font-medium text-sm">46 Properties Managed</p><p class="text-xs text-blue-200/70">Across Nairobi County</p></div>
@@ -43,22 +43,22 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                     </div>
                 </div>
             </div>
-            <div class="lg:w-7/12 p-8 lg:p-12">
+            <div class="lg:w-7/12 p-6 sm:p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
-                    <div class="text-center mb-8">
-                        <h2 class="text-2xl font-bold text-slate-900">Welcome back</h2>
-                        <p class="text-slate-500 mt-1">Sign in to your account</p>
+                    <div class="text-center mb-6 sm:mb-8">
+                        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Welcome back</h2>
+                        <p class="text-slate-500 mt-1 text-sm sm:text-base">Sign in to your account</p>
                     </div>
                     <form id="loginForm" class="space-y-5">
                         <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1.5">Email</label>
                             <div class="relative">
                                 <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                                 <input type="email" id="loginEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="you@example.com" required>
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1.5">Password</label>
                             <div class="relative">
                                 <i class="fas fa-lock absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                                 <input type="password" id="loginPassword" class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Enter password" required>

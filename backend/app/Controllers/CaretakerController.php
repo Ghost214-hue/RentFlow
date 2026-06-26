@@ -9,7 +9,7 @@ use App\Core\Router;
 
 class CaretakerController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         try {
             Router::requireOwner();
@@ -63,7 +63,7 @@ class CaretakerController
         }
     }
 
-    public function store(): void
+    public function store(array $params = []): void
     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();

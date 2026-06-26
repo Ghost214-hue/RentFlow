@@ -47,13 +47,13 @@ function isActive($uri, $path) {
     return $uri === $path || strpos($uri, $path) === 0;
 }
 ?>
-<aside id="sidebar" class="flex-shrink-0 w-64 bg-gradient-to-b from-blue-700 to-blue-900 shadow-2xl transform -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col">
+<aside id="sidebar" class="fixed lg:relative inset-y-0 left-0 z-40 w-64 flex-shrink-0 bg-gradient-to-b from-blue-700 to-blue-900 shadow-2xl transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col h-full min-h-screen">
     <div class="h-16 flex items-center px-5 border-b border-white/10">
         <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white font-bold text-sm backdrop-blur">RF</div>
             <span class="font-bold text-lg text-white">RentalFlow</span>
         </div>
-        <button onclick="document.getElementById('sidebar').classList.add('-translate-x-full')" class="lg:hidden ml-auto text-white/60 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+        <button onclick="closeSidebar()" class="lg:hidden ml-auto text-white/60 hover:text-white"><i class="fas fa-times text-xl"></i></button>
     </div>
     <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
         <?php foreach($nav as $item): ?>
@@ -74,5 +74,34 @@ function isActive($uri, $path) {
     </div>
 </aside>
 <?php if($requestUri !== '/signin' && $requestUri !== '/signup'): ?>
-<div onclick="document.getElementById('sidebar').classList.add('-translate-x-full')" class="fixed inset-0 bg-black/30 z-30 lg:hidden hidden" id="sidebarOverlay"></div>
+<div onclick="closeSidebar()" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 lg:hidden hidden transition-opacity duration-300" id="sidebarOverlay"></div>
 <?php endif; ?>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    sidebar.classList.toggle('-translate-x-full');
+    if (overlay) {
+        overlay.classList.toggle('hidden');
+        document.body.classList.toggle('overflow-hidden');
+    }
+}
+function closeSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    sidebar.classList.add('-translate-x-full');
+    if (overlay) {
+        overlay.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('#sidebar nav a').forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (window.innerWidth < 1024) {
+                closeSidebar();
+            }
+        });
+    });
+});
+</script>

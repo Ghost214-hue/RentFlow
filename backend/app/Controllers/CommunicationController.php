@@ -9,7 +9,7 @@ use App\Core\Router;
 
 class CommunicationController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
@@ -30,7 +30,7 @@ class CommunicationController
         Router::jsonResponse(['communications' => $communications]);
     }
 
-    public function store(): void
+    public function store(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
@@ -57,7 +57,7 @@ class CommunicationController
         Router::jsonResponse(['message' => 'Message sent', 'communication' => $communication], 201);
     }
 
-    public function templates(): void
+    public function templates(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();

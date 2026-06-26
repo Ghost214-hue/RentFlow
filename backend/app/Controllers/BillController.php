@@ -9,7 +9,7 @@ use App\Core\Router;
 
 class BillController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -44,7 +44,7 @@ class BillController
     /**
      * POST /api/bills/generate - Generate bills for all occupied houses
      */
-    public function generate(): void
+    public function generate(array $params = []): void
     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();

@@ -12,7 +12,7 @@ class PropertyController
     /**
      * GET /api/properties
      */
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -87,7 +87,7 @@ class PropertyController
     /**
      * POST /api/properties
      */
-    public function store(): void
+    public function store(array $params = []): void
     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();

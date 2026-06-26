@@ -109,118 +109,123 @@ class AuthController
      * POST /api/auth/login
      * Authenticate owner and return JWT token
      */
-    public function login(): void
+    public function login(array $params = []): void
     {
-        $data = Router::getRequestBody();
+        try {
+            $data = Router::getRequestBody();
 
-        if (empty($data['email']) || empty($data['password'])) {
-            Router::jsonResponse(['error' => 'Email and password are required'], 400);
-        }
+            if (empty($data['email']) || empty($data['password'])) {
+                Router::jsonResponse(['error' => 'Email and password are required'], 400);
+            }
 
-        $db = Database::getInstance();
+            $db = Database::getInstance();
 
-        $owner = $db->fetchOne(
-            "SELECT id, name, email, password, phone, avatar FROM owners WHERE email = ?",
-            [$data['email']]
-        );
-
-        if ($owner && password_verify($data['password'], $owner['password'])) {
-            // Update last login
-            $db->update(
-                'owners',
-                ['last_login' => date('Y-m-d H:i:s')],
-                'id = ?',
-                [$owner['id']]
+            $owner = $db->fetchOne(
+                "SELECT id, name, email, password, phone, avatar FROM owners WHERE email = ?",
+                [$data['email']]
             );
 
-            // Generate token
-            $token = JWT::encode([
-                'owner_id' => (int) $owner['id'],
-                'actor_id' => (int) $owner['id'],
-                'email'    => $owner['email'],
-                'role'     => 'owner',
-                'name'     => $owner['name'],
-            ]);
+            if ($owner && password_verify($data['password'], $owner['password'])) {
+                // Update last login
+                $db->update(
+                    'owners',
+                    ['last_login' => date('Y-m-d H:i:s')],
+                    'id = ?',
+                    [$owner['id']]
+                );
 
-            Router::jsonResponse([
-                'message' => 'Login successful',
-                'token'   => $token,
-                'user'    => [
-                    'id'        => (int) $owner['id'],
-                    'name'      => $owner['name'],
-                    'email'     => $owner['email'],
-                    'phone'     => $owner['phone'] ?? '',
-                    'avatar'    => $owner['avatar'] ?? 'OW',
-                    'role'      => 'owner',
-                    'lastLogin' => date('Y-m-d H:i:s'),
-                ],
-            ]);
-        }
+                // Generate token
+                $token = JWT::encode([
+                    'owner_id' => (int) $owner['id'],
+                    'actor_id' => (int) $owner['id'],
+                    'email'    => $owner['email'],
+                    'role'     => 'owner',
+                    'name'     => $owner['name'],
+                ]);
 
-        $caretaker = $db->fetchOne(
-            "SELECT id, owner_id, name, email, password, phone, avatar, assigned_properties FROM caretakers WHERE email = ?",
-            [$data['email']]
-        );
-        if ($caretaker && password_verify($data['password'], $caretaker['password'])) {
-            $token = JWT::encode([
-                'owner_id'  => (int) $caretaker['owner_id'],
-                'actor_id'  => (int) $caretaker['id'],
-                'email'     => $caretaker['email'],
-                'role'      => 'caretaker',
-                'name'      => $caretaker['name'],
-            ]);
-            Router::jsonResponse([
-                'message' => 'Login successful',
-                'token'   => $token,
-                'user'    => [
-                    'id' => (int) $caretaker['id'],
-                    'owner_id' => (int) $caretaker['owner_id'],
-                    'name' => $caretaker['name'],
-                    'email' => $caretaker['email'],
-                    'phone' => $caretaker['phone'] ?? '',
-                    'avatar' => $caretaker['avatar'] ?? 'CT',
-                    'role' => 'caretaker',
-                    'assigned_properties' => $caretaker['assigned_properties'] ?? '',
-                ],
-            ]);
-        }
+                Router::jsonResponse([
+                    'message' => 'Login successful',
+                    'token'   => $token,
+                    'user'    => [
+                        'id'        => (int) $owner['id'],
+                        'name'      => $owner['name'],
+                        'email'     => $owner['email'],
+                        'phone'     => $owner['phone'] ?? '',
+                        'avatar'    => $owner['avatar'] ?? 'OW',
+                        'role'      => 'owner',
+                        'lastLogin' => date('Y-m-d H:i:s'),
+                    ],
+                ]);
+            }
 
-        $tenant = $db->fetchOne(
-            "SELECT id, owner_id, name, email, password, phone FROM tenants WHERE email = ?",
-            [$data['email']]
-        );
-        if ($tenant && !empty($tenant['password']) && password_verify($data['password'], $tenant['password'])) {
-            $token = JWT::encode([
-                'owner_id' => (int) $tenant['owner_id'],
-                'actor_id' => (int) $tenant['id'],
-                'tenant_id' => (int) $tenant['id'],
-                'email'    => $tenant['email'],
-                'role'     => 'tenant',
-                'name'     => $tenant['name'],
-            ]);
-            Router::jsonResponse([
-                'message' => 'Login successful',
-                'token'   => $token,
-                'user'    => [
-                    'id' => (int) $tenant['id'],
+            $caretaker = $db->fetchOne(
+                "SELECT id, owner_id, name, email, password, phone, avatar, assigned_properties FROM caretakers WHERE email = ?",
+                [$data['email']]
+            );
+            if ($caretaker && password_verify($data['password'], $caretaker['password'])) {
+                $token = JWT::encode([
+                    'owner_id'  => (int) $caretaker['owner_id'],
+                    'actor_id'  => (int) $caretaker['id'],
+                    'email'     => $caretaker['email'],
+                    'role'      => 'caretaker',
+                    'name'      => $caretaker['name'],
+                ]);
+                Router::jsonResponse([
+                    'message' => 'Login successful',
+                    'token'   => $token,
+                    'user'    => [
+                        'id' => (int) $caretaker['id'],
+                        'owner_id' => (int) $caretaker['owner_id'],
+                        'name' => $caretaker['name'],
+                        'email' => $caretaker['email'],
+                        'phone' => $caretaker['phone'] ?? '',
+                        'avatar' => $caretaker['avatar'] ?? 'CT',
+                        'role' => 'caretaker',
+                        'assigned_properties' => $caretaker['assigned_properties'] ?? '',
+                    ],
+                ]);
+            }
+
+            $tenant = $db->fetchOne(
+                "SELECT id, owner_id, name, email, password, phone FROM tenants WHERE email = ?",
+                [$data['email']]
+            );
+            if ($tenant && !empty($tenant['password']) && password_verify($data['password'], $tenant['password'])) {
+                $token = JWT::encode([
                     'owner_id' => (int) $tenant['owner_id'],
-                    'name' => $tenant['name'],
-                    'email' => $tenant['email'],
-                    'phone' => $tenant['phone'] ?? '',
-                    'avatar' => 'TN',
-                    'role' => 'tenant',
-                ],
-            ]);
-        }
+                    'actor_id' => (int) $tenant['id'],
+                    'tenant_id' => (int) $tenant['id'],
+                    'email'    => $tenant['email'],
+                    'role'     => 'tenant',
+                    'name'     => $tenant['name'],
+                ]);
+                Router::jsonResponse([
+                    'message' => 'Login successful',
+                    'token'   => $token,
+                    'user'    => [
+                        'id' => (int) $tenant['id'],
+                        'owner_id' => (int) $tenant['owner_id'],
+                        'name' => $tenant['name'],
+                        'email' => $tenant['email'],
+                        'phone' => $tenant['phone'] ?? '',
+                        'avatar' => 'TN',
+                        'role' => 'tenant',
+                    ],
+                ]);
+            }
 
-        Router::jsonResponse(['error' => 'Invalid email or password'], 401);
+            Router::jsonResponse(['error' => 'Invalid email or password'], 401);
+        } catch (\Throwable $e) {
+            error_log('Login error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Login failed', 'detail' => $e->getMessage()], 500);
+        }
     }
 
     /**
      * GET /api/auth/me
      * Get current authenticated user profile
      */
-    public function me(): void
+    public function me(array $params = []): void
     {
         $db = Database::getInstance();
         $role = Router::getAuthRole();
@@ -271,7 +276,7 @@ class AuthController
      * POST /api/auth/logout
      * Logout (client-side token removal - server just acknowledges)
      */
-    public function logout(): void
+    public function logout(array $params = []): void
     {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();

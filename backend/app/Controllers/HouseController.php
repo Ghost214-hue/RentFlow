@@ -12,7 +12,7 @@ class HouseController
     /**
      * GET /api/houses
      */
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
@@ -58,7 +58,7 @@ class HouseController
     /**
      * POST /api/houses
      */
-    public function store(): void
+    public function store(array $params = []): void
     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();

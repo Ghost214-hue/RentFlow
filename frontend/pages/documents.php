@@ -11,7 +11,7 @@ require_once __DIR__ . '/../includes/auth.php';
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex overflow-hidden">
+<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
     <div class="flex-1 flex flex-col min-h-screen">
         <?php include __DIR__ . '/../public/components/header.php'; ?>
@@ -296,11 +296,28 @@ require_once __DIR__ . '/../includes/auth.php';
         currentDocumentId = null;
     }
 
-    function downloadPdf(id) {
+    async function downloadPdf(id) {
         const docId = id || currentDocumentId;
         if (!docId) return;
         
-        window.open(`${API}/documents/${docId}/pdf`, '_blank');
+        try {
+            const res = await fetch(`${API}/documents/${docId}/pdf`, { headers });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(errText || 'Failed to download PDF');
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `document-${docId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch(e) {
+            toast(e.message, 'error');
+        }
     }
 
     document.getElementById('documentForm').addEventListener('submit', async (e) => {
