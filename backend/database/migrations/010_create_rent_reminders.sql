@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS rent_reminders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  owner_id INT NOT NULL,
+  tenant_id INT DEFAULT NULL,
+  house_id INT NOT NULL,
+  bill_id INT DEFAULT NULL,
+  month VARCHAR(7) NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  days_before_due INT DEFAULT NULL,
+  sent_at DATETIME NOT NULL,
+  status VARCHAR(50) DEFAULT 'sent',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

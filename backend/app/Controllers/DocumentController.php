@@ -19,17 +19,46 @@ class DocumentController
         $role = Router::getAuthRole();
         $db = Database::getInstance();
 
-        $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.owner_id = ?";
-        $params = [$ownerId];
-
-        // Tenants and caretakers only see active documents
-        if ($role === 'tenant' || $role === 'caretaker') {
-            $sql .= " AND pd.is_active = 1";
+        if ($role === 'tenant') {
+            $tenantId = Router::getAuthTenantId();
+            $house = $db->fetchOne(
+                "SELECT h.property_id FROM houses h JOIN tenants t ON h.tenant_id = t.id WHERE t.id = ? AND t.owner_id = ? AND h.status = 'occupied' LIMIT 1",
+                [$tenantId, $ownerId]
+            );
+            if (!$house) {
+                Router::jsonResponse(['documents' => []]);
+                return;
+            }
+            $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.owner_id = ? AND pd.is_active = 1 AND pd.property_id = ? ORDER BY pd.type, pd.created_at DESC";
+            $documents = $db->fetchAll($sql, [$ownerId, $house['property_id']]);
+            Router::jsonResponse(['documents' => $documents]);
+            return;
         }
 
-        $sql .= " ORDER BY pd.type, pd.created_at DESC";
-        $documents = $db->fetchAll($sql, $params);
+        if ($role === 'caretaker') {
+            $caretaker = $db->fetchOne(
+                "SELECT assigned_properties FROM caretakers WHERE owner_id = ? AND id = (SELECT caretaker_id FROM users WHERE id = ?)",
+                [$ownerId, Router::getAuthUserId()]
+            );
+            $propertyIds = [];
+            if (!empty($caretaker['assigned_properties'])) {
+                $propertyIds = array_map('intval', explode(',', $caretaker['assigned_properties']));
+            }
+            if (empty($propertyIds)) {
+                Router::jsonResponse(['documents' => []]);
+                return;
+            }
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.owner_id = ? AND pd.is_active = 1 AND pd.property_id IN ($placeholders) ORDER BY pd.type, pd.created_at DESC";
+            $queryParams = array_merge([$ownerId], $propertyIds);
+            $documents = $db->fetchAll($sql, $queryParams);
+            Router::jsonResponse(['documents' => $documents]);
+            return;
+        }
 
+        // Owner: see all their documents
+        $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.owner_id = ? ORDER BY pd.type, pd.created_at DESC";
+        $documents = $db->fetchAll($sql, [$ownerId]);
         Router::jsonResponse(['documents' => $documents]);
     }
 
@@ -43,18 +72,42 @@ class DocumentController
         $documentId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
-        $sql = "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.id = ? AND pd.owner_id = ?";
-        $queryParams = [$documentId, $ownerId];
-
-        // Tenants and caretakers can only view active documents
-        if ($role === 'tenant' || $role === 'caretaker') {
-            $sql .= " AND pd.is_active = 1";
-        }
-
-        $document = $db->fetchOne($sql, $queryParams);
+        $document = $db->fetchOne(
+            "SELECT pd.*, p.name as property_name FROM property_documents pd LEFT JOIN properties p ON pd.property_id = p.id WHERE pd.id = ? AND pd.owner_id = ?",
+            [$documentId, $ownerId]
+        );
 
         if (!$document) {
             Router::jsonResponse(['error' => 'Document not found'], 404);
+        }
+
+        if ($role === 'tenant') {
+            $tenantId = Router::getAuthTenantId();
+            $house = $db->fetchOne(
+                "SELECT h.property_id FROM houses h JOIN tenants t ON h.tenant_id = t.id WHERE t.id = ? AND t.owner_id = ? AND h.status = 'occupied' LIMIT 1",
+                [$tenantId, $ownerId]
+            );
+            if (!$house || $document['property_id'] != $house['property_id']) {
+                Router::jsonResponse(['error' => 'Document not found'], 404);
+            }
+            if (!$document['is_active']) {
+                Router::jsonResponse(['error' => 'Document not found'], 404);
+            }
+        } elseif ($role === 'caretaker') {
+            $caretaker = $db->fetchOne(
+                "SELECT assigned_properties FROM caretakers WHERE owner_id = ? AND id = (SELECT caretaker_id FROM users WHERE id = ?)",
+                [$ownerId, Router::getAuthUserId()]
+            );
+            $propertyIds = [];
+            if (!empty($caretaker['assigned_properties'])) {
+                $propertyIds = array_map('intval', explode(',', $caretaker['assigned_properties']));
+            }
+            if (!in_array($document['property_id'], $propertyIds, true)) {
+                Router::jsonResponse(['error' => 'Document not found'], 404);
+            }
+            if (!$document['is_active']) {
+                Router::jsonResponse(['error' => 'Document not found'], 404);
+            }
         }
 
         Router::jsonResponse(['document' => $document]);

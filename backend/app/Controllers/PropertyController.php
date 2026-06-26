@@ -109,6 +109,14 @@ class PropertyController
             'units'    => (int) ($data['units'] ?? 0),
             'image'    => $data['image'] ?? null,
             'rent'     => $data['rent'] ?? 0,
+            'payment_method_type' => $data['payment_method_type'] ?? null,
+            'paybill_number'      => $data['paybill_number'] ?? null,
+            'paybill_account'     => $data['paybill_account'] ?? null,
+            'till_number'         => $data['till_number'] ?? null,
+            'bank_name'           => $data['bank_name'] ?? null,
+            'bank_account'        => $data['bank_account'] ?? null,
+            'bank_branch'         => $data['bank_branch'] ?? null,
+            'mobile_money_number' => $data['mobile_money_number'] ?? null,
         ]);
 
         $property = $db->fetchOne(
@@ -140,8 +148,11 @@ class PropertyController
         }
 
         $updateData = [];
-        foreach (['name', 'address', 'type', 'units', 'image', 'rent'] as $field) {
-            if (isset($data[$field])) {
+        foreach (['name', 'address', 'type', 'units', 'image', 'rent',
+                      'payment_method_type', 'paybill_number', 'paybill_account',
+                      'till_number', 'bank_name', 'bank_account', 'bank_branch',
+                      'mobile_money_number'] as $field) {
+            if (array_key_exists($field, $data)) {
                 $updateData[$field] = $data[$field];
             }
         }

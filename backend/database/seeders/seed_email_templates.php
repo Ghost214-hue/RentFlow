@@ -59,7 +59,7 @@ $templates = [
         'name' => 'Rent Reminder',
         'type' => 'email',
         'subject' => 'Rent Reminder - {{month}}',
-        'body' => "Dear {{tenant}},\n\nThis is a friendly reminder that your rent for {{month}} is due soon.\n\nAmount Due: KES {{amount}}\nDue Date: 5th of the month\nCurrent Balance: KES {{balance}}\n\nPlease make your payment before the due date to avoid late fees.\n\nYou can make payments through:\n- M-Pesa\n- Bank Transfer\n- Cash at the office\n\nBest regards,\nProperty Management",
+        'body' => "Dear {{tenant}},\n\nThis is a friendly reminder that your rent for {{month}} is due soon.\n\nAmount Due: KES {{amount}}\nDue Date: 5th of the month\nCurrent Balance: KES {{balance}}\n\nPlease make your payment before the due date to avoid late fees.\n\nPayment Instructions:\n{{payment_instructions}}\n\nBest regards,\nProperty Management",
         'created_at' => date('Y-m-d H:i:s')
     ],
     [
@@ -67,7 +67,7 @@ $templates = [
         'name' => 'Rent Reminder Final',
         'type' => 'email',
         'subject' => 'URGENT: Rent Due Tomorrow - {{month}}',
-        'body' => "Dear {{tenant}},\n\nThis is an urgent reminder that your rent for {{month}} is due TOMORROW.\n\nAmount Due: KES {{amount}}\nDue Date: 5th of the month\nCurrent Balance: KES {{balance}}\n\nPlease make your payment immediately to avoid late fees and penalties.\n\nIf you have already made the payment, please disregard this message.\n\nBest regards,\nProperty Management",
+        'body' => "Dear {{tenant}},\n\nThis is an urgent reminder that your rent for {{month}} is due TOMORROW.\n\nAmount Due: KES {{amount}}\nDue Date: 5th of the month\nCurrent Balance: KES {{balance}}\n\nPlease make your payment immediately to avoid late fees and penalties.\n\nPayment Instructions:\n{{payment_instructions}}\n\nIf you have already made the payment, please disregard this message.\n\nBest regards,\nProperty Management",
         'created_at' => date('Y-m-d H:i:s')
     ],
     [
