@@ -57,6 +57,22 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 </div>
             </div>
 
+            <!-- Vacate House Section -->
+            <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5 mb-6" id="vacateSection" style="display:none;">
+                <div class="flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-door-open text-red-600"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-slate-900">Vacate House</h3>
+                        <p class="text-sm text-slate-500 mt-1">If you are planning to move out, you can terminate your tenancy here. This will free up your house and update your records.</p>
+                        <button onclick="vacateHouse()" class="mt-3 px-4 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white font-medium hover:from-red-600 hover:to-red-700 transition-all shadow-sm">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Terminate Tenancy / Vacate House
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Recent Activity -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
@@ -106,6 +122,14 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 const me = tenantData.tenants[0]; // First tenant is current user
                 document.getElementById('myUnit').textContent = me.house_unit || '-';
                 document.getElementById('myBalance').textContent = 'KES ' + (me.balance || 0).toLocaleString();
+                
+                // Show/hide vacate section based on house assignment
+                const vacateSection = document.getElementById('vacateSection');
+                if (me.house_id && me.house_unit) {
+                    vacateSection.style.display = 'block';
+                } else {
+                    vacateSection.style.display = 'none';
+                }
             }
 
             // Load payments
@@ -145,6 +169,42 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         } catch(e) {
             console.error(e);
             if (e.message.includes('401')) window.location.href = '/signin';
+        }
+    }
+
+    async function vacateHouse() {
+        if (!confirm('Are you sure you want to terminate your tenancy and vacate the house? This will make your house vacant and cannot be undone.')) {
+            return;
+        }
+        
+        try {
+            const tenantRes = await fetch(`${API}/tenants`, { headers });
+            const tenantData = await tenantRes.json();
+            if (!tenantData.tenants || tenantData.tenants.length === 0) {
+                toast('Tenant not found', 'error');
+                return;
+            }
+            
+            const tenantId = tenantData.tenants[0].id;
+            
+            const response = await fetch(`${API}/tenants/${tenantId}/vacate`, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({})
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                toast(result.message || 'Tenancy terminated successfully. House is now vacant.', 'success');
+                // Reload dashboard to reflect changes
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                toast(result.error || 'Failed to vacate house', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            toast('An error occurred. Please try again.', 'error');
         }
     }
 

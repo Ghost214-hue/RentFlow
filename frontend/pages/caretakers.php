@@ -145,7 +145,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
     async function loadProperties(selectedIds = []) {
         try {
-            const res = await fetch(`${API}/properties`, { headers });
+            const res = await fetch(`${API}/properties/available`, { headers });
             const data = await parseJsonResponse(res);
             const select = document.getElementById('caretakerProperties');
             if (!res.ok) throw new Error(data.error || `Failed to load properties (${res.status})`);

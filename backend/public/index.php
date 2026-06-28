@@ -49,6 +49,9 @@ $router->post('/auth/login', ['App\Controllers\AuthController', 'login']);
 $router->post('/auth/register', ['App\Controllers\AuthController', 'register']);
 $router->post('/auth/logout', ['App\Controllers\AuthController', 'logout']);
 $router->get('/auth/me', ['App\Controllers\AuthController', 'me'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/auth/forgot-password', ['App\Controllers\AuthController', 'forgotPassword']);
+$router->post('/auth/verify-reset-code', ['App\Controllers\AuthController', 'verifyResetCode']);
+$router->post('/auth/reset-password', ['App\Controllers\AuthController', 'resetPassword']);
 
 // ==================== DASHBOARD ROUTES ====================
 $router->get('/dashboard', ['App\Controllers\DashboardController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
@@ -73,6 +76,7 @@ $router->get('/tenants', ['App\Controllers\TenantController', 'index'], [functio
 $router->get('/tenants/{id}', ['App\Controllers\TenantController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/tenants', ['App\Controllers\TenantController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/tenants/{id}', ['App\Controllers\TenantController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/tenants/{id}/vacate', ['App\Controllers\TenantController', 'vacate'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/tenants/{id}', ['App\Controllers\TenantController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== PAYMENT ROUTES ====================

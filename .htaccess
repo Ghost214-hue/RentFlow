@@ -1,13 +1,15 @@
 # RentFlow - Apache Rewrite Rules
 RewriteEngine On
-RewriteBase /RentFlow/
+RewriteBase /RentalFlow/
 
 # Route /api/* requests to backend entry point
 RewriteRule ^api/(.*)$ backend/public/index.php [QSA,L]
 
-# Route signin/signup pages
+# Route signin/signup/forgot-password pages
 RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
 RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
+RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
+RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
 
 # Route standalone page files (houses, properties, dashboard, etc.)
 RewriteCond %{REQUEST_FILENAME} !-f

@@ -266,6 +266,57 @@ class DocumentController
         $publishedDate = $document['published_at'] ? date('F j, Y', strtotime($document['published_at'])) : 'N/A';
         $propertyName = $document['property_name'] ?? 'All Properties';
 
+        $paymentBlock = '';
+        $propertyId = isset($document['property_id']) ? (int) $document['property_id'] : 0;
+        $db = Database::getInstance();
+
+        // Resolve property ID from document, tenant house, or caretaker assignment
+        if (!$propertyId) {
+            $role = Router::getAuthRole();
+            if ($role === 'tenant') {
+                $tenantId = Router::getAuthTenantId();
+                $ownerId = Router::getAuthUserId();
+                $house = $db->fetchOne(
+                    "SELECT h.property_id FROM houses h JOIN tenants t ON h.tenant_id = t.id WHERE t.id = ? AND t.owner_id = ? AND h.status = 'occupied' LIMIT 1",
+                    [$tenantId, $ownerId]
+                );
+                if ($house) $propertyId = (int) $house['property_id'];
+            } elseif ($role === 'caretaker') {
+                $ownerId = Router::getAuthUserId();
+                $caretaker = $db->fetchOne(
+                    "SELECT assigned_properties FROM caretakers WHERE owner_id = ? AND id = (SELECT caretaker_id FROM users WHERE id = ?)",
+                    [$ownerId, Router::getAuthUserId()]
+                );
+                if (!empty($caretaker['assigned_properties'])) {
+                    $ids = array_map('intval', explode(',', $caretaker['assigned_properties']));
+                    $propertyId = $ids[0];
+                }
+            }
+        }
+
+        if ($propertyId) {
+            $prop = $db->fetchOne("SELECT payment_method_type, paybill_number, paybill_account, till_number, bank_name, bank_account, bank_branch, mobile_money_number FROM properties WHERE id = ?", [$propertyId]);
+            if ($prop) {
+                $parts = [];
+                $method = $prop['payment_method_type'] ?? '';
+                if ($method === 'paybill' && ($prop['paybill_number'] || $prop['paybill_account'])) {
+                    $parts[] = 'Paybill: ' . trim(($prop['paybill_number'] ?? '') . ' ' . ($prop['paybill_account'] ?? ''));
+                }
+                if ($method === 'till' && ($prop['till_number'] ?? '')) {
+                    $parts[] = 'Till Number: ' . $prop['till_number'];
+                }
+                if ($method === 'bank' && ($prop['bank_name'] || $prop['bank_account'] || $prop['bank_branch'])) {
+                    $parts[] = 'Bank: ' . trim(($prop['bank_name'] ?? '') . ' ' . ($prop['bank_account'] ?? '') . ' ' . ($prop['bank_branch'] ?? ''));
+                }
+                if ($method === 'mobile_money' && ($prop['mobile_money_number'] ?? '')) {
+                    $parts[] = 'Mobile Money: ' . $prop['mobile_money_number'];
+                }
+                if ($parts) {
+                    $paymentBlock = '<div class="payment-section" style="margin-top:30px; padding:15px; background:#f8fafc; border-left:4px solid #2563eb; border-radius:6px;"><strong>Payment Instructions</strong><br>' . nl2br(htmlspecialchars(implode("\n", $parts))) . '</div>';
+                }
+            }
+        }
+
         $html = <<<HTML
 <!DOCTYPE html>
 <html>
@@ -301,6 +352,8 @@ class DocumentController
         <div class="content">
             {$content}
         </div>
+        
+        {$paymentBlock}
         
         <div class="footer">
             <p>RentFlow Property Management System</p>

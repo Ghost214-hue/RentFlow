@@ -7,7 +7,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Up - RentalFlow</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+   <link rel="stylesheet" href="/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -56,6 +56,10 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                         </div>
                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" id="regEmail" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="you@example.com" required></div>
                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Password</label><input type="password" id="regPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Min 6 characters" minlength="6" required></div>
+                        <div class="flex items-start gap-2">
+                            <input type="checkbox" id="regTerms" class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" required>
+                            <label for="regTerms" class="text-sm text-slate-600">I have read and agree to the <a href="/terms-and-conditions" target="_blank" class="text-blue-600 hover:underline font-medium">terms and conditions</a> of RentalFlow</label>
+                        </div>
                         <button type="submit" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Create Account</button>
                     </form>
                     <div class="mt-6 text-center">

@@ -272,6 +272,93 @@ class TenantController
     }
 
     /**
+     * POST /api/tenants/{id}/vacate - Move tenant out (vacate house)
+     * Clears house occupancy and updates related records
+     */
+    public function vacate(array $params): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $tenantId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        // Get tenant with house and property details
+        $tenant = $db->fetchOne(
+            "SELECT t.id, t.name, t.house_id, t.property_id, h.unit as house_unit, h.rent, p.name as property_name
+             FROM tenants t
+             LEFT JOIN houses h ON t.house_id = h.id
+             LEFT JOIN properties p ON t.property_id = p.id
+             WHERE t.id = ? AND t.owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+        if (!$tenant) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        // Only owner or the tenant themselves can vacate
+        if ($role !== 'owner') {
+            if ($role !== 'tenant' || Router::getAuthTenantId() !== $tenantId) {
+                Router::jsonResponse(['error' => 'Not authorized'], 403);
+            }
+        }
+
+        if (empty($tenant['house_id'])) {
+            Router::jsonResponse(['error' => 'Tenant is not currently occupying a house'], 400);
+        }
+
+        try {
+            $db->beginTransaction();
+
+            // Release the house
+            $db->update('houses', [
+                'status' => 'vacant',
+                'tenant_id' => null,
+            ], 'id = ? AND owner_id = ?', [$tenant['house_id'], $ownerId]);
+
+            // Clear tenant house and property references and mark as terminated
+            $db->update('tenants', [
+                'house_id' => null,
+                'property_id' => null,
+                'lease_end' => date('Y-m-d'),
+                'status' => 'terminated',
+            ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+
+            // Update property occupied count
+            if ($tenant['property_id']) {
+                $occupied = $db->fetchOne(
+                    "SELECT COUNT(*) as total FROM houses WHERE property_id = ? AND status = 'occupied'",
+                    [$tenant['property_id']]
+                );
+                $db->update('properties', ['occupied' => $occupied['total']], 'id = ?', [$tenant['property_id']]);
+            }
+
+            $db->commit();
+
+            // Send vacate confirmation email to tenant if email exists
+            $emailSent = false;
+            try {
+                $emailService = new EmailService();
+                $emailSent = $emailService->sendTenantVacate(
+                    $ownerId,
+                    $tenantId,
+                    $tenant['property_name'] ?? 'N/A',
+                    $tenant['house_unit'] ?? 'N/A'
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to send vacate email: ' . $e->getMessage());
+            }
+
+            Router::jsonResponse([
+                'message' => 'Tenant vacated successfully' . ($emailSent ? ' & confirmation email sent' : ''),
+                'email_sent' => $emailSent
+            ]);
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) $db->rollback();
+            Router::jsonResponse(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
      * DELETE /api/tenants/{id}
      */
     public function destroy(array $params): void

@@ -18,6 +18,18 @@ if ($pageName === 'signup') {
     exit;
 }
 
+// Handle forgot-password page
+if ($pageName === 'forgot-password') {
+    require __DIR__ . '/forgot-password.php';
+    exit;
+}
+
+// Handle terms-and-conditions page
+if ($pageName === 'terms-and-conditions') {
+    require __DIR__ . '/../pages/terms-and-conditions.php';
+    exit;
+}
+
 // Check if this is a valid authenticated page
 $validPages = ['dashboard', 'properties', 'houses', 'tenants', 'caretakers', 'bills', 'payments', 'complaints', 'communications', 'reports', 'tenant-dashboard', 'tenant-profile', 'settings'];
 $pageFile = __DIR__ . '/../pages/' . $pageName . '.php';

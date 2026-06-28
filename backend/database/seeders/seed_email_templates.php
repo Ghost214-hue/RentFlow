@@ -78,6 +78,22 @@ $templates = [
         'body' => "Dear {{tenant}},\n\nYour lease for {{house}} is expiring soon.\n\nWe would like to discuss renewal options with you. Please contact us to schedule a meeting or visit our office.\n\nWe value you as a tenant and look forward to continuing our relationship.\n\nBest regards,\nProperty Management",
         'created_at' => date('Y-m-d H:i:s')
     ],
+    [
+        'owner_id' => 1,
+        'name' => 'Tenant Vacate',
+        'type' => 'email',
+        'subject' => 'Tenancy Termination Confirmation - {{property}}',
+        'body' => "Dear {{tenant}},\n\nThis is to confirm that your tenancy has been successfully terminated.\n\nVacate Details:\n- Property: {{property}}\n- Unit/House: {{house}}\n- Termination Date: {{date}}\n- National ID: {{national_id}}\n\nYour house has been marked as vacant and is now available for new tenants. We thank you for having been part of our community.\n\nIf you have any final questions or need assistance with the move-out process, please contact us.\n\nWe wish you all the best in your next home.\n\nBest regards,\nProperty Management",
+        'created_at' => date('Y-m-d H:i:s')
+    ],
+    [
+        'owner_id' => 1,
+        'name' => 'Password Reset',
+        'type' => 'email',
+        'subject' => 'Password Reset Code - RentFlow',
+        'body' => "Dear {{name}},\n\nWe received a request to reset your password for your RentFlow account.\n\nYour verification code is: {{code}}\n\nThis code will expire in {{expires}}.\n\nIf you did not request a password reset, please ignore this email and your password will remain unchanged.\n\nTo reset your password:\n1. Enter the verification code above\n2. Create a new secure password\n\nBest regards,\nRentFlow Team",
+        'created_at' => date('Y-m-d H:i:s')
+    ],
 ];
 
 foreach ($templates as $template) {

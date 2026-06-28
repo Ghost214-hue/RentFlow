@@ -36,6 +36,7 @@ require_once __DIR__ . '/../includes/auth.php';
                     <h3 id="viewDocTitle" class="text-xl font-bold text-slate-900">Document Title</h3>
                     <p id="viewDocMeta" class="text-sm text-slate-500 mt-1"></p>
                 </div>
+                <div id="paymentBadge" class="hidden px-3 py-2 rounded-xl text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-100"></div>
                 <div class="flex items-center gap-2">
                     <button onclick="downloadPdf()" class="px-4 py-2 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all inline-flex items-center gap-2">
                         <i class="fas fa-file-pdf"></i>Download PDF
@@ -129,16 +130,46 @@ require_once __DIR__ . '/../includes/auth.php';
         try {
             const res = await fetch(`${API}/documents/${id}`, { headers });
             const data = await res.json();
-            
+
             if (!res.ok) throw new Error(data.error || 'Failed to load document');
-            
+
             const doc = data.document;
             currentDocumentId = id;
-            
+
             document.getElementById('viewDocTitle').textContent = doc.title;
             document.getElementById('viewDocMeta').textContent = `${doc.type} • Version ${doc.version} • Published: ${doc.published_at ? new Date(doc.published_at).toLocaleDateString('en-GB') : 'N/A'}`;
             document.getElementById('viewDocContent').textContent = doc.content;
-            
+
+            const badge = document.getElementById('paymentBadge');
+            if (doc.property && doc.property.payment_method_type) {
+                let text = '';
+                const p = doc.property;
+                switch (p.payment_method_type) {
+                    case 'paybill':
+                        text += `Paybill: ${p.paybill_number || ''}` + (p.paybill_account ? ` (${p.paybill_account})` : '');
+                        break;
+                    case 'till':
+                        text += `Till: ${p.till_number || ''}`;
+                        break;
+                    case 'bank':
+                        text += `${p.bank_name || 'Bank'}${p.bank_branch ? ' - ' + p.bank_branch : ''}${p.bank_account ? ' • Acc: ' + p.bank_account : ''}`;
+                        break;
+                    case 'mobile_money':
+                        text += `M-Pesa: ${p.mobile_money_number || ''}`;
+                        break;
+                    default:
+                        text = '';
+                }
+                if (text) {
+                    badge.textContent = text;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            } else {
+                badge.classList.add('hidden');
+            }
+
             document.getElementById('viewDocumentModal').classList.remove('hidden');
         } catch(e) {
             toast(e.message, 'error');

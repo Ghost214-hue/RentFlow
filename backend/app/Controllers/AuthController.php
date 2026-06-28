@@ -187,10 +187,14 @@ class AuthController
             }
 
             $tenant = $db->fetchOne(
-                "SELECT id, owner_id, name, email, password, phone FROM tenants WHERE email = ?",
+                "SELECT id, owner_id, name, email, password, phone, status FROM tenants WHERE email = ?",
                 [$data['email']]
             );
             if ($tenant && !empty($tenant['password']) && password_verify($data['password'], $tenant['password'])) {
+                // Block terminated tenants from logging in
+                if (($tenant['status'] ?? 'active') === 'terminated') {
+                    Router::jsonResponse(['error' => 'Your tenancy has been terminated. Please contact the property owner for assistance.'], 403);
+                }
                 $token = JWT::encode([
                     'owner_id' => (int) $tenant['owner_id'],
                     'actor_id' => (int) $tenant['id'],
@@ -292,6 +296,212 @@ class AuthController
         session_destroy();
         setcookie('rf_token', '', time() - 42000, '/');
         Router::jsonResponse(['message' => 'Logged out successfully']);
+    }
+
+    /**
+     * POST /api/auth/forgot-password
+     * Request a password reset code
+     */
+    public function forgotPassword(): void
+    {
+        try {
+            $data = Router::getRequestBody();
+            $email = trim((string) ($data['email'] ?? ''));
+            
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                Router::jsonResponse(['error' => 'Please enter a valid email address'], 400);
+            }
+            
+            $db = Database::getInstance();
+            
+            // Check if email exists in owners, tenants, or caretakers
+            $user = null;
+            $userType = null;
+            
+            $owner = $db->fetchOne("SELECT id, name, email FROM owners WHERE email = ?", [$email]);
+            if ($owner) {
+                $user = $owner;
+                $userType = 'owner';
+            }
+            
+            if (!$user) {
+                $tenant = $db->fetchOne("SELECT id, name, email, status FROM tenants WHERE email = ?", [$email]);
+                if ($tenant && $tenant['status'] !== 'terminated') {
+                    $user = $tenant;
+                    $userType = 'tenant';
+                }
+            }
+            
+            if (!$user) {
+                $caretaker = $db->fetchOne("SELECT id, name, email FROM caretakers WHERE email = ?", [$email]);
+                if ($caretaker) {
+                    $user = $caretaker;
+                    $userType = 'caretaker';
+                }
+            }
+            
+            // If user not found, recommend signup
+            if (!$user) {
+                Router::jsonResponse([
+                    'error' => 'No account found with that email address. Please check the email or create a new account.',
+                    'recommend_signup' => true
+                ], 404);
+            }
+            
+            // Generate 6-digit verification code
+            $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $expiresAt = date('Y-m-d H:i:s', time() + 15 * 60); // 15 minutes
+            
+            // Invalidate any existing unused codes for this email
+            $db->update('password_reset_tokens', ['used' => 1], 'email = ? AND used = 0', [$email]);
+            
+            // Store new reset token
+            $db->insert('password_reset_tokens', [
+                'owner_id' => $userType === 'owner' ? (int) $user['id'] : null,
+                'tenant_id' => $userType === 'tenant' ? (int) $user['id'] : null,
+                'email' => $email,
+                'code' => $code,
+                'expires_at' => $expiresAt,
+                'used' => 0,
+                'attempts' => 0,
+            ]);
+            
+            // Send email with reset code
+            $emailSent = false;
+            try {
+                $emailService = new EmailService();
+                $variables = [
+                    'code' => $code,
+                    'expires' => '15 minutes',
+                    'name' => $user['name'],
+                ];
+                $emailSent = $emailService->sendTemplate('Password Reset', 1, $email, $user['name'], $variables);
+            } catch (\Throwable $e) {
+                error_log('Failed to send password reset email: ' . $e->getMessage());
+            }
+            
+            Router::jsonResponse([
+                'message' => 'If an account with that email exists, we have sent a reset code.',
+                'email_sent' => $emailSent
+            ]);
+        } catch (\Throwable $e) {
+            error_log('Forgot password error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'An error occurred. Please try again.'], 500);
+        }
+    }
+    
+    /**
+     * POST /api/auth/verify-reset-code
+     * Verify the reset code
+     */
+    public function verifyResetCode(): void
+    {
+        try {
+            $data = Router::getRequestBody();
+            $email = trim((string) ($data['email'] ?? ''));
+            $code = trim((string) ($data['code'] ?? ''));
+            
+            if (empty($email) || empty($code)) {
+                Router::jsonResponse(['error' => 'Email and code are required'], 400);
+            }
+            
+            $db = Database::getInstance();
+            
+            // Find the most recent unused token for this email
+            $token = $db->fetchOne(
+                "SELECT * FROM password_reset_tokens WHERE email = ? AND used = 0 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1",
+                [$email]
+            );
+            
+            if (!$token) {
+                Router::jsonResponse(['error' => 'Invalid or expired verification code'], 400);
+            }
+            
+            // Check attempts (max 5)
+            if ($token['attempts'] >= 5) {
+                Router::jsonResponse(['error' => 'Too many failed attempts. Please request a new code.'], 400);
+            }
+            
+            // Verify code
+            if ($code !== $token['code']) {
+                // Increment attempts
+                $db->update('password_reset_tokens', 
+                    ['attempts' => $token['attempts'] + 1], 
+                    'id = ?', 
+                    [$token['id']]
+                );
+                $remaining = 5 - ($token['attempts'] + 1);
+                Router::jsonResponse(['error' => "Invalid code. {$remaining} attempts remaining."], 400);
+            }
+            
+            Router::jsonResponse([
+                'message' => 'Code verified successfully',
+                'valid' => true
+            ]);
+        } catch (\Throwable $e) {
+            error_log('Verify reset code error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'An error occurred. Please try again.'], 500);
+        }
+    }
+    
+    /**
+     * POST /api/auth/reset-password
+     * Reset password with verified code
+     */
+    public function resetPassword(): void
+    {
+        try {
+            $data = Router::getRequestBody();
+            $email = trim((string) ($data['email'] ?? ''));
+            $code = trim((string) ($data['code'] ?? ''));
+            $newPassword = (string) ($data['password'] ?? '');
+            
+            if (empty($email) || empty($code) || empty($newPassword)) {
+                Router::jsonResponse(['error' => 'Email, code, and new password are required'], 400);
+            }
+            
+            if (strlen($newPassword) < 6) {
+                Router::jsonResponse(['error' => 'Password must be at least 6 characters'], 400);
+            }
+            
+            $db = Database::getInstance();
+            
+            // Find the most recent unused token for this email
+            $token = $db->fetchOne(
+                "SELECT * FROM password_reset_tokens WHERE email = ? AND used = 0 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1",
+                [$email]
+            );
+            
+            if (!$token || $code !== $token['code']) {
+                Router::jsonResponse(['error' => 'Invalid or expired verification code'], 400);
+            }
+            
+            // Hash new password
+            $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+            
+            // Update password in the appropriate table
+            $updated = false;
+            if ($token['owner_id']) {
+                $updated = $db->update('owners', ['password' => $hashedPassword], 'id = ?', [$token['owner_id']]);
+            } elseif ($token['tenant_id']) {
+                $updated = $db->update('tenants', ['password' => $hashedPassword], 'id = ?', [$token['tenant_id']]);
+            }
+            
+            if (!$updated) {
+                Router::jsonResponse(['error' => 'User not found'], 404);
+            }
+            
+            // Mark token as used
+            $db->update('password_reset_tokens', ['used' => 1], 'id = ?', [$token['id']]);
+            
+            Router::jsonResponse([
+                'message' => 'Password reset successful. You can now login with your new password.',
+                'success' => true
+            ]);
+        } catch (\Throwable $e) {
+            error_log('Reset password error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'An error occurred. Please try again.'], 500);
+        }
     }
 
     /**

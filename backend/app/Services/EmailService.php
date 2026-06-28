@@ -464,4 +464,29 @@ class EmailService
         
         return $this->sendTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
+    
+    /**
+     * Send vacate confirmation email to tenant
+     */
+    public function sendTenantVacate(int $ownerId, int $tenantId, string $propertyName, string $houseUnit): bool
+    {
+        $tenant = $this->db->fetchOne(
+            "SELECT name, email, id_number FROM tenants WHERE id = ? AND owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+        
+        if (!$tenant || empty($tenant['email'])) {
+            return false;
+        }
+        
+        $variables = [
+            'tenant' => $tenant['name'],
+            'property' => $propertyName,
+            'house' => $houseUnit,
+            'date' => date('Y-m-d'),
+            'national_id' => $tenant['id_number'] ?? ''
+        ];
+        
+        return $this->sendTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
+    }
 }

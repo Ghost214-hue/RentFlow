@@ -688,7 +688,7 @@ require_once __DIR__ . '/../includes/auth.php';
         
         houseSelect.innerHTML = '<option value="">Loading...</option>';
         try {
-            const res = await fetch(`${API}/houses?property_id=${propId}&status=vacant`, { headers });
+            const res = await fetch(`${API}/houses/available?property_id=${propId}`, { headers });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed');
             
