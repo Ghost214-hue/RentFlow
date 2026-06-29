@@ -10,7 +10,6 @@ $db = Database::getInstance();
 $existing = $db->fetchOne("SELECT COUNT(*) as count FROM email_templates WHERE owner_id = 1");
 if ($existing && $existing['count'] > 0) {
     echo "Email templates already seeded.\n";
-    exit;
 }
 
 $templates = [
@@ -96,9 +95,13 @@ $templates = [
     ],
 ];
 
-foreach ($templates as $template) {
-    $db->insert('email_templates', $template);
-}
-
-echo "Email templates seeded successfully!\n";
-echo "Total templates: " . count($templates) . "\n";
+    $inserted = 0;
+    foreach ($templates as $template) {
+        $exists = $db->fetchOne("SELECT id FROM email_templates WHERE owner_id = ? AND name = ?", [$template['owner_id'], $template['name']]);
+        if (!$exists) {
+            $db->insert('email_templates', $template);
+            $inserted++;
+        }
+    }
+    
+    echo ($inserted > 0 ? "Inserted $inserted new email templates.\n" : "All templates already exist.\n");

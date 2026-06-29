@@ -39,10 +39,6 @@ class EmailService
         $this->smtpPassword = $env('MAIL_PASSWORD', '');
         $this->smtpEncryption = $env('MAIL_ENCRYPTION', 'tls');
         
-        // Log configuration for debugging
-        error_log("EMAIL CONFIG: useSMTP=" . ($this->useSMTP ? 'true' : 'false') . 
-                   ", host={$this->smtpHost}, port={$this->smtpPort}, " .
-                   "username={$this->smtpUsername}, encryption={$this->smtpEncryption}");
     }
     
     /**
@@ -73,7 +69,11 @@ class EmailService
     public function replaceVariables(string $content, array $data): string
     {
         $replacements = [
+            '{{name}}' => $data['name'] ?? '',
+            '{{code}}' => $data['code'] ?? '',
+            '{{expires}}' => $data['expires'] ?? '',
             '{{tenant}}' => $data['tenant'] ?? '',
+            '{{tenant_name}}' => $data['tenant_name'] ?? $data['tenant'] ?? '',
             '{{amount}}' => $data['amount'] ?? '',
             '{{month}}' => $data['month'] ?? '',
             '{{property}}' => $data['property'] ?? '',
@@ -90,6 +90,10 @@ class EmailService
             '{{owner_name}}' => $data['owner_name'] ?? '',
             '{{days_until_due}}' => $data['days_until_due'] ?? '',
             '{{reply_text}}' => $data['reply_text'] ?? '',
+            '{{reason}}' => $data['reason'] ?? '',
+            '{{title}}' => $data['title'] ?? '',
+            '{{sender_name}}' => $data['sender_name'] ?? '',
+            '{{description}}' => $data['description'] ?? '',
         ];
         
         return str_replace(array_keys($replacements), array_values($replacements), $content);
@@ -204,7 +208,7 @@ class EmailService
             error_log("SMTP Initial response: " . trim($response));
             
             if (substr($response, 0, 3) != '220') {
-                error_log("SMTP: Unexpected initial response code: " . substr($response, 0, 3));
+               error_log("SMTP: Unexpected initial response code: " . substr($response, 0, 3));
                 fclose($socket);
                 return false;
             }

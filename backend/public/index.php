@@ -77,11 +77,15 @@ $router->get('/tenants/{id}', ['App\Controllers\TenantController', 'show'], [fun
 $router->post('/tenants', ['App\Controllers\TenantController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/tenants/{id}', ['App\Controllers\TenantController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/tenants/{id}/vacate', ['App\Controllers\TenantController', 'vacate'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/tenants/{id}/terminate', ['App\Controllers\TenantController', 'terminate'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/tenants/request-termination', ['App\Controllers\TenantController', 'requestTermination'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/tenancy-terminations', ['App\Controllers\TenantController', 'listTerminations'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/tenants/{id}', ['App\Controllers\TenantController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== PAYMENT ROUTES ====================
 $router->get('/payments', ['App\Controllers\PaymentController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/payments', ['App\Controllers\PaymentController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
+$router->put('/payments/{id}/confirm', ['App\Controllers\PaymentController', 'confirm'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== BILL ROUTES ====================
 $router->get('/bills', ['App\Controllers\BillController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
@@ -110,6 +114,84 @@ $router->get('/documents/{id}', ['App\Controllers\DocumentController', 'show'], 
 $router->post('/documents', ['App\Controllers\DocumentController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/documents/{id}', ['App\Controllers\DocumentController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/documents/{id}', ['App\Controllers\DocumentController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
+
+// PDF bill export
+$router->get('/bills/{id}/pdf', function(array $params) {
+    $token = $_GET['token'] ?? null;
+    if (!$token) { http_response_code(401); echo 'Missing token'; exit; }
+    $jwt = new \App\Core\JWT();
+    $user = $jwt->decode($token);
+    if (!$user) { http_response_code(401); echo 'Invalid token'; exit; }
+
+    $ownerId = $user['sub'] ?? 0;
+    $db = \App\Core\Database::getInstance();
+
+    $billId = (int) ($params['id'] ?? 0);
+    $bill = $db->fetchOne(
+        "SELECT b.*, h.unit, p.name as property_name, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email
+         FROM bills b
+         LEFT JOIN houses h ON b.house_id = h.id
+         LEFT JOIN properties p ON h.property_id = p.id
+         LEFT JOIN tenants t ON h.tenant_id = t.id
+         WHERE b.id = ? AND b.owner_id = ?",
+        [$billId, $ownerId]
+    );
+
+    if (!$bill) { http_response_code(404); echo 'Bill not found'; exit; }
+
+    $payments = $db->fetchAll(
+        "SELECT * FROM payments WHERE house_id = ? AND owner_id = ? AND month = ? ORDER BY created_at DESC",
+        [$bill['house_id'], $ownerId, $bill['month']]
+    );
+
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!DOCTYPE html><html><head><title>Invoice</title><style>
+      body{font-family: Arial, sans-serif; color:#111; padding:24px;}
+      .box{max-width:800px; margin:0 auto; border:1px solid #e2e8f0; padding:32px; border-radius:8px;}
+      h1{font-size:22px; margin-bottom:6px;}.muted{color:#666; font-size:12px; margin-bottom:18px;}
+      table{width:100%; border-collapse:collapse; margin-top:14px;}
+      th,td{text-align:left; padding:8px 6px; border-bottom:1px solid #e5e7eb; font-size:14px;}
+      th{background:#f8fafc; font-weight:600;}
+      .right{text-align:right;}.total{font-weight:700; font-size:16px; margin-top:6px;}
+      .footer{margin-top:22px; font-size:12px; color:#666;}
+      .btn-print{display:inline-block; margin-bottom:14px; padding:8px 12px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer;}
+    </style></head><body>
+    <div class="box">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div><h1>Invoice</h1><div class="muted">'.htmlspecialchars($bill['property_name'] ?? '').'</div></div>
+        <div><button class="btn-print" onclick="window.print()">Print / Save as PDF</button></div>
+      </div>
+      <div class="muted">Month: '.htmlspecialchars($bill['month']).' &nbsp;|&nbsp; Unit: '.htmlspecialchars($bill['unit']).'</div>
+      <table>
+        <thead><tr><th>Tenant</th><th class="right">Amount</th><th class="right">Paid</th><th class="right">Balance</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>'.htmlspecialchars($bill['tenant_name'] ?? 'N/A').'<br><span style="color:#666;font-size:12px;">'.htmlspecialchars($bill['tenant_phone'] ?? '').'</span></td>
+            <td class="right">KES '.number_format((float)($bill['total'] ?? 0), 2).'</td>
+            <td class="right">KES '.number_format((float)($bill['paid'] ?? 0), 2).'</td>
+            <td class="right">KES '.number_format((float)$bill['balance'] ?? 0, 2).'</td>
+            <td>'.htmlspecialchars($bill['status'] ?? 'pending').'</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="total right">Balance Due: KES '.number_format((float)$bill['balance'] ?? 0, 2).'</div>
+
+      <h3 style="margin-top:22px; font-size:16px;">Payments</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Receipt</th><th>Method</th><th class="right">Amount</th><th>Status</th></tr></thead>
+        <tbody>';
+    if ($payments) {
+        foreach ($payments as $p) {
+            echo '<tr><td>'.htmlspecialchars($p['date'] ?? '').'</td><td>'.htmlspecialchars($p['receipt'] ?? '').'</td><td>'.htmlspecialchars($p['method'] ?? '').'<td class="right">KES '.number_format((float)($p['amount'] ?? 0), 2).'</td><td>'.htmlspecialchars($p['status'] ?? '').'</td></tr>';
+        }
+    } else {
+        echo '<tr><td colspan="5" style="color:#888;">No payments recorded</td></tr>';
+    }
+    echo '</tbody></table>
+      <div class="footer">Generated by RentFlow &middot; '.date('Y-m-d H:i').'</div>
+    </div>
+    </body></html>';
+});
 
 // ==================== REPORT ROUTES ====================
 $router->get('/reports', ['App\Controllers\ReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);

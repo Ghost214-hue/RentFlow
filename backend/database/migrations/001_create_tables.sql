@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS `payments` (
     `owner_id` INT UNSIGNED NOT NULL,
     `tenant_id` INT UNSIGNED NOT NULL,
     `house_id` INT UNSIGNED DEFAULT NULL,
+    `month` VARCHAR(7) DEFAULT NULL COMMENT 'YYYY-MM format for billing period',
     `amount` DECIMAL(12,2) NOT NULL,
     `type` ENUM('Rent', 'Water', 'Electricity', 'Deposit') DEFAULT 'Rent',
     `method` VARCHAR(50) DEFAULT 'M-Pesa',
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS `payments` (
     INDEX `idx_payments_owner` (`owner_id`),
     INDEX `idx_payments_tenant` (`tenant_id`),
     INDEX `idx_payments_status` (`status`),
+    INDEX `idx_payments_month` (`month`),
     CONSTRAINT `fk_payments_owner` FOREIGN KEY (`owner_id`) REFERENCES `owners`(`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_payments_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -121,6 +123,7 @@ CREATE TABLE IF NOT EXISTS `bills` (
     `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `owner_id` INT UNSIGNED NOT NULL,
     `house_id` INT UNSIGNED NOT NULL,
+    `tenant_id` INT UNSIGNED DEFAULT NULL COMMENT 'Snapshotted at generation time',
     `month` VARCHAR(7) NOT NULL COMMENT 'YYYY-MM format',
     `rent` DECIMAL(12,2) DEFAULT 0.00,
     `water` DECIMAL(12,2) DEFAULT 0.00,
@@ -132,9 +135,11 @@ CREATE TABLE IF NOT EXISTS `bills` (
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_bills_owner` (`owner_id`),
     INDEX `idx_bills_house` (`house_id`),
+    INDEX `idx_bills_tenant` (`tenant_id`),
     INDEX `idx_bills_month` (`month`),
     CONSTRAINT `fk_bills_owner` FOREIGN KEY (`owner_id`) REFERENCES `owners`(`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_bills_house` FOREIGN KEY (`house_id`) REFERENCES `houses`(`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_bills_house` FOREIGN KEY (`house_id`) REFERENCES `houses`(`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_bills_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `complaints` (

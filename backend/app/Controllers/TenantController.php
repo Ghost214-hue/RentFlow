@@ -8,7 +8,7 @@ use App\Services\EmailService;
 
 class TenantController
 {
-   
+    
     public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
@@ -40,7 +40,7 @@ class TenantController
         Router::jsonResponse(['tenants' => $tenants]);
     }
 
-   
+    
     public function show(array $params): void
     {
         $ownerId = Router::getAuthUserId();
@@ -272,7 +272,275 @@ class TenantController
     }
 
     /**
-     * POST /api/tenants/{id}/vacate - Move tenant out (vacate house)
+     * POST /api/tenants/request-termination
+     * Tenant-initiated: tenant requests to terminate their tenancy
+     */
+    public function requestTermination(): void
+    {
+        $actorId = Router::getAuthActorId();
+        $role = Router::getAuthRole();
+        $ownerId = Router::getAuthUserId();
+        $data = Router::getRequestBody();
+        $db = Database::getInstance();
+
+        // Only tenants can use this endpoint
+        if ($role !== 'tenant') {
+            Router::jsonResponse(['error' => 'Only tenants can request termination'], 403);
+        }
+
+        $tenantId = Router::getAuthTenantId();
+        if (!$tenantId) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        // Get tenant details with property/house
+        $tenant = $db->fetchOne(
+            "SELECT t.*, p.name as property_name, h.unit as house_unit
+             FROM tenants t
+             LEFT JOIN properties p ON t.property_id = p.id
+             LEFT JOIN houses h ON t.house_id = h.id
+             WHERE t.id = ? AND t.owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+
+        if (!$tenant) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        // Check if tenant is currently in a house
+        if (empty($tenant['house_id'])) {
+            Router::jsonResponse(['error' => 'You are not currently occupying a house'], 400);
+        }
+
+        // Check if already has a pending termination
+        $pendingExists = $db->fetchOne(
+            "SELECT id FROM tenancy_terminations WHERE tenant_id = ? AND status = 'pending'",
+            [$tenantId]
+        );
+        if ($pendingExists) {
+            Router::jsonResponse(['error' => 'You already have a pending termination request'], 400);
+        }
+
+        $reason = trim((string) ($data['reason'] ?? ''));
+        $effectiveDate = trim((string) ($data['effective_date'] ?? date('Y-m-d', strtotime('+30 days'))));
+
+        try {
+            $db->beginTransaction();
+
+            // Update tenant status to pending_termination
+            $db->update('tenants', ['status' => 'pending_termination'], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+
+            // Create termination request record
+            $db->insert('tenancy_terminations', [
+                'owner_id' => $ownerId,
+                'tenant_id' => $tenantId,
+                'property_id' => $tenant['property_id'],
+                'house_id' => $tenant['house_id'],
+                'initiated_by' => 'tenant',
+                'initiated_by_user_id' => $tenantId,
+                'reason' => $reason,
+                'effective_date' => $effectiveDate,
+                'status' => 'pending',
+            ]);
+
+            $db->commit();
+
+            // Send email notification to owner
+            $emailSent = false;
+            try {
+                $owner = $db->fetchOne("SELECT name, email FROM owners WHERE id = ?", [$ownerId]);
+                if ($owner && !empty($owner['email'])) {
+                    $emailService = new EmailService();
+                    $emailSent = $emailService->sendTemplate('Termination Request', $ownerId, $owner['email'], $owner['name'], [
+                        'owner_name' => $owner['name'],
+                        'tenant_name' => $tenant['name'],
+                        'property' => $tenant['property_name'] ?? 'N/A',
+                        'house' => $tenant['house_unit'] ?? 'N/A',
+                        'date' => $effectiveDate,
+                        'reason' => $reason ?: 'Not provided',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                error_log('Failed to send termination request email: ' . $e->getMessage());
+            }
+
+            Router::jsonResponse([
+                'message' => 'Termination request submitted. The property owner has been notified.',
+                'email_sent' => $emailSent,
+                'status' => 'pending'
+            ]);
+
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) $db->rollback();
+            Router::jsonResponse(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * POST /api/tenants/{id}/terminate
+     * Owner/Caretaker-initiated: directly terminate a tenant's tenancy
+     */
+    public function terminate(array $params): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $tenantId = (int) ($params['id'] ?? 0);
+        $data = Router::getRequestBody();
+        $db = Database::getInstance();
+
+        // Only owner or caretaker can directly terminate
+        if ($role !== 'owner' && $role !== 'caretaker') {
+            Router::jsonResponse(['error' => 'Not authorized'], 403);
+        }
+
+        // Get tenant with house and property
+        $tenant = $db->fetchOne(
+            "SELECT t.*, p.name as property_name, h.unit as house_unit, o.name as owner_name
+             FROM tenants t
+             LEFT JOIN properties p ON t.property_id = p.id
+             LEFT JOIN houses h ON t.house_id = h.id
+             LEFT JOIN owners o ON t.owner_id = o.id
+             WHERE t.id = ? AND t.owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+
+        if (!$tenant) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        // If caretaker, check they manage this property
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!in_array($tenant['property_id'], $propertyIds)) {
+                Router::jsonResponse(['error' => 'Not authorized to terminate this tenant'], 403);
+            }
+        }
+
+        $reason = trim((string) ($data['reason'] ?? ''));
+        $effectiveDate = trim((string) ($data['effective_date'] ?? date('Y-m-d')));
+
+        try {
+            $db->beginTransaction();
+
+            // Release the house if occupied
+            if (!empty($tenant['house_id'])) {
+                $db->update('houses', [
+                    'status' => 'vacant',
+                    'tenant_id' => null,
+                ], 'id = ? AND owner_id = ?', [$tenant['house_id'], $ownerId]);
+            }
+
+            // Update tenant record
+            $db->update('tenants', [
+                'house_id' => null,
+                'property_id' => null,
+                'lease_end' => $effectiveDate,
+                'status' => 'terminated',
+            ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+
+            // Update property occupied count
+            if ($tenant['property_id']) {
+                $occupied = $db->fetchOne(
+                    "SELECT COUNT(*) as total FROM houses WHERE property_id = ? AND status = 'occupied'",
+                    [$tenant['property_id']]
+                );
+                $db->update('properties', ['occupied' => $occupied['total']], 'id = ?', [$tenant['property_id']]);
+            }
+
+            // Create or update termination record
+            $existingTermination = $db->fetchOne(
+                "SELECT id FROM tenancy_terminations WHERE tenant_id = ? AND status = 'pending'",
+                [$tenantId]
+            );
+
+            if ($existingTermination) {
+                $db->update('tenancy_terminations', [
+                    'status' => 'completed',
+                    'reason' => $reason,
+                    'effective_date' => $effectiveDate,
+                ], 'id = ?', [$existingTermination['id']]);
+            } else {
+                $db->insert('tenancy_terminations', [
+                    'owner_id' => $ownerId,
+                    'tenant_id' => $tenantId,
+                    'property_id' => $tenant['property_id'],
+                    'house_id' => $tenant['house_id'],
+                    'initiated_by' => $role,
+                    'initiated_by_user_id' => $role === 'owner' ? $ownerId : Router::getAuthActorId(),
+                    'reason' => $reason,
+                    'effective_date' => $effectiveDate,
+                    'status' => 'completed',
+                ]);
+            }
+
+            $db->commit();
+
+            // Send termination notice email to tenant
+            $emailSent = false;
+            try {
+                if (!empty($tenant['email'])) {
+                    $emailService = new EmailService();
+                    $emailSent = $emailService->sendTemplate('Termination Notice', $ownerId, $tenant['email'], $tenant['name'], [
+                        'tenant_name' => $tenant['name'],
+                        'property' => $tenant['property_name'] ?? 'N/A',
+                        'house' => $tenant['house_unit'] ?? 'N/A',
+                        'date' => $effectiveDate,
+                        'reason' => $reason ?: 'Not provided',
+                        'owner_name' => $tenant['owner_name'] ?? 'Property Manager',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                error_log('Failed to send termination notice email: ' . $e->getMessage());
+            }
+
+            Router::jsonResponse([
+                'message' => 'Tenancy terminated successfully' . ($emailSent ? ' & notice email sent' : ''),
+                'email_sent' => $emailSent,
+                'status' => 'terminated'
+            ]);
+
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) $db->rollback();
+            Router::jsonResponse(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * GET /api/tenancy-terminations
+     * List termination records for filtering/audit
+     */
+    public function listTerminations(): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $db = Database::getInstance();
+
+        $sql = "SELECT tt.*, t.name as tenant_name, t.email as tenant_email, 
+                       p.name as property_name, h.unit as house_unit
+                FROM tenancy_terminations tt
+                LEFT JOIN tenants t ON tt.tenant_id = t.id
+                LEFT JOIN properties p ON tt.property_id = p.id
+                LEFT JOIN houses h ON tt.house_id = h.id
+                WHERE tt.owner_id = ?";
+        $params = [$ownerId];
+
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (empty($propertyIds)) {
+                Router::jsonResponse(['terminations' => []]);
+            }
+            $sql .= " AND tt.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $params = array_merge($params, $propertyIds);
+        }
+
+        $sql .= " ORDER BY tt.created_at DESC";
+        $terminations = $db->fetchAll($sql, $params);
+
+        Router::jsonResponse(['terminations' => $terminations]);
+    }
+
+    /**
+     * POST /api/tenants/{id}/vacate - Legacy: Move tenant out (vacate house)
      * Clears house occupancy and updates related records
      */
     public function vacate(array $params): void
@@ -306,6 +574,10 @@ class TenantController
             Router::jsonResponse(['error' => 'Tenant is not currently occupying a house'], 400);
         }
 
+        $data = Router::getRequestBody();
+        $reason = trim((string) ($data['reason'] ?? ''));
+        $effectiveDate = trim((string) ($data['effective_date'] ?? date('Y-m-d')));
+
         try {
             $db->beginTransaction();
 
@@ -319,7 +591,7 @@ class TenantController
             $db->update('tenants', [
                 'house_id' => null,
                 'property_id' => null,
-                'lease_end' => date('Y-m-d'),
+                'lease_end' => $effectiveDate,
                 'status' => 'terminated',
             ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
 
@@ -332,9 +604,34 @@ class TenantController
                 $db->update('properties', ['occupied' => $occupied['total']], 'id = ?', [$tenant['property_id']]);
             }
 
+            // Create audit record if not existing
+            $existingTermination = $db->fetchOne(
+                "SELECT id FROM tenancy_terminations WHERE tenant_id = ? AND status = 'pending'",
+                [$tenantId]
+            );
+            if (!$existingTermination) {
+                $db->insert('tenancy_terminations', [
+                    'owner_id' => $ownerId,
+                    'tenant_id' => $tenantId,
+                    'property_id' => $tenant['property_id'],
+                    'house_id' => $tenant['house_id'],
+                    'initiated_by' => $role,
+                    'initiated_by_user_id' => $role === 'owner' ? $ownerId : Router::getAuthActorId(),
+                    'reason' => $reason,
+                    'effective_date' => $effectiveDate,
+                    'status' => 'completed',
+                ]);
+            } else {
+                $db->update('tenancy_terminations', [
+                    'status' => 'completed',
+                    'effective_date' => $effectiveDate,
+                    'reason' => $reason ?: $existingTermination['reason'],
+                ], 'id = ?', [$existingTermination['id']]);
+            }
+
             $db->commit();
 
-            // Send vacate confirmation email to tenant if email exists
+            // Send vacate confirmation email
             $emailSent = false;
             try {
                 $emailService = new EmailService();

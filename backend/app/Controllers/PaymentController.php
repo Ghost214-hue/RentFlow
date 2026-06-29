@@ -80,17 +80,20 @@ class PaymentController
 
         $receipt = 'RCP-' . date('Y') . '-' . str_pad((time() % 10000), 4, '0', STR_PAD_LEFT);
 
+        $isTenantSelfPay = ($role === 'tenant');
         $paymentId = $db->insert('payments', [
             'owner_id'    => $ownerId,
             'tenant_id'   => (int) $data['tenant_id'],
             'house_id'    => $tenant['house_id'],
+            'month'       => $data['month'] ?? date('Y-m'),
             'amount'      => $data['amount'],
             'type'        => $data['type'] ?? 'Rent',
             'method'      => $data['method'] ?? 'M-Pesa',
             'date'        => $data['date'] ?? date('Y-m-d'),
-            'status'      => $data['status'] ?? 'completed',
+            'status'      => $isTenantSelfPay ? 'confirmed' : 'completed',
             'receipt'     => $data['receipt'] ?? $receipt,
             'description' => $data['description'] ?? ($data['type'] ?? 'Rent') . ' Payment',
+            'tenant_confirmed' => $isTenantSelfPay ? 1 : 0,
         ]);
 
         // Update tenant balance (reduce balance by payment amount)
@@ -121,20 +124,22 @@ class PaymentController
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
         
-        // Send payment confirmation email
+        // Send payment confirmation email to tenant when owner records
         $emailSent = false;
-        try {
-            $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
-            if ($tenant && $tenant['email']) {
-                $emailService = new EmailService();
-                $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+        if (!$isTenantSelfPay) {
+            try {
+                $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
+                if ($tenant && !empty($tenant['email'])) {
+                    $emailService = new EmailService();
+                    $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+                }
+            } catch (\Exception $e) {
+                error_log('Failed to send payment confirmation email: ' . $e->getMessage());
             }
-        } catch (\Exception $e) {
-            error_log('Failed to send payment confirmation email: ' . $e->getMessage());
         }
         
-        $emailMsg = $emailSent ? '& confirmation email sent' : '& confirmation email notification sent';
-        Router::jsonResponse(['message' => "Payment recorded {$emailMsg}", 'payment' => $payment, 'email_sent' => $emailSent], 201);
+        $emailMsg = $emailSent ? '& confirmation email sent' : ($isTenantSelfPay ? '' : '& notification saved');
+        Router::jsonResponse(['message' => "Payment recorded{$emailMsg}", 'payment' => $payment, 'email_sent' => $emailSent], 201);
     }
 
     public function show(array $params = []): void
@@ -156,5 +161,46 @@ class PaymentController
             Router::jsonResponse(['error' => 'Payment not found'], 404);
         }
         Router::jsonResponse(['payment' => $payment]);
+    }
+
+    /**
+     * PUT /api/payments/{id}/confirm - Tenant confirms they received/reviewed a payment record
+     */
+    public function confirm(array $params): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $paymentId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        // Only tenants can confirm payments
+        if ($role !== 'tenant') {
+            Router::jsonResponse(['error' => 'Only tenants can confirm payments'], 403);
+        }
+
+        $payment = $db->fetchOne(
+            "SELECT * FROM payments WHERE id = ? AND owner_id = ?",
+            [$paymentId, $ownerId]
+        );
+        if (!$payment) {
+            Router::jsonResponse(['error' => 'Payment not found'], 404);
+        }
+
+        // Verify this is the tenant's payment
+        $tenantId = Router::getAuthTenantId();
+        if ((int)$payment['tenant_id'] !== $tenantId) {
+            Router::jsonResponse(['error' => 'This payment does not belong to you'], 403);
+        }
+
+        if ((int)$payment['tenant_confirmed'] === 1) {
+            Router::jsonResponse(['error' => 'Payment already confirmed'], 400);
+        }
+
+        $db->update('payments', [
+            'tenant_confirmed' => 1,
+            'confirmed_at' => date('Y-m-d H:i:s'),
+        ], 'id = ?', [$paymentId]);
+
+        Router::jsonResponse(['message' => 'Payment confirmed successfully']);
     }
 }
