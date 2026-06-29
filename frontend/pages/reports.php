@@ -10,7 +10,6 @@ $user = $jwt->decode($token);
 if (!$user) { header('Location: /signin'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
-if ($role !== 'owner') { header('Location: /signin'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -23,7 +22,7 @@ if ($role !== 'owner') { header('Location: /signin'); exit; }
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex overflow-hidden">
+<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
     <div class="flex-1 flex flex-col min-h-screen">
         <?php include __DIR__ . '/../public/components/header.php'; ?>

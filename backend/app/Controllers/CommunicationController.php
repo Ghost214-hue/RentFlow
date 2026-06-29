@@ -6,10 +6,11 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\EmailService;
 
 class CommunicationController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
@@ -30,7 +31,7 @@ class CommunicationController
         Router::jsonResponse(['communications' => $communications]);
     }
 
-    public function store(): void
+    public function store(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
@@ -49,15 +50,39 @@ class CommunicationController
             'subject'   => $data['subject'] ?? null,
             'message'   => $data['message'],
             'date'      => $data['date'] ?? date('Y-m-d'),
-            'status'    => 'sent',
+            'status'    => 'pending',
             'template'  => $data['template'] ?? null,
         ]);
+
+        $communication = $db->fetchOne("SELECT * FROM communications WHERE id = ?", [$commId]);
+
+        // Send email if type is email
+        if (($data['type'] ?? 'email') === 'email' && !empty($data['email'])) {
+            try {
+                $emailService = new EmailService();
+                $subject = $data['subject'] ?? $data['message'];
+                $body = $data['message'];
+                $sent = $emailService->send($data['email'], $data['recipient'], $subject, $body);
+
+                if ($sent) {
+                    $db->update('communications', ['status' => 'sent'], 'id = ?', [$commId]);
+                } else {
+                    $db->update('communications', ['status' => 'failed'], 'id = ?', [$commId]);
+                }
+            } catch (\Exception $e) {
+                error_log('Failed to send communication email: ' . $e->getMessage());
+                $db->update('communications', ['status' => 'failed'], 'id = ?', [$commId]);
+            }
+        } else {
+            // For non-email types, mark as sent (SMS/WhatsApp integration would go here)
+            $db->update('communications', ['status' => 'sent'], 'id = ?', [$commId]);
+        }
 
         $communication = $db->fetchOne("SELECT * FROM communications WHERE id = ?", [$commId]);
         Router::jsonResponse(['message' => 'Message sent', 'communication' => $communication], 201);
     }
 
-    public function templates(): void
+    public function templates(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();

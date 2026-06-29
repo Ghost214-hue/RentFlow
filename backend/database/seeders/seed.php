@@ -121,6 +121,7 @@ try {
                 'lease_end'   => $t['lease_end'],
                 'deposit'     => $t['deposit'],
                 'balance'     => $t['balance'],
+                'password'    => password_hash($t['id_number'], PASSWORD_BCRYPT),
             ]);
             // Link tenant to house
             $db->update('houses', ['tenant_id' => $id, 'status' => 'occupied'], 'id = ?', [$houseId]);
@@ -261,6 +262,7 @@ try {
         ['name' => 'Maintenance Notice', 'type' => 'email', 'subject' => 'Scheduled Maintenance - {{property}}', 'body' => 'Dear Residents,\n\nPlease be informed that maintenance will be conducted on {{date}} from {{time}}: {{details}}'],
         ['name' => 'Complaint Update', 'type' => 'email', 'subject' => 'Update on Your Complaint #{{id}}', 'body' => 'Dear {{tenant}},\n\nYour complaint regarding {{issue}} has been updated to status: {{status}}.\n\n{{message}}'],
         ['name' => 'Lease Renewal', 'type' => 'email', 'subject' => 'Lease Renewal Notice', 'body' => 'Dear {{tenant}},\n\nYour lease for {{house}} expires on {{date}}. Please contact us to discuss renewal options.'],
+        ['name' => 'Management Notice', 'type' => 'email', 'subject' => '{{title}} - RentFlow Management Notice', 'body' => "Dear {{tenant_name}},\n\nYou have received an important notice from {{sender_name}}.\n\n--- MESSAGE ---\n{{description}}\n\n--- NEXT STEPS ---\nPlease log in to your RentFlow account to view full details, track updates, and respond if needed.\n\nIf you have any questions, contact the property owner or caretaker directly.\n\nBest regards,\nRentFlow Team"],
     ];
 
     foreach ($templates as $t) {

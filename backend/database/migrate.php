@@ -1,8 +1,5 @@
 <?php
-/**
- * Database Migration Runner
- * Run: php backend/database/migrate.php
- */
+
 
 require_once __DIR__ . '/../app/Core/Database.php';
 
@@ -45,6 +42,21 @@ try {
     $tables = $conn->query("SHOW TABLES");
     while ($row = $tables->fetch_array()) {
         echo "  - {$row[0]}\n";
+    }
+
+    // Run seeders
+    echo "\n=== Running Seeders ===\n";
+    $seeders = glob(__DIR__ . '/seeders/*.php');
+    sort($seeders);
+    foreach ($seeders as $file) {
+        $filename = basename($file);
+        echo "Running seeder: {$filename}... ";
+        try {
+            require_once $file;
+            echo "OK\n";
+        } catch (\Throwable $e) {
+            echo "ERROR: " . $e->getMessage() . "\n";
+        }
     }
 
 } catch (Exception $e) {

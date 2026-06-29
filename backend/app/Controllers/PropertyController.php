@@ -12,20 +12,32 @@ class PropertyController
     /**
      * GET /api/properties
      */
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
 
-        $properties = $db->fetchAll(
-            "SELECT p.*, 
+        $sql = "SELECT p.*, 
                     (SELECT COUNT(*) FROM houses WHERE property_id = p.id) as unit_count,
                     (SELECT COUNT(*) FROM houses WHERE property_id = p.id AND status = 'occupied') as occupied_count
              FROM properties p 
-             WHERE p.owner_id = ? 
-             ORDER BY p.created_at DESC",
-            [$ownerId]
-        );
+             WHERE p.owner_id = ?";
+        $queryParams = [$ownerId];
+
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['properties' => []]);
+            $sql .= " AND p.id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        } elseif ($role === 'tenant') {
+            $sql .= " AND p.id = (SELECT property_id FROM tenants WHERE id = ? AND owner_id = ?)";
+            $queryParams[] = Router::getAuthTenantId();
+            $queryParams[] = $ownerId;
+        }
+
+        $sql .= " ORDER BY p.created_at DESC";
+        $properties = $db->fetchAll($sql, $queryParams);
 
         Router::jsonResponse(['properties' => $properties]);
     }
@@ -36,13 +48,24 @@ class PropertyController
     public function show(array $params): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $propertyId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
-        $property = $db->fetchOne(
-            "SELECT * FROM properties WHERE id = ? AND owner_id = ?",
-            [$propertyId, $ownerId]
-        );
+        $sql = "SELECT * FROM properties WHERE id = ? AND owner_id = ?";
+        $queryParams = [$propertyId, $ownerId];
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['error' => 'Property not found'], 404);
+            $sql .= " AND id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        } elseif ($role === 'tenant') {
+            $sql .= " AND id = (SELECT property_id FROM tenants WHERE id = ? AND owner_id = ?)";
+            $queryParams[] = Router::getAuthTenantId();
+            $queryParams[] = $ownerId;
+        }
+
+        $property = $db->fetchOne($sql, $queryParams);
 
         if (!$property) {
             Router::jsonResponse(['error' => 'Property not found'], 404);
@@ -64,8 +87,9 @@ class PropertyController
     /**
      * POST /api/properties
      */
-    public function store(): void
+    public function store(array $params = []): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
@@ -85,6 +109,14 @@ class PropertyController
             'units'    => (int) ($data['units'] ?? 0),
             'image'    => $data['image'] ?? null,
             'rent'     => $data['rent'] ?? 0,
+            'payment_method_type' => $data['payment_method_type'] ?? null,
+            'paybill_number'      => $data['paybill_number'] ?? null,
+            'paybill_account'     => $data['paybill_account'] ?? null,
+            'till_number'         => $data['till_number'] ?? null,
+            'bank_name'           => $data['bank_name'] ?? null,
+            'bank_account'        => $data['bank_account'] ?? null,
+            'bank_branch'         => $data['bank_branch'] ?? null,
+            'mobile_money_number' => $data['mobile_money_number'] ?? null,
         ]);
 
         $property = $db->fetchOne(
@@ -100,6 +132,7 @@ class PropertyController
      */
     public function update(array $params): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $propertyId = (int) ($params['id'] ?? 0);
         $data = Router::getRequestBody();
@@ -115,8 +148,11 @@ class PropertyController
         }
 
         $updateData = [];
-        foreach (['name', 'address', 'type', 'units', 'image', 'rent'] as $field) {
-            if (isset($data[$field])) {
+        foreach (['name', 'address', 'type', 'units', 'image', 'rent',
+                      'payment_method_type', 'paybill_number', 'paybill_account',
+                      'till_number', 'bank_name', 'bank_account', 'bank_branch',
+                      'mobile_money_number'] as $field) {
+            if (array_key_exists($field, $data)) {
                 $updateData[$field] = $data[$field];
             }
         }
@@ -130,10 +166,37 @@ class PropertyController
     }
 
     /**
+     * GET /api/properties/available
+     * Get properties without an assigned caretaker
+     */
+    public function availableForCaretaker(array $params = []): void
+    {
+        Router::requireOwner();
+        $ownerId = Router::getAuthUserId();
+        $db = Database::getInstance();
+
+        $sql = "SELECT p.id, p.name, p.address
+                FROM properties p
+                WHERE p.owner_id = ?
+                  AND p.caretaker_id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM caretakers c
+                      WHERE c.owner_id = ?
+                        AND c.assigned_properties IS NOT NULL
+                        AND FIND_IN_SET(p.id, c.assigned_properties)
+                  )
+                ORDER BY p.name ASC";
+
+        $properties = $db->fetchAll($sql, [$ownerId, $ownerId]);
+        Router::jsonResponse(['properties' => $properties]);
+    }
+
+    /**
      * DELETE /api/properties/{id}
      */
     public function destroy(array $params): void
     {
+        Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $propertyId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();

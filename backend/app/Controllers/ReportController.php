@@ -9,7 +9,7 @@ use App\Core\Router;
 
 class ReportController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();

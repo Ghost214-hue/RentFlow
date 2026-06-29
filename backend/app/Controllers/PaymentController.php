@@ -6,59 +6,94 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\EmailService;
 
 class PaymentController
 {
-    public function index(): void
+    public function index(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
 
-        $payments = $db->fetchAll(
-            "SELECT p.*, t.name as tenant_name, h.unit as house_unit
+        $sql = "SELECT p.*, t.name as tenant_name, h.unit as house_unit
              FROM payments p
              LEFT JOIN tenants t ON p.tenant_id = t.id
              LEFT JOIN houses h ON p.house_id = h.id
-             WHERE p.owner_id = ?
-             ORDER BY p.created_at DESC",
-            [$ownerId]
-        );
+             WHERE p.owner_id = ?";
+        $queryParams = [$ownerId];
+
+        if ($role === 'tenant') {
+            $sql .= " AND p.tenant_id = ?";
+            $queryParams[] = Router::getAuthTenantId();
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) Router::jsonResponse(['payments' => []]);
+            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        }
+
+        $sql .= " ORDER BY p.created_at DESC";
+        $payments = $db->fetchAll($sql, $queryParams);
 
         Router::jsonResponse(['payments' => $payments]);
     }
 
-    public function store(): void
+    public function store(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
 
-        if (empty($data['tenant_id']) || empty($data['amount'])) {
-            Router::jsonResponse(['error' => 'Tenant ID and amount are required'], 400);
+        if (empty($data['amount'])) {
+            Router::jsonResponse(['error' => 'Amount is required'], 400);
         }
 
-        // Verify tenant belongs to owner
-        $tenant = $db->fetchOne(
-            "SELECT id, house_id FROM tenants WHERE id = ? AND owner_id = ?",
-            [$data['tenant_id'], $ownerId]
-        );
-        if (!$tenant) {
-            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        // Tenants can only record payments for themselves
+        if ($role === 'tenant') {
+            $tenantId = Router::getAuthTenantId();
+            $tenant = $db->fetchOne(
+                "SELECT id, house_id FROM tenants WHERE id = ? AND owner_id = ?",
+                [$tenantId, $ownerId]
+            );
+            if (!$tenant) {
+                Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            }
+            $data['tenant_id'] = $tenantId;
+            $data['house_id'] = $tenant['house_id'];
+        } else {
+            // Owners and caretakers must specify tenant_id
+            if (empty($data['tenant_id'])) {
+                Router::jsonResponse(['error' => 'Tenant ID is required'], 400);
+            }
+            // Verify tenant belongs to owner
+            $tenant = $db->fetchOne(
+                "SELECT id, house_id FROM tenants WHERE id = ? AND owner_id = ?",
+                [$data['tenant_id'], $ownerId]
+            );
+            if (!$tenant) {
+                Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            }
+            $data['house_id'] = $tenant['house_id'];
         }
 
         $receipt = 'RCP-' . date('Y') . '-' . str_pad((time() % 10000), 4, '0', STR_PAD_LEFT);
 
+        $isTenantSelfPay = ($role === 'tenant');
         $paymentId = $db->insert('payments', [
             'owner_id'    => $ownerId,
             'tenant_id'   => (int) $data['tenant_id'],
             'house_id'    => $tenant['house_id'],
+            'month'       => $data['month'] ?? date('Y-m'),
             'amount'      => $data['amount'],
             'type'        => $data['type'] ?? 'Rent',
             'method'      => $data['method'] ?? 'M-Pesa',
             'date'        => $data['date'] ?? date('Y-m-d'),
-            'status'      => $data['status'] ?? 'completed',
+            'status'      => $isTenantSelfPay ? 'confirmed' : 'completed',
             'receipt'     => $data['receipt'] ?? $receipt,
             'description' => $data['description'] ?? ($data['type'] ?? 'Rent') . ' Payment',
+            'tenant_confirmed' => $isTenantSelfPay ? 1 : 0,
         ]);
 
         // Update tenant balance (reduce balance by payment amount)
@@ -88,10 +123,26 @@ class PaymentController
         }
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
-        Router::jsonResponse(['message' => 'Payment recorded', 'payment' => $payment], 201);
+        
+        // Send payment confirmation email to tenant when owner records
+        $emailSent = false;
+        if (!$isTenantSelfPay) {
+            try {
+                $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
+                if ($tenant && !empty($tenant['email'])) {
+                    $emailService = new EmailService();
+                    $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+                }
+            } catch (\Exception $e) {
+                error_log('Failed to send payment confirmation email: ' . $e->getMessage());
+            }
+        }
+        
+        $emailMsg = $emailSent ? '& confirmation email sent' : ($isTenantSelfPay ? '' : '& notification saved');
+        Router::jsonResponse(['message' => "Payment recorded{$emailMsg}", 'payment' => $payment, 'email_sent' => $emailSent], 201);
     }
 
-    public function show(array $params): void
+    public function show(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $paymentId = (int) ($params['id'] ?? 0);
@@ -110,5 +161,46 @@ class PaymentController
             Router::jsonResponse(['error' => 'Payment not found'], 404);
         }
         Router::jsonResponse(['payment' => $payment]);
+    }
+
+    /**
+     * PUT /api/payments/{id}/confirm - Tenant confirms they received/reviewed a payment record
+     */
+    public function confirm(array $params): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $paymentId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        // Only tenants can confirm payments
+        if ($role !== 'tenant') {
+            Router::jsonResponse(['error' => 'Only tenants can confirm payments'], 403);
+        }
+
+        $payment = $db->fetchOne(
+            "SELECT * FROM payments WHERE id = ? AND owner_id = ?",
+            [$paymentId, $ownerId]
+        );
+        if (!$payment) {
+            Router::jsonResponse(['error' => 'Payment not found'], 404);
+        }
+
+        // Verify this is the tenant's payment
+        $tenantId = Router::getAuthTenantId();
+        if ((int)$payment['tenant_id'] !== $tenantId) {
+            Router::jsonResponse(['error' => 'This payment does not belong to you'], 403);
+        }
+
+        if ((int)$payment['tenant_confirmed'] === 1) {
+            Router::jsonResponse(['error' => 'Payment already confirmed'], 400);
+        }
+
+        $db->update('payments', [
+            'tenant_confirmed' => 1,
+            'confirmed_at' => date('Y-m-d H:i:s'),
+        ], 'id = ?', [$paymentId]);
+
+        Router::jsonResponse(['message' => 'Payment confirmed successfully']);
     }
 }

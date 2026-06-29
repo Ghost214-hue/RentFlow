@@ -9,6 +9,43 @@ class Router
     private array $routes = [];
     private array $middleware = [];
 
+    public static function sendBaseHeaders(): void
+    {
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        $allowedOrigin = self::getAllowedCorsOrigin($origin);
+        if ($allowedOrigin) {
+            header('Access-Control-Allow-Origin: ' . $allowedOrigin);
+            header('Vary: Origin');
+        }
+    }
+
+    private static function getAllowedCorsOrigin(string $origin): ?string
+    {
+        if ($origin === '') {
+            return null;
+        }
+
+        $allowed = array_filter(array_map(
+            'trim',
+            explode(',', (string) Env::get('CORS_ALLOWED_ORIGINS', Env::get('APP_URL', '')))
+        ));
+
+        $originHost = parse_url($origin, PHP_URL_HOST);
+        $requestHost = $_SERVER['HTTP_HOST'] ?? '';
+        if ($originHost && $requestHost && strcasecmp($originHost, explode(':', $requestHost)[0]) === 0) {
+            return $origin;
+        }
+
+        return in_array($origin, $allowed, true) ? $origin : null;
+    }
+
     /**
      * Helper: GET route
      */
@@ -71,9 +108,10 @@ class Router
         $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
         // Remove base path if behind a subdirectory
-        $basePath = '/api';
-        if (strpos($uri, $basePath) === 0) {
-            $uri = substr($uri, strlen($basePath));
+        // Handle both /api/houses and /rentflow/api/houses patterns
+        $apiPos = strpos($uri, '/api');
+        if ($apiPos !== false) {
+            $uri = substr($uri, $apiPos + 4); // +4 to skip '/api'
         }
         if (empty($uri)) {
             $uri = '/';
@@ -102,9 +140,10 @@ class Router
                 if (is_array($handler)) {
                     [$class, $method] = $handler;
                     $controller = new $class();
-                    call_user_func_array([$controller, $method], $params);
+                    // Pass params as single array argument for controller methods
+                    $controller->$method($params);
                 } else {
-                    call_user_func_array($handler, $params);
+                    call_user_func_array($handler, array_values($params));
                 }
                 return;
             }
@@ -136,10 +175,8 @@ class Router
     public static function jsonResponse(array $data, int $statusCode = 200): void
     {
         http_response_code($statusCode);
+        self::sendBaseHeaders();
         header('Content-Type: application/json');
-        header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization');
         echo json_encode($data);
         exit;
     }
@@ -160,5 +197,53 @@ class Router
     public static function getAuthUserId(): ?int
     {
         return $_REQUEST['auth_user_id'] ?? null;
+    }
+
+    public static function getAuthRole(): string
+    {
+        return $_REQUEST['auth_user_role'] ?? 'owner';
+    }
+
+    public static function getAuthActorId(): ?int
+    {
+        return $_REQUEST['auth_actor_id'] ?? self::getAuthUserId();
+    }
+
+    public static function requireOwner(): void
+    {
+        if (self::getAuthRole() !== 'owner') {
+            self::jsonResponse(['error' => 'Only owners can perform this action'], 403);
+        }
+    }
+
+    public static function requireOwnerOrCaretaker(): void
+    {
+        $role = self::getAuthRole();
+        if ($role !== 'owner' && $role !== 'caretaker') {
+            self::jsonResponse(['error' => 'Only owners and caretakers can perform this action'], 403);
+        }
+    }
+
+    public static function getCaretakerPropertyIds(Database $db): array
+    {
+        if (self::getAuthRole() !== 'caretaker') {
+            return [];
+        }
+
+        $caretaker = $db->fetchOne(
+            "SELECT assigned_properties FROM caretakers WHERE id = ? AND owner_id = ?",
+            [self::getAuthActorId(), self::getAuthUserId()]
+        );
+
+        if (!$caretaker || empty($caretaker['assigned_properties'])) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('intval', explode(',', $caretaker['assigned_properties']))));
+    }
+
+    public static function getAuthTenantId(): ?int
+    {
+        return self::getAuthRole() === 'tenant' ? self::getAuthActorId() : null;
     }
 }

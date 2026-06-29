@@ -1,16 +1,5 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'owner';
-if ($role !== 'owner') { header('Location: /signin'); exit; }
+require_once __DIR__ . '/../includes/auth.php';
 $propertyId = $_GET['property_id'] ?? null;
 ?>
 <!DOCTYPE html>
@@ -23,14 +12,16 @@ $propertyId = $_GET['property_id'] ?? null;
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex overflow-hidden">
+<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
     <div class="flex-1 flex flex-col min-h-screen">
         <?php include __DIR__ . '/../public/components/header.php'; ?>
         <main class="flex-1 overflow-y-auto p-4 lg:p-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div><h1 class="text-2xl font-bold text-slate-900">Houses & Units</h1><p class="text-slate-500 mt-1">Manage individual units</p></div>
+                <?php if ($role === 'owner'): ?>
                 <button onclick="openModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>Add Unit</button>
+                <?php endif; ?>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 overflow-hidden">
                 <div class="overflow-x-auto">
@@ -66,7 +57,8 @@ $propertyId = $_GET['property_id'] ?? null;
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
+    const API = (BASE || '') + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const urlParams = new URLSearchParams(window.location.search);
@@ -84,10 +76,15 @@ $propertyId = $_GET['property_id'] ?? null;
 
     async function loadHouses() {
         try {
+            console.log('Fetching houses from:', `${API}/houses${filterPropId ? `?property_id=${filterPropId}` : ''}`);
             const qs = filterPropId ? `?property_id=${filterPropId}` : '';
             const res = await fetch(`${API}/houses${qs}`, { headers });
             const data = await res.json();
+            console.log('Houses API response:', data);
             const tbody = document.getElementById('housesTable');
+            if (!res.ok) {
+                throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
+            }
             if (data.houses && data.houses.length) {
                 tbody.innerHTML = data.houses.map(h => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
@@ -97,24 +94,41 @@ $propertyId = $_GET['property_id'] ?? null;
                         <td class="px-6 py-4">${h.tenant_name ? `<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${h.tenant_name.split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm text-slate-700">${h.tenant_name}</span></div>` : '<span class="text-sm text-slate-400">-</span>'}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">KES ${(h.rent||0).toLocaleString()}</td>
                         <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${h.status==='occupied'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${h.status}</span></td>
-                        <td class="px-6 py-4"><button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><i class="fas fa-edit"></i></button></td>
+                        <td class="px-6 py-4"><?php if ($role === 'owner'): ?><button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><i class="fas fa-edit"></i></button><?php endif; ?></td>
                     </tr>
                 `).join('');
             } else {
                 tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No units found</td></tr>';
             }
-        } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+        } catch(e) {
+            console.error('loadHouses error:', e);
+            document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;
+            if (e.message.includes('401') || e.message.includes('Authentication')) {
+                toast('Session expired. Redirecting...', 'error');
+                setTimeout(() => window.location.href = '/signin', 1500);
+            }
+        }
     }
 
     async function loadProperties() {
         try {
+            console.log('Fetching properties...');
             const res = await fetch(`${API}/properties`, { headers });
             const data = await res.json();
-            const select = document.getElementById('houseProperty');
-            if (data.properties) {
-                select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${p.id}" ${filterPropId==p.id?'selected':''}>${p.name}</option>`).join('');
+            console.log('Properties API response:', data);
+            if (!res.ok) {
+                throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
             }
-        } catch(e) { console.error(e); }
+            const select = document.getElementById('houseProperty');
+            if (data.properties && data.properties.length) {
+                select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${p.id}" ${filterPropId==p.id?'selected':''}>${p.name}</option>`).join('');
+            } else {
+                select.innerHTML = '<option value="">No properties available - create one first</option>';
+            }
+        } catch(e) {
+            console.error('loadProperties error:', e);
+            toast('Could not load properties: ' + e.message, 'error');
+        }
     }
 
     function openModal() { 
@@ -140,29 +154,47 @@ $propertyId = $_GET['property_id'] ?? null;
     document.getElementById('houseForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const houseId = document.getElementById('houseId').value;
+        const propertyId = parseInt(document.getElementById('houseProperty').value);
+        
+        if (!propertyId) {
+            toast('Please select a property', 'error');
+            return;
+        }
+        
         const data = {
-            property_id: parseInt(document.getElementById('houseProperty').value),
-            unit: document.getElementById('houseUnit').value,
+            property_id: propertyId,
+            unit: document.getElementById('houseUnit').value.trim(),
             type: document.getElementById('houseType').value,
-            rent: parseFloat(document.getElementById('houseRent').value),
+            rent: parseFloat(document.getElementById('houseRent').value) || 0,
             status: document.getElementById('houseStatus').value,
         };
+        
+        if (!data.unit) {
+            toast('Please enter a unit number', 'error');
+            return;
+        }
+        
         try {
             const isEdit = !!houseId;
             const url = isEdit ? `${API}/houses/${houseId}` : `${API}/houses`;
             const method = isEdit ? 'PUT' : 'POST';
+            console.log(`Saving house: ${method} ${url}`, data);
             const res = await fetch(url, { method, headers, body:JSON.stringify(data) });
             const text = await res.text();
             console.log('Response text:', text);
             let result;
-            try { result = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server: ' + text.substring(0, 100)); }
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            try { result = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server: ' + text.substring(0, 200)); }
+            if(!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
             toast(isEdit ? 'Unit updated!' : 'Unit added!');
             closeModal();
             loadHouses();
-        } catch(err) { console.error('Form error:', err); toast(err.message, 'error'); }
+        } catch(err) {
+            console.error('Form submit error:', err);
+            toast(err.message, 'error');
+        }
     });
 
+    // Load data on page ready
     loadProperties();
     loadHouses();
     </script>

@@ -1,18 +1,5 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-
-// Verify token and get user
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
-
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'owner';
+require_once __DIR__ . '/../includes/auth.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -25,7 +12,7 @@ $role = $user['role'] ?? 'owner';
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex overflow-hidden">
+<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
     <div class="flex-1 flex flex-col min-h-screen">
         <?php include __DIR__ . '/../public/components/header.php'; ?>
@@ -75,7 +62,8 @@ $role = $user['role'] ?? 'owner';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
+    const API = (BASE || '') + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $role; ?>';
