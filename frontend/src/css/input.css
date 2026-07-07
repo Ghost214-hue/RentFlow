@@ -231,6 +231,165 @@
   }
 }
 
+/* ========== TENANT WIZARD / MODALS (from tenants.php) ========== */
+@layer components {
+  .rf-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2.5rem 1rem 1rem;
+    background: rgba(15, 23, 42, 0.48);
+    backdrop-filter: blur(6px);
+    overflow-y: auto;
+  }
+  .rf-modal-backdrop.hidden {
+    display: none;
+  }
+  .rf-modal-panel {
+    width: min(100%, 44rem);
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+    border-radius: 1rem;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    box-shadow: 0 25px 70px rgba(15, 23, 42, 0.22);
+  }
+  .rf-details-panel {
+    width: min(100%, 42rem);
+  }
+  .rf-modal-panel::-webkit-scrollbar {
+    width: 10px;
+  }
+  .rf-modal-panel::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border: 3px solid #fff;
+    border-radius: 999px;
+  }
+  @media (max-width: 640px) {
+    .rf-modal-backdrop {
+      align-items: stretch;
+      padding: 0.75rem;
+    }
+    .rf-modal-panel {
+      max-height: calc(100vh - 1.5rem);
+      border-radius: 0.875rem;
+    }
+  }
+
+  .step-card {
+    animation: fadeIn 0.35s ease-out;
+  }
+  .step-card.exit {
+    animation: fadeOut 0.25s ease-in forwards;
+  }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+  }
+
+  .progress-step {
+    transition: all 0.3s ease;
+  }
+  .progress-step.active .step-circle {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: white;
+    border-color: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    transform: scale(1.1);
+  }
+  .progress-step.completed .step-circle {
+    background: #059669;
+    color: white;
+    border-color: #059669;
+  }
+  .progress-step.completed .step-line {
+    background: #059669;
+  }
+  .progress-step.active .step-line {
+    background: linear-gradient(to right, #059669, #2563eb);
+  }
+  .step-circle {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 2.5px solid #e2e8f0;
+    background: white;
+    color: #94a3b8;
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 2;
+  }
+  .step-line {
+    flex: 1;
+    height: 3px;
+    background: #e2e8f0;
+    margin: 0 4px;
+    transition: all 0.3s ease;
+    position: relative;
+    top: -18px;
+    z-index: 1;
+  }
+  .progress-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .progress-container::-webkit-scrollbar {
+    display: none;
+  }
+  .progress-step {
+    min-width: 90px;
+    flex: 0 0 auto;
+  }
+
+  .upload-zone {
+    border: 2px dashed #bfdbfe;
+    transition: all 0.3s ease;
+  }
+  .upload-zone:hover {
+    border-color: #60a5fa;
+    background: #eff6ff;
+  }
+  .upload-zone.dragover {
+    border-color: #2563eb;
+    background: #dbeafe;
+  }
+
+  .house-option {
+    transition: all 0.2s ease;
+  }
+  .house-option:hover {
+    background: #f0f9ff;
+  }
+  .house-option.selected {
+    background: #eff6ff;
+    border-color: #2563eb;
+  }
+}
+
 /* Mobile-specific overrides */
 @screen sm {
   .mobile-full-width {

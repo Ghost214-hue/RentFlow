@@ -99,6 +99,18 @@ require_once __DIR__ . '/../includes/auth.php';
         }
     }
 
+    function sanitizeEmail(email) {
+        if (!email || typeof email !== 'string') return null;
+        const trimmed = email.trim();
+        if (!trimmed) return null;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmed)) {
+            toast('Invalid email format', 'error');
+            return null;
+        }
+        return trimmed.toLowerCase();
+    }
+
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
@@ -199,9 +211,19 @@ require_once __DIR__ . '/../includes/auth.php';
     document.getElementById('caretakerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const selectedOptions = Array.from(document.getElementById('caretakerProperties').selectedOptions).map(opt => opt.value);
+        
+        // Sanitize email
+        const rawEmail = document.getElementById('caretakerEmail').value.trim();
+        const sanitizedEmail = sanitizeEmail(rawEmail);
+        
+        if (!sanitizedEmail && rawEmail) {
+            toast('Invalid email format', 'error');
+            return;
+        }
+        
         const payload = {
             name: document.getElementById('caretakerName').value.trim(),
-            email: document.getElementById('caretakerEmail').value.trim(),
+            email: sanitizedEmail,
             phone: document.getElementById('caretakerPhone').value.trim() || null,
             id_number: document.getElementById('caretakerId').value.trim(),
             assigned_properties: selectedOptions.join(','),

@@ -51,12 +51,12 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
 
             <!-- Step 2: Enter Code -->
             <div id="step2" style="display:none;">
-                <div class="text-center mb-6">
-                    <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
-                        <i class="fas fa-envelope-open-text text-blue-600 text-2xl"></i>
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-envelope-open-text text-blue-600 text-2xl"></i>
+                        </div>
+                        <p class="text-sm text-slate-600">We've sent a 6-digit verification code to <strong id="sentEmail"></strong></p>
                     </div>
-                    <p class="text-sm text-slate-600">We've sent a 6-digit verification code to <strong id="sentEmail"></strong></p>
-                </div>
                 <form id="verifyForm" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1.5">Verification Code</label>
@@ -132,7 +132,12 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             document.getElementById('step1').style.display = 'none';
             document.getElementById('step2').style.display = 'block';
             document.getElementById('sentEmail').textContent = email;
-            toast('Reset code sent to your email', 'success');
+            
+            if (!data.email_sent) {
+                toast('Failed to send email. Please check your email configuration.', 'error');
+            } else {
+                toast('Reset code sent to your email', 'success');
+            }
         } catch(err) {
             toast(err.message, 'error');
             btn.disabled = false;

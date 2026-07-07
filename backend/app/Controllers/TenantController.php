@@ -100,6 +100,9 @@ class TenantController
         $data['email'] = trim((string) ($data['email'] ?? ''));
         $data['phone'] = trim((string) ($data['phone'] ?? ''));
         $data['id_number'] = trim((string) ($data['id_number'] ?? ''));
+        $data['next_of_kin_name'] = trim((string) ($data['next_of_kin_name'] ?? ''));
+        $data['next_of_kin_phone'] = trim((string) ($data['next_of_kin_phone'] ?? ''));
+        $data['next_of_kin_email'] = trim((string) ($data['next_of_kin_email'] ?? ''));
 
         if ($data['name'] === '') {
             Router::jsonResponse(['error' => 'Tenant name is required'], 400);
@@ -140,23 +143,26 @@ class TenantController
             $db->beginTransaction();
 
             $tenantId = $db->insert('tenants', [
-                'owner_id'          => $ownerId,
-                'property_id'       => !empty($data['property_id']) ? (int) $data['property_id'] : null,
-                'house_id'          => !empty($data['house_id']) ? (int) $data['house_id'] : null,
-                'name'              => $data['name'],
-                'email'             => $data['email'] !== '' ? $data['email'] : null,
-                'password'          => password_hash($data['password'] ?? $data['id_number'], PASSWORD_BCRYPT),
-                'phone'             => $data['phone'],
-                'id_number'         => $data['id_number'] !== '' ? $data['id_number'] : null,
-                'id_type'           => $data['id_type'] ?? 'National ID',
-                'emergency_contact' => $data['emergency_contact'] ?? null,
-                'lease_start'       => $data['lease_start'] ?? null,
-                'lease_end'         => $data['lease_end'] ?? null,
-                'deposit'           => $data['deposit'] ?? 0,
-                'balance'           => $data['balance'] ?? 0,
-                'water_balance'     => $data['water_balance'] ?? 0,
-                'elec_balance'      => $data['elec_balance'] ?? 0,
-                'documents'         => $data['documents'] ?? null,
+                'owner_id'             => $ownerId,
+                'property_id'          => !empty($data['property_id']) ? (int) $data['property_id'] : null,
+                'house_id'             => !empty($data['house_id']) ? (int) $data['house_id'] : null,
+                'name'                 => $data['name'],
+                'email'                => $data['email'] !== '' ? $data['email'] : null,
+                'password'             => password_hash($data['password'] ?? $data['id_number'], PASSWORD_BCRYPT),
+                'phone'                => $data['phone'],
+                'id_number'            => $data['id_number'] !== '' ? $data['id_number'] : null,
+                'id_type'              => $data['id_type'] ?? 'National ID',
+                'next_of_kin_name'     => $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null,
+                'next_of_kin_phone'    => $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null,
+                'next_of_kin_email'    => $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null,
+                'emergency_contact'    => $data['emergency_contact'] ?? null,
+                'lease_start'          => $data['lease_start'] ?? null,
+                'lease_end'            => $data['lease_end'] ?? null,
+                'deposit'              => $data['deposit'] ?? 0,
+                'balance'              => $data['balance'] ?? 0,
+                'water_balance'        => $data['water_balance'] ?? 0,
+                'elec_balance'         => $data['elec_balance'] ?? 0,
+                'documents'            => $data['documents'] ?? null,
             ]);
 
             // If house assigned, atomically claim it while it is still vacant.
@@ -230,46 +236,75 @@ class TenantController
 
     /**
      * PUT /api/tenants/{id}
-     */
-    public function update(array $params): void
-    {
-        Router::requireOwner();
-        $ownerId = Router::getAuthUserId();
-        $tenantId = (int) ($params['id'] ?? 0);
-        $data = Router::getRequestBody();
-        $db = Database::getInstance();
-
-        $existing = $db->fetchOne(
-            "SELECT id FROM tenants WHERE id = ? AND owner_id = ?",
-            [$tenantId, $ownerId]
-        );
-        if (!$existing) {
-            Router::jsonResponse(['error' => 'Tenant not found'], 404);
-        }
-
-        $updateData = [];
-        $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'emergency_contact',
-                     'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
-        foreach ($allowed as $field) {
-            if (isset($data[$field])) {
-                $updateData[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
-            }
-        }
-
-        if (isset($updateData['name']) && $updateData['name'] === '') {
-            Router::jsonResponse(['error' => 'Tenant name is required'], 400);
-        }
-        if (!empty($updateData['email']) && !filter_var($updateData['email'], FILTER_VALIDATE_EMAIL)) {
-            Router::jsonResponse(['error' => 'Invalid email format'], 400);
-        }
-
-        if (!empty($updateData)) {
-            $db->update('tenants', $updateData, 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
-        }
-
-        $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ? AND owner_id = ?", [$tenantId, $ownerId]);
-        Router::jsonResponse(['message' => 'Tenant updated', 'tenant' => $tenant]);
-    }
+      */
+     public function update(array $params): void
+     {
+         $role = Router::getAuthRole();
+         $actorId = Router::getAuthUserId();
+         $tenantId = (int) ($params['id'] ?? 0);
+         $data = Router::getRequestBody();
+         $db = Database::getInstance();
+ 
+         // Verify tenant exists and get owner_id
+         $existing = $db->fetchOne(
+             "SELECT id, owner_id FROM tenants WHERE id = ?",
+             [$tenantId]
+         );
+         
+         if (!$existing) {
+             Router::jsonResponse(['error' => 'Tenant not found'], 404);
+         }
+         
+         $ownerId = $existing['owner_id'];
+         
+         // Check authorization: owner can update any of their tenants, tenant can update themselves
+         if ($role === 'owner') {
+             // Owner is updating - verify tenant belongs to them
+             if ($existing['owner_id'] != $actorId) {
+                 Router::jsonResponse(['error' => 'Not authorized'], 403);
+             }
+         } elseif ($role === 'tenant') {
+             // Tenant is updating - verify it's their own record
+             $authTenantId = Router::getAuthTenantId();
+             if ($tenantId !== $authTenantId) {
+                 Router::jsonResponse(['error' => 'Only owners can perform this action'], 403);
+             }
+         } else {
+             Router::jsonResponse(['error' => 'Not authorized'], 403);
+         }
+ 
+         $updateData = [];
+         
+         // Define allowed fields based on role
+         if ($role === 'owner') {
+             // Owners can update all fields
+             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email', 'emergency_contact',
+                      'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
+         } else {
+             // Tenants can only update phone and email
+             $allowed = ['phone', 'email'];
+         }
+         
+         foreach ($allowed as $field) {
+             if (isset($data[$field])) {
+                 $updateData[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
+             }
+         }
+ 
+         if (isset($updateData['name']) && $updateData['name'] === '') {
+             Router::jsonResponse(['error' => 'Tenant name is required'], 400);
+         }
+         if (!empty($updateData['email']) && !filter_var($updateData['email'], FILTER_VALIDATE_EMAIL)) {
+             Router::jsonResponse(['error' => 'Invalid email format'], 400);
+         }
+ 
+         if (!empty($updateData)) {
+             $db->update('tenants', $updateData, 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+         }
+ 
+         $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ? AND owner_id = ?", [$tenantId, $ownerId]);
+         Router::jsonResponse(['message' => 'Tenant updated', 'tenant' => $tenant]);
+     }
 
     /**
      * POST /api/tenants/request-termination

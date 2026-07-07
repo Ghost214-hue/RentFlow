@@ -36,10 +36,10 @@ $role = $user['role'] ?? 'owner';
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead><tr class="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-blue-50 bg-blue-50/50">
-                            <th class="px-6 py-4">Receipt</th><th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Description</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Method</th><th class="px-6 py-4">Date</th><th class="px-6 py-4">Status</th>
+                            <th class="px-6 py-4">Receipt</th><th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Description</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Method</th><th class="px-6 py-4">Date</th><th class="px-6 py-4">Status</th><th class="px-6 py-4">Confirmed</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="paymentsTable">
-                            <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
+                            <tr><td colspan="8" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -65,13 +65,15 @@ $role = $user['role'] ?? 'owner';
     const API = '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    const userRole = '<?php echo $role; ?>';
 
+    function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
         const icons = { success:'fa-check-circle', error:'fa-exclamation-circle', info:'fa-info-circle' };
         el.className = `fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2 ${colors[type]||colors.success}`;
-        el.innerHTML = `<i class="fas ${icons[type]||icons.success}"></i>${msg}`;
+        el.innerHTML = `<i class="fas ${icons[type]||icons.success}"></i>${escapeHtml(msg)}`;
         el.classList.remove('hidden');
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
@@ -82,21 +84,36 @@ $role = $user['role'] ?? 'owner';
             const data = await res.json();
             const tbody = document.getElementById('paymentsTable');
             if (data.payments && data.payments.length) {
-                tbody.innerHTML = data.payments.map(p => `
-                    <tr class="hover:bg-blue-50/30 transition-colors">
+                tbody.innerHTML = data.payments.map(p => {
+                    const isConfirmed = p.tenant_confirmed == 1;
+                    const isTenantPayment = userRole === 'tenant' && p.tenant_confirmed == 0;
+                    return `<tr class="hover:bg-blue-50/30 transition-colors">
                         <td class="px-6 py-4 text-sm font-medium text-blue-600">${p.receipt||'N/A'}</td>
                         <td class="px-6 py-4"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${(p.tenant_name||'U').split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm text-slate-700">${p.tenant_name||'N/A'}</span></div></td>
                         <td class="px-6 py-4 text-sm text-slate-600">${p.description||''}</td>
                         <td class="px-6 py-4 text-sm font-bold text-slate-900">KES ${(p.amount||0).toLocaleString()}</td>
                         <td class="px-6 py-4 text-sm text-slate-500">${p.method||'N/A'}</td>
                         <td class="px-6 py-4 text-sm text-slate-500">${new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</td>
-                        <td class="px-6 py-4"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${p.status==='paid'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}">${p.status}</span></td>
-                    </tr>
-                `).join('');
+                        <td class="px-6 py-4"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${p.status==='confirmed'||p.status==='paid'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}">${p.status}</span></td>
+                        <td class="px-6 py-4">${isConfirmed ? '<span class="text-emerald-600 text-sm"><i class="fas fa-check-circle mr-1"></i>Confirmed</span>' : (isTenantPayment ? '<button onclick="confirmPayment('+p.id+')" class="px-3 py-1.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full hover:bg-amber-200 transition-all"><i class="fas fa-check mr-1"></i>Confirm</button>' : '<span class="text-slate-400 text-sm">Awaiting confirmation</span>')}</td>
+                    </tr>`;
+                }).join('');
             } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No payments found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-12 text-center text-slate-400">No payments found</td></tr>';
             }
         } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+    }
+
+    async function confirmPayment(paymentId) {
+        try {
+            const res = await fetch(`${API}/payments/${paymentId}/confirm`, { method:'PUT', headers });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            toast('Payment confirmed! You have verified this payment record.', 'success');
+            loadPayments();
+            // Refresh sidebar counts
+            if (typeof loadSidebarCounts === 'function') loadSidebarCounts();
+        } catch(e) { toast(e.message, 'error'); }
     }
 
     async function loadTenants() {
@@ -105,7 +122,7 @@ $role = $user['role'] ?? 'owner';
             const data = await res.json();
             const select = document.getElementById('payTenant');
             if (data.tenants && '<?php echo $role; ?>' !== 'tenant') {
-                select.innerHTML = '<option value="">Select tenant...</option>' + data.tenants.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+                select.innerHTML = '<option value="">Select tenant...</option>' + data.tenants.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
             }
         } catch(e) { console.error(e); }
     }
@@ -115,6 +132,10 @@ $role = $user['role'] ?? 'owner';
 
     document.getElementById('paymentForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
         const data = {
             type: document.getElementById('payType').value,
             amount: parseFloat(document.getElementById('payAmount').value),
@@ -132,10 +153,21 @@ $role = $user['role'] ?? 'owner';
             closeModal();
             loadPayments();
         } catch(err) { toast(err.message, 'error'); }
+        finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+        }
     });
 
     loadTenants();
     loadPayments();
+
+    // Refresh sidebar counts after recording payment
+    const origOpen = openModal;
+    openModal = function() {
+        if (typeof refreshSidebarCounts === 'function') refreshSidebarCounts();
+        origOpen();
+    };
     </script>
 </body>
 </html>

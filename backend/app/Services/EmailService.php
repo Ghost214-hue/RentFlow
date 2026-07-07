@@ -94,6 +94,9 @@ class EmailService
             '{{title}}' => $data['title'] ?? '',
             '{{sender_name}}' => $data['sender_name'] ?? '',
             '{{description}}' => $data['description'] ?? '',
+            '{{next_of_kin_intro}}' => $data['next_of_kin_intro'] ?? '',
+            '{{recipient_name}}' => $data['recipient_name'] ?? '',
+            '{{payment_instructions}}' => $data['payment_instructions'] ?? '',
         ];
         
         return str_replace(array_keys($replacements), array_values($replacements), $content);
@@ -416,7 +419,7 @@ class EmailService
     }
     
     /**
-     * Send payment confirmation email
+     * Send payment confirmation email to tenant and next of kin
      */
     public function sendPaymentConfirmation(int $ownerId, array $tenant, array $payment): bool
     {
@@ -429,7 +432,57 @@ class EmailService
             'date' => date('Y-m-d', strtotime($payment['date'] ?? 'now'))
         ];
         
-        return $this->sendTemplate('Payment Confirmation', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        // Get all recipients (tenant + next of kin)
+        $recipientService = new NotificationRecipientService();
+        $recipients = $recipientService->getRecipients((int)$tenant['id'], $ownerId);
+        
+        if (empty($recipients)) {
+            error_log("No valid recipients for payment confirmation - Tenant ID: {$tenant['id']}");
+            return false;
+        }
+        
+        // Send to all recipients
+        $allSent = true;
+        foreach ($recipients as $recipient) {
+            $isNextOfKin = ($recipient['type'] === 'next_of_kin');
+            
+            // Add next of kin introduction if applicable
+            $recipientVariables = $variables;
+            if ($isNextOfKin) {
+                $recipientVariables['next_of_kin_intro'] = "Dear {$recipient['name']},\n\nThis email is to inform you that a payment has been successfully recorded for {$tenant['name']}'s accommodation account. As the registered Next of Kin, you are receiving this notification to keep you informed of important payment activities.\n\n";
+                $recipientVariables['recipient_name'] = $recipient['name'];
+            }
+            
+            $sent = $this->sendTemplate(
+                'Payment Confirmation', 
+                $ownerId, 
+                $recipient['email'], 
+                $recipient['name'], 
+                $recipientVariables
+            );
+            
+            // Log the notification
+            try {
+                $recipientService->logNotification(
+                    (int)$tenant['id'],
+                    $tenant['name'],
+                    $recipient['type'],
+                    $recipient['name'],
+                    $recipient['email'],
+                    'Payment Confirmation',
+                    $sent
+                );
+            } catch (\Exception $e) {
+                error_log("Failed to log payment confirmation notification: " . $e->getMessage());
+            }
+            
+            if (!$sent) {
+                $allSent = false;
+                error_log("Failed to send payment confirmation to {$recipient['email']}");
+            }
+        }
+        
+        return $allSent;
     }
     
     /**

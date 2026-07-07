@@ -27,29 +27,44 @@ $role = $user['role'] ?? 'owner';
         <?php include __DIR__ . '/../public/components/header.php'; ?>
         <main class="flex-1 overflow-y-auto p-4 lg:p-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div><h1 class="text-2xl font-bold text-slate-900">Complaints</h1><p class="text-slate-500 mt-1">Track maintenance issues</p></div>
-                <button onclick="openModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>New Complaint</button>
+                <div><h1 class="text-2xl font-bold text-slate-900">Complaints & Notices</h1><p class="text-slate-500 mt-1">Two-way communication between tenants and management</p></div>
+                <button onclick="openModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>New <?php echo $role === 'tenant' ? 'Complaint' : 'Notice'; ?></button>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="complaintsGrid">
                 <div class="col-span-full py-12 text-center text-slate-400">Loading...</div>
             </div>
         </main>
     </div>
+
+    <!-- NEW COMPLAINT/NOTICE MODAL -->
     <div id="modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeModal()">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onclick="event.stopPropagation()">
-            <div class="flex items-center justify-between mb-4"><h3 class="text-lg font-bold text-slate-900">New Complaint</h3><button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button></div>
+            <div class="flex items-center justify-between mb-4"><h3 class="text-lg font-bold text-slate-900" id="modalTitle">New Complaint</h3><button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button></div>
             <form id="complaintForm" class="space-y-4">
-                <div><label class="block text-sm font-medium text-slate-700 mb-1">Title</label><input type="text" id="compTitle" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Brief description" required></div>
+                <div><label class="block text-sm font-medium text-slate-700 mb-1">Title <span class="text-red-400">*</span></label><input type="text" id="compTitle" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Brief subject" required></div>
                 <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select id="compCategory" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option>Plumbing</option><option>Electrical</option><option>Security</option><option>Other</option></select></div>
+                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select id="compCategory" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option>Maintenance</option><option>Noise</option><option>Security</option><option>Notice</option><option>Rent</option><option>Other</option></select></div>
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Priority</label><select id="compPriority" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option>Low</option><option>Medium</option><option>High</option></select></div>
                 </div>
-                <div><label class="block text-sm font-medium text-slate-700 mb-1">Description</label><textarea id="compDesc" rows="3" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Describe the issue..."></textarea></div>
+                <div><label class="block text-sm font-medium text-slate-700 mb-1">Description <span class="text-red-400">*</span></label><textarea id="compDesc" rows="3" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Describe your concern or notice..." required></textarea></div>
+
+                <!-- Owner/Caretaker recipient selection -->
+                <div id="recipientSection" class="<?php echo $role === 'tenant' ? 'hidden' : '' ?>">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Send To</label>
+                    <select id="recipientType" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all mb-2" onchange="toggleRecipientFields()">
+                        <option value="individual">Individual Tenant</option>
+                        <option value="property">All Tenants in a Property</option>
+                        <option value="all">All Managed Tenants</option>
+                    </select>
+                    <div id="tenantSelectDiv"><label class="block text-sm font-medium text-slate-700 mb-1">Tenant</label><select id="compTenant" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option value="">Loading...</option></select></div>
+                    <div id="propertySelectDiv" class="hidden"><label class="block text-sm font-medium text-slate-700 mb-1">Property</label><select id="compProperty" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option value="">Loading...</option></select></div>
+                </div>
+
                 <div class="flex justify-end gap-3 pt-4"><button type="button" onclick="closeModal()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all">Cancel</button><button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all">Submit</button></div>
             </form>
         </div>
     </div>
-    
+
     <!-- COMPLAINT DETAIL MODAL -->
     <div id="complaintDetailModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeComplaintDetailModal()">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6" onclick="event.stopPropagation()">
@@ -60,77 +75,41 @@ $role = $user['role'] ?? 'owner';
                 </div>
                 <button onclick="closeComplaintDetailModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
             </div>
-            
             <div class="space-y-4">
-                <!-- Description -->
                 <div class="bg-slate-50 rounded-xl p-4">
                     <h4 class="text-sm font-semibold text-slate-700 mb-2">Description</h4>
                     <p id="detailDescription" class="text-sm text-slate-600"></p>
                 </div>
-                
-                <!-- Timeline & Comments -->
                 <div>
                     <h4 class="text-sm font-semibold text-slate-700 mb-3">Updates & Replies</h4>
-                    <div id="detailTimeline" class="space-y-3">
-                        <!-- Timeline items will be loaded here -->
-                    </div>
+                    <div id="detailTimeline" class="space-y-3"></div>
                 </div>
-                
-                <!-- Reply Form (for owners/caretakers) -->
                 <div id="replySection" class="hidden border-t border-slate-200 pt-4">
                     <h4 class="text-sm font-semibold text-slate-700 mb-2">Add Reply</h4>
                     <form id="detailReplyForm" class="space-y-3">
                         <textarea id="detailReplyText" rows="3" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Type your reply..." required></textarea>
-                        <div class="flex justify-end">
-                            <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all">Send Reply</button>
-                        </div>
+                        <div class="flex justify-end"><button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all">Send Reply</button></div>
                     </form>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- REPLY MODAL -->
-    <div id="replyModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeReplyModal()">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onclick="event.stopPropagation()">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <h3 class="text-lg font-bold text-slate-900">Reply to Complaint</h3>
-                    <p id="replyComplaintTitle" class="text-sm text-slate-500 mt-1"></p>
-                </div>
-                <button onclick="closeReplyModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
-            </div>
-            <form id="replyForm" class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Your Reply</label>
-                    <textarea id="replyText" rows="4" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Type your response or update here..." required></textarea>
-                </div>
-                <div class="flex justify-end gap-3 pt-4">
-                    <button type="button" onclick="closeReplyModal()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all">Cancel</button>
-                    <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all">Send Reply</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
+
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
     const API = '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
-    
-    function escapeHtml(value) {
-        const div = document.createElement('div');
-        div.textContent = value;
-        return div.innerHTML;
-    }
+    const userRole = '<?php echo $role; ?>';
+
+    function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
         const icons = { success:'fa-check-circle', error:'fa-exclamation-circle', info:'fa-info-circle' };
         el.className = `fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2 ${colors[type]||colors.success}`;
-        el.innerHTML = `<i class="fas ${icons[type]||icons.success}"></i>${msg}`;
+        el.innerHTML = `<i class="fas ${icons[type]||icons.success}"></i>${escapeHtml(msg)}`;
         el.classList.remove('hidden');
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
@@ -140,225 +119,121 @@ $role = $user['role'] ?? 'owner';
             const res = await fetch(`${API}/complaints`, { headers });
             const data = await res.json();
             const grid = document.getElementById('complaintsGrid');
-            const userRole = '<?php echo $role; ?>';
-            const canReply = userRole === 'owner' || userRole === 'caretaker';
-            
+            if (!res.ok) throw new Error(data.error || 'Failed');
             if (data.complaints && data.complaints.length) {
-                grid.innerHTML = data.complaints.map(c => `
-                    <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5 hover:shadow-md transition-shadow cursor-pointer" onclick="viewComplaintDetail(${c.id})">
+                grid.innerHTML = data.complaints.map(c => {
+                    const isUnread = c.is_unread ? '<span class="ml-2 px-2 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white">NEW</span>' : '';
+                    const senderLabel = c.sender_role === 'tenant' ? (c.tenant_name || 'Tenant') : (c.sender_role === 'caretaker' ? (c.caretaker_name || 'Manager') : (c.owner_name || 'Owner'));
+                    return `<div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5 hover:shadow-md transition-shadow cursor-pointer ${c.is_unread ? 'border-l-4 border-l-blue-500' : ''}" onclick="viewComplaintDetail(${c.id})">
                         <div class="flex items-start justify-between mb-3">
                             <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 flex items-center justify-center"><i class="fas fa-wrench"></i></div>
-                                <div><h3 class="font-medium text-slate-900">${c.title}</h3><p class="text-xs text-slate-500">${c.category||'Other'} • ${c.property_name||''} ${c.unit||''}</p></div>
+                                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 flex items-center justify-center"><i class="fas fa-${c.sender_role === 'tenant' ? 'wrench' : 'bullhorn'}"></i></div>
+                                <div><h3 class="font-medium text-slate-900">${escapeHtml(c.title)}${isUnread}</h3><p class="text-xs text-slate-500">${c.category||'Other'} • ${c.property_name||''} ${c.unit||''}</p></div>
                             </div>
                             <span class="px-2 py-1 rounded-full text-xs font-medium ${c.status==='open'?'bg-red-100 text-red-700':c.status==='in-progress'?'bg-blue-100 text-blue-700':'bg-emerald-100 text-emerald-700'}">${c.status}</span>
                         </div>
-                        <p class="text-sm text-slate-600 mb-4 line-clamp-2">${c.description||''}</p>
+                        <p class="text-sm text-slate-600 mb-4 line-clamp-2">${escapeHtml(c.description || '')}</p>
                         <div class="flex items-center justify-between pt-3 border-t border-blue-50">
-                            <div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${(c.tenant_name||'U').split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-xs text-slate-500">${c.tenant_name||'N/A'}</span></div>
-                            <div class="flex items-center gap-2">
-                                ${canReply ? `<button onclick="event.stopPropagation(); openReplyModal(${c.id}, '${c.title.replace(/'/g, "\\'")}')" class="text-xs text-blue-600 hover:text-blue-700 font-medium"><i class="fas fa-reply mr-1"></i>Reply</button>` : ''}
-                                <span class="text-xs text-slate-400"><i class="far fa-clock mr-1"></i>${new Date(c.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
-                            </div>
+                            <div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${(c.tenant_name||'U').split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-xs text-slate-500">From: ${escapeHtml(senderLabel)}</span></div>
+                            <span class="text-xs text-slate-400"><i class="far fa-clock mr-1"></i>${new Date(c.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>
                         </div>
-                    </div>
-                `).join('');
+                    </div>`;
+                }).join('');
             } else {
-                grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-400">No complaints found</div>';
+                grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-400">No complaints or notices found</div>';
             }
         } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
     }
-    
+
     async function viewComplaintDetail(complaintId) {
         try {
-            console.log('Loading complaint:', complaintId);
-            const url = `${API}/complaints/${complaintId}`;
-            console.log('Fetching:', url);
-            
-            const res = await fetch(url, { headers });
-            console.log('Status:', res.status, res.statusText);
-            
-            if (!res.ok) {
-                const text = await res.text();
-                console.error('Error response:', text);
-                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-            }
-            
+            const res = await fetch(`${API}/complaints/${complaintId}`, { headers });
+            if (!res.ok) throw new Error('Not found');
             const data = await res.json();
-            console.log('Data received:', data);
-            
-            if (!data.complaint) {
-                throw new Error('Invalid response format');
-            }
-            
             const c = data.complaint;
-            const userRole = '<?php echo $role; ?>';
-            const canReply = userRole === 'owner' || userRole === 'caretaker';
-            
-            // Populate modal
+            const senderLabel = c.sender_role === 'tenant' ? (c.tenant_name || 'Tenant') : (c.sender_role === 'caretaker' ? (c.caretaker_name || 'Manager') : (c.owner_name || 'Owner'));
             document.getElementById('detailTitle').textContent = c.title || 'Untitled';
             document.getElementById('detailMeta').textContent = `${c.category||'Other'} • ${c.property_name||''} ${c.unit||''} • ${c.date ? new Date(c.date).toLocaleDateString('en-GB') : ''}`;
             document.getElementById('detailDescription').textContent = c.description || 'No description';
-            
-            // Only show reply section for owners and caretakers
-            document.getElementById('replySection').classList.toggle('hidden', !canReply);
-            
-            // Build timeline - show for ALL users including tenants
+            document.getElementById('replySection').classList.toggle('hidden', userRole === 'tenant');
             let html = '<div class="space-y-3">';
-            
-            // Show original complaint
-            html += '<div class="bg-slate-50 rounded-lg p-3 border-l-4 border-blue-500">';
-            html += '<div class="flex items-center justify-between mb-1">';
-            html += '<span class="text-xs font-semibold text-slate-700">Original Complaint</span>';
-            html += '<span class="text-xs text-slate-400">' + (c.date ? new Date(c.date).toLocaleDateString('en-GB') : '') + '</span>';
-            html += '</div>';
-            html += '<p class="text-sm text-slate-600">' + (c.description || 'No description provided') + '</p>';
-            html += '</div>';
-            
-            // Show all comments/replies
-            html += '<div class="border-t border-slate-200 pt-3 mt-3">';
-            html += '<h5 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">All Replies</h5>';
-            
-            // Parse comments - backend already decodes JSON, so handle both array and string
+            html += '<div class="bg-slate-50 rounded-lg p-3 border-l-4 border-blue-500"><div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold text-slate-700">Original Message</span><span class="text-xs text-slate-400">From: ' + escapeHtml(senderLabel) + '</span></div><p class="text-sm text-slate-600">' + escapeHtml(c.description || 'No description') + '</p></div>';
+            html += '<div class="border-t border-slate-200 pt-3 mt-3"><h5 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">All Updates</h5>';
             let comments = [];
             try {
-                const commentsData = c.comments || [];
-                console.log('Comments data:', commentsData);
-                console.log('Comments type:', typeof commentsData);
-                
-                // If it's already an array (decoded by backend), use it directly
-                if (Array.isArray(commentsData)) {
-                    comments = commentsData;
-                } 
-                // If it's a string, parse it
-                else if (typeof commentsData === 'string') {
-                    const parsed = JSON.parse(commentsData);
-                    if (Array.isArray(parsed)) {
-                        comments = parsed;
-                    }
-                }
-                
-                console.log('Final comments array:', comments);
-            } catch(e) {
-                console.error('Error processing comments:', e);
-                html += '<p class="text-sm text-red-400">Error loading replies</p>';
-            }
-            
-            if (comments.length === 0) {
-                html += '<p class="text-sm text-slate-400 italic">No replies yet</p>';
-            } else {
-                comments.forEach(function(comment) {
-                    const isOwner = comment.role === 'owner';
-                    const bgColor = isOwner ? 'bg-blue-50' : 'bg-amber-50';
-                    const icon = isOwner ? 'fa-user' : 'fa-user-tie';
-                    const userName = escapeHtml(comment.user || 'Unknown');
-                    const commentText = escapeHtml(comment.text || '');
-                    const commentDate = comment.date || '';
-                    
-                    html += '<div class="' + bgColor + ' rounded-lg p-3 mt-2">';
-                    html += '<div class="flex items-center justify-between mb-1">';
-                    html += '<span class="text-xs font-semibold text-slate-700">' + userName + ' <span class="text-slate-400 font-normal">(' + comment.role + ')</span></span>';
-                    html += '<span class="text-xs text-slate-400">' + commentDate + '</span>';
-                    html += '</div>';
-                    html += '<p class="text-sm text-slate-600">' + commentText + '</p>';
-                    html += '</div>';
-                });
-            }
-            
+                const raw = c.comments || [];
+                comments = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
+            } catch(e) { html += '<p class="text-sm text-red-400">Error loading updates</p>'; }
+            if (!comments.length) { html += '<p class="text-sm text-slate-400 italic">No updates yet</p>'; }
+            else { comments.forEach(comment => { const isOwner = comment.role === 'owner' || comment.role === 'caretaker'; html += '<div class="' + (isOwner ? 'bg-blue-50' : 'bg-amber-50') + ' rounded-lg p-3 mt-2"><div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold text-slate-700">' + escapeHtml(comment.user || 'Unknown') + ' <span class="text-slate-400 font-normal">(' + comment.role + ')</span></span><span class="text-xs text-slate-400">' + (comment.date || '') + '</span></div><p class="text-sm text-slate-600">' + escapeHtml(comment.text || '') + '</p></div>'; }); }
             html += '</div></div>';
-            
             document.getElementById('detailTimeline').innerHTML = html;
             document.getElementById('complaintDetailModal').classList.remove('hidden');
             window.currentDetailComplaintId = complaintId;
-            
-        } catch(e) {
-            console.error('Error:', e);
-            toast('Error: ' + e.message, 'error');
-        }
-    }
-    
-    function closeComplaintDetailModal() { 
-        document.getElementById('complaintDetailModal').classList.add('hidden');
-        window.currentDetailComplaintId = null;
+        } catch(e) { console.error(e); toast('Error: ' + e.message, 'error'); }
     }
 
+    function closeComplaintDetailModal() { document.getElementById('complaintDetailModal').classList.add('hidden'); window.currentDetailComplaintId = null; }
     function openModal() { document.getElementById('modal').classList.remove('hidden'); }
     function closeModal() { document.getElementById('modal').classList.add('hidden'); }
-    
-    let currentComplaintId = null;
-    
-    function openReplyModal(complaintId, complaintTitle) {
-        currentComplaintId = complaintId;
-        document.getElementById('replyComplaintTitle').textContent = 'Re: ' + complaintTitle;
-        document.getElementById('replyText').value = '';
-        document.getElementById('replyModal').classList.remove('hidden');
+
+    function toggleRecipientFields() {
+        const type = document.getElementById('recipientType').value;
+        document.getElementById('tenantSelectDiv').classList.toggle('hidden', type !== 'individual');
+        document.getElementById('propertySelectDiv').classList.toggle('hidden', type !== 'property');
     }
-    
-    function closeReplyModal() { 
-        document.getElementById('replyModal').classList.add('hidden');
-        currentComplaintId = null;
+
+    // Load tenants/properties for owner selects
+    async function loadSelectOptions() {
+        if (userRole === 'tenant') return;
+        try {
+            const tRes = await fetch(`${API}/tenants`, { headers }); const tData = await tRes.json();
+            const tSelect = document.getElementById('compTenant');
+            if (tSelect && tData.tenants) { tSelect.innerHTML = '<option value="">Select tenant...</option>' + tData.tenants.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${t.house_unit || 'No unit'})</option>`).join(''); }
+            const pRes = await fetch(`${API}/properties`, { headers }); const pData = await pRes.json();
+            const pSelect = document.getElementById('compProperty');
+            if (pSelect && pData.properties) { pSelect.innerHTML = '<option value="">Select property...</option>' + pData.properties.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(''); }
+        } catch(e) { console.error('Failed to load select options', e); }
     }
 
     document.getElementById('complaintForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
         const data = {
             title: document.getElementById('compTitle').value,
             category: document.getElementById('compCategory').value,
             priority: document.getElementById('compPriority').value,
             description: document.getElementById('compDesc').value,
         };
+        if (userRole !== 'tenant') {
+            data.recipient_type = document.getElementById('recipientType').value;
+            if (data.recipient_type === 'individual') data.tenant_id = document.getElementById('compTenant').value;
+            if (data.recipient_type === 'property') data.property_id = document.getElementById('compProperty').value;
+        }
         try {
             const res = await fetch(`${API}/complaints`, { method:'POST', headers, body:JSON.stringify(data) });
             const result = await res.json();
             if(!res.ok) throw new Error(result.error || 'Failed');
-            toast('Complaint submitted!');
+            toast('Submitted successfully!');
             closeModal();
             loadComplaints();
         } catch(err) { toast(err.message, 'error'); }
+        finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     });
-    
-    document.getElementById('replyForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!currentComplaintId) return;
-        
-        const commentText = document.getElementById('replyText').value.trim();
-        if (!commentText) { toast('Please enter a reply', 'error'); return; }
-        
-        try {
-            const res = await fetch(`${API}/complaints/${currentComplaintId}`, {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify({
-                    status: 'in-progress',
-                    comments: commentText,
-                    comment_user: '<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>'
-                })
-            });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
-            toast('Reply sent!');
-            closeReplyModal();
-            loadComplaints();
-        } catch(err) { toast(err.message, 'error'); }
-    });
-    
+
     document.getElementById('detailReplyForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!window.currentDetailComplaintId) return;
-        
         const commentText = document.getElementById('detailReplyText').value.trim();
         if (!commentText) { toast('Please enter a reply', 'error'); return; }
-        
         try {
-            const res = await fetch(`${API}/complaints/${window.currentDetailComplaintId}`, {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify({
-                    status: 'in-progress',
-                    comments: commentText,
-                    comment_user: '<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>'
-                })
-            });
+            const res = await fetch(`${API}/complaints/${window.currentDetailComplaintId}`, { method:'PUT', headers, body: JSON.stringify({ status:'in-progress', comments:commentText, comment_user:'<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>' }) });
             const result = await res.json();
             if(!res.ok) throw new Error(result.error || 'Failed');
             toast('Reply sent!');
@@ -368,6 +243,9 @@ $role = $user['role'] ?? 'owner';
     });
 
     loadComplaints();
+    loadSelectOptions();
+    // Refresh sidebar counts after page loads so unread badges clear when tenant views complaints
+    setTimeout(() => { if (typeof refreshSidebarCounts === 'function') refreshSidebarCounts(); }, 300);
     </script>
 </body>
 </html>

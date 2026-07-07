@@ -124,7 +124,7 @@ class PaymentController
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
         
-        // Send payment confirmation email to tenant when owner records
+        // Send payment confirmation email to tenant and next of kin when owner records
         $emailSent = false;
         if (!$isTenantSelfPay) {
             try {
