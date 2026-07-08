@@ -19,6 +19,9 @@ class EmailService
     private string $smtpPassword;
     private string $smtpEncryption;
     
+    private EmailQueueService $queueService;
+    private bool $queueEnabled;
+    
     public function __construct()
     {
         $this->db = Database::getInstance();
@@ -38,6 +41,10 @@ class EmailService
         $this->smtpUsername = $env('MAIL_USERNAME', '');
         $this->smtpPassword = $env('MAIL_PASSWORD', '');
         $this->smtpEncryption = $env('MAIL_ENCRYPTION', 'tls');
+        
+        // Email queue configuration
+        $this->queueService = new EmailQueueService();
+        $this->queueEnabled = $env('MAIL_QUEUE_ENABLED', true);
         
     }
     
@@ -68,6 +75,12 @@ class EmailService
      */
     public function replaceVariables(string $content, array $data): string
     {
+        // Build invoice section if invoice_url is provided
+        $invoiceSection = '';
+        if (!empty($data['invoice_url'])) {
+            $invoiceSection = "\n\nDownload Invoice:\n{$data['invoice_url']}\n\n";
+        }
+        
         $replacements = [
             '{{name}}' => $data['name'] ?? '',
             '{{code}}' => $data['code'] ?? '',
@@ -97,6 +110,8 @@ class EmailService
             '{{next_of_kin_intro}}' => $data['next_of_kin_intro'] ?? '',
             '{{recipient_name}}' => $data['recipient_name'] ?? '',
             '{{payment_instructions}}' => $data['payment_instructions'] ?? '',
+            '{{invoice_section}}' => $invoiceSection,
+            '{{invoice_url}}' => $data['invoice_url'] ?? '',
         ];
         
         return str_replace(array_keys($replacements), array_values($replacements), $content);
@@ -399,7 +414,7 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        return $this->sendTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        return $this->queueTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
     /**
@@ -415,11 +430,11 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        return $this->sendTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
+        return $this->queueTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
     }
     
     /**
-     * Send payment confirmation email to tenant and next of kin
+     * Send payment confirmation email to tenant and next of kin - SENDS IMMEDIATELY
      */
     public function sendPaymentConfirmation(int $ownerId, array $tenant, array $payment): bool
     {
@@ -429,7 +444,8 @@ class EmailService
             'balance' => number_format($payment['balance'] ?? 0, 2),
             'month' => $payment['month'] ?? date('F Y'),
             'category' => $payment['category'] ?? 'Rent',
-            'date' => date('Y-m-d', strtotime($payment['date'] ?? 'now'))
+            'date' => date('Y-m-d', strtotime($payment['date'] ?? 'now')),
+            'invoice_url' => $payment['invoice_url'] ?? ''
         ];
         
         // Get all recipients (tenant + next of kin)
@@ -441,8 +457,9 @@ class EmailService
             return false;
         }
         
-        // Send to all recipients
+        // Send emails IMMEDIATELY - bypass queue completely
         $allSent = true;
+        
         foreach ($recipients as $recipient) {
             $isNextOfKin = ($recipient['type'] === 'next_of_kin');
             
@@ -453,28 +470,20 @@ class EmailService
                 $recipientVariables['recipient_name'] = $recipient['name'];
             }
             
-            $sent = $this->sendTemplate(
-                'Payment Confirmation', 
-                $ownerId, 
-                $recipient['email'], 
-                $recipient['name'], 
-                $recipientVariables
-            );
-            
-            // Log the notification
-            try {
-                $recipientService->logNotification(
-                    (int)$tenant['id'],
-                    $tenant['name'],
-                    $recipient['type'],
-                    $recipient['name'],
-                    $recipient['email'],
-                    'Payment Confirmation',
-                    $sent
-                );
-            } catch (\Exception $e) {
-                error_log("Failed to log payment confirmation notification: " . $e->getMessage());
+            // Get template
+            $template = $this->getTemplate('Payment Confirmation', $ownerId);
+            if (!$template) {
+                error_log("Payment Confirmation template not found");
+                $allSent = false;
+                continue;
             }
+            
+            // Replace variables
+            $subject = $this->replaceVariables($template['subject'], $recipientVariables);
+            $body = $this->replaceVariables($template['body'], $recipientVariables);
+            
+            // Send IMMEDIATELY - bypass queue
+            $sent = $this->send($recipient['email'], $recipient['name'], $subject, $body);
             
             if (!$sent) {
                 $allSent = false;
@@ -500,11 +509,11 @@ class EmailService
         
         $templateName = $replyText ? 'Complaint Reply' : 'Complaint Update';
         
-        return $this->sendTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
+        return $this->queueTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
     /**
-     * Send rent reminder email
+     * Send rent reminder email - uses direct send for real-time delivery
      */
     public function sendRentReminder(int $ownerId, array $tenant, string $month, float $amount, int $daysUntilDue): bool
     {
@@ -519,6 +528,7 @@ class EmailService
         
         $templateName = $daysUntilDue <= 1 ? 'Rent Reminder Final' : 'Rent Reminder';
         
+        // Rent reminders are sent directly (not queued) for timely delivery
         return $this->sendTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
@@ -544,6 +554,35 @@ class EmailService
             'national_id' => $tenant['id_number'] ?? ''
         ];
         
-        return $this->sendTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        return $this->queueTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
+    }
+    
+    /**
+     * Helper: Queue a template email
+     */
+    private function queueTemplate(string $templateName, int $ownerId, string $toEmail, string $toName, array $variables = []): bool
+    {
+        if (!$this->queueEnabled) {
+            // Queue disabled, send directly
+            return $this->sendTemplate($templateName, $ownerId, $toEmail, $toName, $variables);
+        }
+        
+        $template = $this->getTemplate($templateName, $ownerId);
+        if (!$template) {
+            error_log("Email template not found: $templateName for owner $ownerId");
+            return false;
+        }
+        
+        $subject = $this->replaceVariables($template['subject'], $variables);
+        $body = $this->replaceVariables($template['body'], $variables);
+        
+        return $this->queueService->queue(
+            $ownerId,
+            $templateName,
+            $toEmail,
+            $toName,
+            $subject,
+            $body
+        );
     }
 }

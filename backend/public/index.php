@@ -90,6 +90,8 @@ $router->put('/payments/{id}/confirm', ['App\Controllers\PaymentController', 'co
 // ==================== BILL ROUTES ====================
 $router->get('/bills', ['App\Controllers\BillController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/bills/generate', ['App\Controllers\BillController', 'generate'], [function() { AuthMiddleware::authenticate(); }]);
+// Invoice route handles auth internally to support token via query param
+$router->get('/bills/{id}/invoice', ['App\Controllers\BillController', 'invoice']);
 
 // ==================== COMPLAINT ROUTES ====================
 $router->get('/complaints', ['App\Controllers\ComplaintController', 'index'], [function() { AuthMiddleware::authenticate(); }]);

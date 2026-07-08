@@ -89,7 +89,11 @@ $role = $user['role'] ?? 'owner';
                         <td class="px-6 py-4 text-sm text-emerald-600 font-medium">KES ${(b.paid||0).toLocaleString()}</td>
                         <td class="px-6 py-4 text-sm font-medium ${b.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${(b.balance||0).toLocaleString()}</td>
                         <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${b.status==='paid'?'bg-emerald-100 text-emerald-700':b.status==='partial'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600'}">${b.status}</span></td>
-                        <td class="px-6 py-4"></td>
+                        <td class="px-6 py-4">
+                            <button onclick="downloadInvoice(${b.id}, '${(b.tenant_name||'').replace(/'/g, "\\'")}', '${(b.month||'').replace(/'/g, "\\'")}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium inline-flex items-center gap-1">
+                                <i class="fas fa-download"></i> Invoice
+                            </button>
+                        </td>
                     </tr>
                 `).join('');
             } else {
@@ -167,6 +171,12 @@ $role = $user['role'] ?? 'owner';
         if (!w) { alert(summary.map(s => `${s.tenant_name}: Paid=${s.paid}, Arrears=${s.arrears}`).join('\n')); return; }
         w.document.write(html);
         w.document.close();
+    }
+
+    function downloadInvoice(billId, tenantName, month) {
+        const url = `${API}/bills/${billId}/invoice?token=${encodeURIComponent(token)}`;
+        const w = window.open(url, '_blank', 'width=900,height=700');
+        if (!w) { toast('Popup blocked. Please allow popups for PDF export.', 'error'); }
     }
 
     function exportBillPdf(id, tenantName, month) {

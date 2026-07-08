@@ -34,7 +34,7 @@ $templates = [
         'name' => 'Payment Confirmation',
         'type' => 'email',
         'subject' => 'Payment Confirmation - KES {{amount}}',
-        'body' => "Hi {{tenant}},\n\nYour payment has been successfully recorded.\n\nPayment Details:\n- Amount: KES {{amount}}\n- Category: {{category}}\n- Date: {{date}}\n- Current Balance: KES {{balance}}\n\nThank you for your payment!\n\nBest regards,\nProperty Management",
+        'body' => "Hi {{tenant}},\n\nYour payment has been successfully recorded.\n\nPayment Details:\n- Amount: KES {{amount}}\n- Category: {{category}}\n- Date: {{date}}\n- Current Balance: KES {{balance}}\n\n{{invoice_section}}\n\nOr download your invoice directly:\n{{invoice_url}}\n\nThank you for your payment!\n\nBest regards,\nProperty Management",
         'created_at' => date('Y-m-d H:i:s')
     ],
     [
@@ -96,12 +96,20 @@ $templates = [
 ];
 
     $inserted = 0;
+    $updated = 0;
     foreach ($templates as $template) {
         $exists = $db->fetchOne("SELECT id FROM email_templates WHERE owner_id = ? AND name = ?", [$template['owner_id'], $template['name']]);
         if (!$exists) {
             $db->insert('email_templates', $template);
             $inserted++;
+        } else {
+            // Update existing template to ensure latest version
+            $db->query(
+                "UPDATE email_templates SET subject = ?, body = ?, updated_at = NOW() WHERE owner_id = ? AND name = ?",
+                [$template['subject'], $template['body'], $template['owner_id'], $template['name']]
+            );
+            $updated++;
         }
     }
     
-    echo ($inserted > 0 ? "Inserted $inserted new email templates.\n" : "All templates already exist.\n");
+    echo "Email templates updated: $updated updated, $inserted new.\n";
