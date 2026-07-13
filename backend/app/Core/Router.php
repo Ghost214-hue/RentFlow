@@ -107,6 +107,9 @@ class Router
         $method = $_SERVER['REQUEST_METHOD'];
         $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
+        // Initialize security middleware
+        \App\Core\SecurityMiddleware::initialize();
+
         // Remove base path if behind a subdirectory
         // Handle both /api/houses and /rentflow/api/houses patterns
         $apiPos = strpos($uri, '/api');
@@ -176,7 +179,18 @@ class Router
     {
         http_response_code($statusCode);
         self::sendBaseHeaders();
+        
+        // Add security headers
+        header('X-XSS-Protection: 1; mode=block');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
         header('Content-Type: application/json');
+        
+        // Prevent caching of sensitive responses
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        
         echo json_encode($data);
         exit;
     }

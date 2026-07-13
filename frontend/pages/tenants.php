@@ -10,147 +10,6 @@ require_once __DIR__ . '/../includes/auth.php';
     <link rel="stylesheet" href="/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        .step-card {
-            animation: fadeIn 0.35s ease-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateX(20px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        .step-card.exit {
-            animation: fadeOut 0.25s ease-in forwards;
-        }
-        @keyframes fadeOut {
-            from { opacity: 1; transform: translateX(0); }
-            to { opacity: 0; transform: translateX(-20px); }
-        }
-        .progress-step {
-            transition: all 0.3s ease;
-        }
-        .progress-step.active .step-circle {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            color: white;
-            border-color: #2563eb;
-            box-shadow: 0 4px 12px rgba(37,99,235,0.3);
-            transform: scale(1.1);
-        }
-        .progress-step.completed .step-circle {
-            background: #059669;
-            color: white;
-            border-color: #059669;
-        }
-        .progress-step.completed .step-line {
-            background: #059669;
-        }
-        .progress-step.active .step-line {
-            background: linear-gradient(to right, #059669, #2563eb);
-        }
-        .step-circle {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8rem;
-            font-weight: 700;
-            border: 2.5px solid #e2e8f0;
-            background: white;
-            color: #94a3b8;
-            transition: all 0.3s ease;
-            position: relative;
-            z-index: 2;
-        }
-        .step-line {
-            flex: 1;
-            height: 3px;
-            background: #e2e8f0;
-            margin: 0 4px;
-            transition: all 0.3s ease;
-            position: relative;
-            top: -18px;
-            z-index: 1;
-        }
-        .progress-container {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-        .progress-container::-webkit-scrollbar {
-            display: none;
-        }
-        .progress-step {
-            min-width: 90px;
-            flex: 0 0 auto;
-        }
-        .upload-zone {
-            border: 2px dashed #bfdbfe;
-            transition: all 0.3s ease;
-        }
-        .upload-zone:hover {
-            border-color: #60a5fa;
-            background: #eff6ff;
-        }
-        .upload-zone.dragover {
-            border-color: #2563eb;
-            background: #dbeafe;
-        }
-        .house-option {
-            transition: all 0.2s ease;
-        }
-        .house-option:hover {
-            background: #f0f9ff;
-        }
-        .house-option.selected {
-            background: #eff6ff;
-            border-color: #2563eb;
-        }
-        .rf-modal-backdrop {
-            position: fixed;
-            inset: 0;
-            z-index: 50;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
-            padding: 2.5rem 1rem 1rem;
-            background: rgba(15, 23, 42, 0.48);
-            backdrop-filter: blur(6px);
-            overflow-y: auto;
-        }
-        .rf-modal-backdrop.hidden {
-            display: none;
-        }
-        .rf-modal-panel {
-            width: min(100%, 44rem);
-            max-height: calc(100vh - 4rem);
-            overflow-y: auto;
-            border-radius: 1rem;
-            border: 1px solid #e2e8f0;
-            background: #fff;
-            box-shadow: 0 25px 70px rgba(15, 23, 42, 0.22);
-        }
-        .rf-details-panel {
-            width: min(100%, 42rem);
-        }
-        .rf-modal-panel::-webkit-scrollbar {
-            width: 10px;
-        }
-        .rf-modal-panel::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border: 3px solid #fff;
-            border-radius: 999px;
-        }
-        @media (max-width: 640px) {
-            .rf-modal-backdrop {
-                align-items: stretch;
-                padding: 0.75rem;
-            }
-            .rf-modal-panel {
-                max-height: calc(100vh - 1.5rem);
-                border-radius: 0.875rem;
-            }
-        }
-    </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
@@ -174,19 +33,21 @@ require_once __DIR__ . '/../includes/auth.php';
                         </tbody>
                     </table>
                 </div>
+                <div id="tenantsPager" class="p-4"></div>
             </div>
+            <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
 
-    <!-- TENANT ONBOARDING WIZARD MODAL -->
+    <!-- TENANT ONBOARDING/EDIT WIZARD MODAL -->
     <div id="tenantModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeTenantModal()">
         <div class="rf-modal-panel p-5 sm:p-6 lg:p-8" onclick="event.stopPropagation()">
 
             <!-- Header -->
             <div class="flex items-center justify-between mb-6">
                 <div>
-                    <h3 class="text-xl font-bold text-slate-900">Add Tenant</h3>
-                    <p class="text-sm text-slate-500 mt-0.5">Step <span id="stepNum">1</span> of 5</p>
+                    <h3 class="text-xl font-bold text-slate-900" id="modalTitle">Add Tenant</h3>
+                    <p class="text-sm text-slate-500 mt-0.5">Step <span id="stepNum">1</span> of 6</p>
                 </div>
                 <button onclick="closeTenantModal()" class="text-slate-400 hover:text-slate-600 transition-colors"><i class="fas fa-times text-xl"></i></button>
             </div>
@@ -205,16 +66,21 @@ require_once __DIR__ . '/../includes/auth.php';
                 <div class="step-line"></div>
                 <div class="progress-step text-center" data-step="3">
                     <div class="step-circle mx-auto">3</div>
-                    <p class="text-xs font-medium mt-1.5 text-slate-400">Lease</p>
+                    <p class="text-xs font-medium mt-1.5 text-slate-400">Next of Kin</p>
                 </div>
                 <div class="step-line"></div>
                 <div class="progress-step text-center" data-step="4">
                     <div class="step-circle mx-auto">4</div>
-                    <p class="text-xs font-medium mt-1.5 text-slate-400">Finance</p>
+                    <p class="text-xs font-medium mt-1.5 text-slate-400">Lease</p>
                 </div>
                 <div class="step-line"></div>
                 <div class="progress-step text-center" data-step="5">
                     <div class="step-circle mx-auto">5</div>
+                    <p class="text-xs font-medium mt-1.5 text-slate-400">Finance</p>
+                </div>
+                <div class="step-line"></div>
+                <div class="progress-step text-center" data-step="6">
+                    <div class="step-circle mx-auto">6</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Docs</p>
                 </div>
             </div>
@@ -299,8 +165,47 @@ require_once __DIR__ . '/../includes/auth.php';
                     </div>
                 </div>
 
-                <!-- STEP 3: Lease & Assignment -->
+                <!-- STEP 3: Next of Kin -->
                 <div class="step-card hidden" id="step3">
+                    <div class="bg-gradient-to-br from-teal-50 to-teal-100/50 rounded-xl p-5 border border-teal-100/80 shadow-sm">
+                        <div class="flex items-center gap-3 mb-5">
+                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 text-white flex items-center justify-center text-lg"><i class="fas fa-users"></i></div>
+                            <div><h4 class="font-bold text-slate-900">Next of Kin</h4><p class="text-xs text-slate-500">Emergency contact person details</p></div>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1.5">Full Name <span class="text-red-400">*</span></label>
+                                <div class="relative">
+                                    <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                    <input type="text" id="nextOfKinName" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 outline-none transition-all" placeholder="e.g. Jane Mwangi" required>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Phone Number <span class="text-red-400">*</span></label>
+                                    <div class="relative">
+                                        <i class="fas fa-phone absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                        <input type="tel" id="nextOfKinPhone" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 outline-none transition-all" placeholder="+254 712 345 678" required>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                                    <div class="relative">
+                                        <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                        <input type="email" id="nextOfKinEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 outline-none transition-all" placeholder="nextofkin@example.com">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between mt-6 pt-4 border-t border-teal-100/70">
+                            <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
+                            <button type="button" onclick="nextStep()" class="px-6 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-white font-semibold rounded-xl shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 transition-all inline-flex items-center gap-2">Next <i class="fas fa-arrow-right text-sm"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STEP 4: Lease & Assignment -->
+                <div class="step-card hidden" id="step4">
                     <div class="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl p-5 border border-amber-100/80 shadow-sm">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-lg"><i class="fas fa-file-contract"></i></div>
@@ -356,8 +261,8 @@ require_once __DIR__ . '/../includes/auth.php';
                     </div>
                 </div>
 
-                <!-- STEP 4: Financial Details -->
-                <div class="step-card hidden" id="step4">
+                <!-- STEP 5: Financial Details -->
+                <div class="step-card hidden" id="step5">
                     <div class="bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-xl p-5 border border-purple-100/80 shadow-sm">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 text-white flex items-center justify-center text-lg"><i class="fas fa-money-bill-wave"></i></div>
@@ -396,8 +301,8 @@ require_once __DIR__ . '/../includes/auth.php';
                     </div>
                 </div>
 
-                <!-- STEP 5: Documents & Review -->
-                <div class="step-card hidden" id="step5">
+                <!-- STEP 6: Documents & Review -->
+                <div class="step-card hidden" id="step6">
                     <div class="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-xl p-5 border border-rose-100/80 shadow-sm">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 text-white flex items-center justify-center text-lg"><i class="fas fa-upload"></i></div>
@@ -423,6 +328,8 @@ require_once __DIR__ . '/../includes/auth.php';
                                 <div class="text-slate-500">Phone:</div><div class="font-medium text-slate-900" id="sumPhone">-</div>
                                 <div class="text-slate-500">ID:</div><div class="font-medium text-slate-900" id="sumId">-</div>
                                 <div class="text-slate-500">Unit:</div><div class="font-medium text-slate-900" id="sumUnit">-</div>
+                                <div class="text-slate-500">Next of Kin:</div><div class="font-medium text-slate-900" id="sumNextOfKin">-</div>
+                                <div class="text-slate-500">Kin Phone:</div><div class="font-medium text-slate-900" id="sumNextOfKinPhone">-</div>
                                 <div class="text-slate-500">Rent:</div><div class="font-medium text-slate-900" id="sumRent">KES 0</div>
                                 <div class="text-slate-500">Deposit:</div><div class="font-medium text-slate-900" id="sumDeposit">KES 0</div>
                                 <div class="text-slate-500">Lease:</div><div class="font-medium text-slate-900" id="sumLease">-</div>
@@ -430,81 +337,110 @@ require_once __DIR__ . '/../includes/auth.php';
                         </div>
                     </div>
                     <div class="flex justify-between mt-4">
-                        <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
-                        <button type="button" onclick="submitTenant()" class="px-8 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-check-circle text-sm"></i> Register Tenant</button>
+                        <button type="button" id="deleteTenantBtn" onclick="deleteTenant()" class="hidden px-5 py-2.5 bg-red-600 text-white border border-red-700 rounded-xl font-medium hover:bg-red-700 transition-all inline-flex items-center gap-2"><i class="fas fa-trash text-sm"></i> Delete Tenant</button>
+                        <div class="flex gap-3 ml-auto">
+                            <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
+                            <button type="button" onclick="submitTenant()" class="px-8 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all inline-flex items-center gap-2" id="submitBtn"><i class="fas fa-check-circle text-sm"></i> <span id="submitBtnText">Register Tenant</span></button>
+                        </div>
                     </div>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- TENANT DETAILS MODAL -->
-    <div id="tenantDetailsModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeTenantDetailsModal()">
-        <div class="rf-modal-panel rf-details-panel p-5 sm:p-6 lg:p-8" onclick="event.stopPropagation()">
-            <div class="flex items-start justify-between gap-4 mb-6">
-                <div>
-                    <h3 class="text-xl font-bold text-slate-900">Tenant details</h3>
-                    <p class="text-sm text-slate-500 mt-1">Review the tenant profile and lease information.</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <?php if ($role === 'owner'): ?>
-                    <button id="tenantEditBtn" onclick="enableTenantEdit()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 hover:bg-slate-50">Edit</button>
-                    <button id="tenantSaveBtn" onclick="saveTenantEdits()" class="hidden px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-sm">Save</button>
-                    <button id="tenantCancelBtn" onclick="cancelTenantEdit()" class="hidden px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
-                    <?php endif; ?>
-                    <button onclick="closeTenantDetailsModal()" class="text-slate-400 hover:text-slate-600 transition-colors ml-2"><i class="fas fa-times text-xl"></i></button>
-                </div>
+    <!-- TERMINATE TENANCY MODAL -->
+    <div id="terminateModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeTerminateModal()">
+        <div class="rf-modal-panel p-5 sm:p-6 lg:p-8" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900">Terminate Tenancy</h3>
+                <button onclick="closeTerminateModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
             </div>
-            <div class="grid gap-4">
-                <div class="rounded-2xl bg-slate-50 p-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-14 h-14 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-lg font-bold" id="detailInitials">TN</div>
-                        <div>
-                            <p class="text-lg font-semibold text-slate-900" id="detailName">Tenant Name</p>
-                            <input id="detailNameInput" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                            <p class="text-sm text-slate-500" id="detailEmail">tenant@example.com</p>
-                            <input id="detailEmailInput" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                        </div>
-                    </div>
+            <form id="terminateForm" onsubmit="terminateTenant(event)">
+                <input type="hidden" id="terminateTenantId">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Reason for Termination</label>
+                    <textarea id="terminateReason" rows="3" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm" placeholder="Optional reason"></textarea>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="bg-white rounded-2xl border border-slate-200 p-4">
-                        <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Property</p>
-                        <p class="font-medium text-slate-900" id="detailProperty">-</p>
-                        <input id="detailPropertyInput" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-200 p-4">
-                        <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Unit</p>
-                        <p class="font-medium text-slate-900" id="detailUnit">-</p>
-                        <input id="detailUnitInput" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-200 p-4">
-                        <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Phone</p>
-                        <p class="font-medium text-slate-900" id="detailPhone">-</p>
-                        <input id="detailPhoneInput" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-200 p-4">
-                        <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Balance</p>
-                        <p class="font-medium text-emerald-600" id="detailBalance">KES 0</p>
-                        <input id="detailBalanceInput" type="number" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-200 p-4">
-                        <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Lease end</p>
-                        <p class="font-medium text-slate-900" id="detailLeaseEnd">-</p>
-                        <input id="detailLeaseEndInput" type="date" class="hidden w-full px-3 py-2 rounded-md border border-slate-200 mt-1" />
-                    </div>
-                    <div class="bg-white rounded-2xl border border-slate-200 p-4">
-                        <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">ID</p>
-                        <p class="font-medium text-slate-900" id="detailId">-</p>
-                        <div class="hidden" id="detailIdInputs">
-                            <input id="detailIdTypeInput" class="w-full px-3 py-2 rounded-md border border-slate-200 mt-1" placeholder="ID type" />
-                            <input id="detailIdNumberInput" class="w-full px-3 py-2 rounded-md border border-slate-200 mt-2" placeholder="ID number" />
-                        </div>
-                    </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Effective Date</label>
+                    <input type="date" id="terminateDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm">
                 </div>
-            </div>
+                <p class="text-xs text-red-500 mb-4">This will make the house vacant immediately. This action cannot be undone.</p>
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeTerminateModal()" class="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
+                    <button type="submit" class="flex-1 py-2 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-medium hover:from-red-600 hover:to-red-700 transition-all text-sm">Terminate</button>
+                </div>
+            </form>
         </div>
     </div>
+
+    <!-- APPROVE TERMINATION MODAL -->
+    <div id="approveTerminationModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeApproveTerminationModal()">
+        <div class="rf-modal-panel p-5 sm:p-6 lg:p-8" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900">Approve Termination Request</h3>
+                <button onclick="closeApproveTerminationModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="approveTerminationForm" onsubmit="approveTermination(event)">
+                <input type="hidden" id="approveTenantId">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Effective Date</label>
+                    <input type="date" id="approveDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all text-sm">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Reason (optional)</label>
+                    <textarea id="approveReason" rows="2" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all text-sm" placeholder="Any additional notes"></textarea>
+                </div>
+                <p class="text-xs text-slate-500 mb-4">The tenant will be notified via email that their termination request has been approved.</p>
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeApproveTerminationModal()" class="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
+                    <button type="submit" class="flex-1 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-medium hover:from-emerald-600 hover:to-emerald-700 transition-all text-sm">Approve & Terminate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    const TENANTS_API = '/api';
+    const TENANTS_TOKEN = localStorage.getItem('rf_token') || '';
+    const TENANTS_HEADERS = TENANTS_TOKEN ? {'Authorization':'Bearer '+TENANTS_TOKEN, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    const TENANTS_PER_PAGE_KEY = 'rf_tenants_per_page';
+    const TENANTS_PER_PAGE_DEFAULT = 25;
+
+    async function loadTenants(page = 1, perPage = window.getSavedPerPage(TENANTS_PER_PAGE_KEY, TENANTS_PER_PAGE_DEFAULT)) {
+        try {
+            const res = await fetch(`${TENANTS_API}/tenants?page=${page}&per_page=${perPage}`, { headers: TENANTS_HEADERS });
+            const data = await res.json();
+            const tbody = document.getElementById('tenantsTable');
+            if (data.tenants && data.tenants.length) {
+                tbody.innerHTML = data.tenants.map(t => `
+                    <tr class="hover:bg-blue-50/30 transition-colors">
+                        <td class="px-6 py-4 text-sm font-medium text-slate-900">${(t.name||'N/A')}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${t.property_name||'N/A'}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${t.house_unit||'N/A'}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${t.phone||'N/A'}</td>
+                        <td class="px-6 py-4 text-sm font-medium ${t.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${(t.balance||0).toLocaleString()}</td>
+                        <td class="px-6 py-4 text-sm text-slate-500">${t.lease_end||'-'}</td>
+                        <td class="px-6 py-4"> <button onclick="viewTenant(${t.id})" class="text-blue-600">View</button> </td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No tenants found</td></tr>';
+            }
+            if (data.meta) renderPagination('tenantsPager', data.meta, (p) => loadTenants(p, perPage), {
+                perPageKey: TENANTS_PER_PAGE_KEY,
+                defaultPerPage: TENANTS_PER_PAGE_DEFAULT,
+                onPerPageChange: (newPerPage) => loadTenants(1, newPerPage),
+            });
+        } catch (e) { console.error('loadTenants error', e); }
+    }
+
+    // small helper to view tenant (uses existing page)
+    function viewTenant(id) { window.location.href = '/pages/tenant-profile.php?id=' + id; }
+
+    // initialize
+    loadTenants();
+    </script>
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
 
@@ -517,17 +453,30 @@ require_once __DIR__ . '/../includes/auth.php';
     let tenantsCache = [];
     let uploadedDocs = [];
     let currentStep = 1;
-    const totalSteps = 5;
+    const totalSteps = 6;
+    let editingTenantId = null;
 
     // ==================== HELPERS ====================
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>"']/g, char => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
+            '&': '&',
+            '<': '<',
+            '>': '>',
+            '"': '"',
             "'": '&#039;'
         }[char]));
+    }
+
+    function sanitizeEmail(email) {
+        if (!email || typeof email !== 'string') return null;
+        const trimmed = email.trim();
+        if (!trimmed) return null;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmed)) {
+            toast('Invalid email format', 'error');
+            return null;
+        }
+        return trimmed.toLowerCase();
     }
 
     function initials(name, fallback = '??') {
@@ -606,10 +555,15 @@ require_once __DIR__ . '/../includes/auth.php';
             return true;
         }
         if (step === 3) {
-            if (!document.getElementById('tenantHouse').value) { toast('Please select a house/unit', 'error'); return false; }
+            if (!document.getElementById('nextOfKinName').value.trim()) { toast('Please enter next of kin name', 'error'); return false; }
+            if (!document.getElementById('nextOfKinPhone').value.trim()) { toast('Please enter next of kin phone', 'error'); return false; }
             return true;
         }
         if (step === 4) {
+            if (!document.getElementById('tenantHouse').value) { toast('Please select a house/unit', 'error'); return false; }
+            return true;
+        }
+        if (step === 5) {
             const rent = parseFloat(document.getElementById('tenantRent').value);
             if (!rent || rent <= 0) { toast('Please enter a valid monthly rent amount', 'error'); return false; }
             return true;
@@ -619,8 +573,8 @@ require_once __DIR__ . '/../includes/auth.php';
 
     function nextStep() {
         if (!validateStep(currentStep)) return;
-        // Update summary when leaving step 4
-        if (currentStep === 4) updateSummary();
+        // Update summary when leaving step 5 (Finance)
+        if (currentStep === 5) updateSummary();
         showStep(currentStep + 1);
     }
 
@@ -645,7 +599,16 @@ require_once __DIR__ . '/../includes/auth.php';
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(t.phone || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm font-medium ${Number(t.balance) > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${formatMoney(t.balance)}</td>
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(formatDate(t.lease_end))}</td>
-                        <td class="px-6 py-4"><button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View tenant details"><i class="fas fa-eye"></i></button></td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-2">
+                                <button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View tenant details"><i class="fas fa-eye"></i></button>
+                                ${t.status === 'pending_termination' ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Pending</span>` : ''}
+                                <?php if ($role === 'owner' || $role === 'caretaker'): ?>
+                                ${t.status !== 'terminated' && t.status !== 'pending_termination' ? `<button onclick="openTerminateModal(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-red-600 transition-colors" aria-label="Terminate tenancy"><i class="fas fa-door-open"></i></button>` : ''}
+                                ${t.status === 'pending_termination' ? `<button onclick="openApproveTerminationModal(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Approve termination"><i class="fas fa-check"></i></button>` : ''}
+                                <?php endif; ?>
+                            </div>
+                        </td>
                     </tr>
                 `).join('');
             } else {
@@ -777,7 +740,13 @@ require_once __DIR__ . '/../includes/auth.php';
 
     function renderUploadedFiles() {
         const container = document.getElementById('uploadedFiles');
-        if (!uploadedDocs.length) { container.innerHTML = ''; return; }
+        // Clear current files display
+        container.innerHTML = '';
+        
+        if (uploadedDocs.length === 0) {
+            return;
+        }
+        
         container.innerHTML = uploadedDocs.map((f, i) => `
             <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-blue-100 shadow-sm">
                 <div class="flex items-center gap-2.5 min-w-0">
@@ -811,6 +780,9 @@ require_once __DIR__ . '/../includes/auth.php';
         const selectedHouse = houseSelect.options[houseSelect.selectedIndex];
         document.getElementById('sumUnit').textContent = selectedHouse && selectedHouse.value ? selectedHouse.text.split(' (KES')[0] : '-';
         
+        document.getElementById('sumNextOfKin').textContent = document.getElementById('nextOfKinName').value || '-';
+        document.getElementById('sumNextOfKinPhone').textContent = document.getElementById('nextOfKinPhone').value || '-';
+        
         const rent = parseFloat(document.getElementById('tenantRent').value) || 0;
         const deposit = parseFloat(document.getElementById('tenantDeposit').value) || 0;
         document.getElementById('sumRent').textContent = 'KES ' + rent.toLocaleString();
@@ -823,8 +795,12 @@ require_once __DIR__ . '/../includes/auth.php';
 
     // ==================== MODAL CONTROL ====================
     function openTenantModal() {
+        editingTenantId = null;
         currentStep = 1;
         showStep(1);
+        document.getElementById('modalTitle').textContent = 'Add Tenant';
+        document.getElementById('submitBtnText').textContent = 'Register Tenant';
+        document.getElementById('deleteTenantBtn').classList.add('hidden');
         document.getElementById('tenantModal').classList.remove('hidden');
         loadProperties();
         // Reset form
@@ -837,6 +813,7 @@ require_once __DIR__ . '/../includes/auth.php';
     
     function closeTenantModal() {
         document.getElementById('tenantModal').classList.add('hidden');
+        editingTenantId = null;
     }
 
     function openTenantDetails(id) {
@@ -845,130 +822,96 @@ require_once __DIR__ . '/../includes/auth.php';
             toast('Tenant details are not available right now.', 'error');
             return;
         }
-        currentTenantId = Number(id);
-        cancelTenantEdit();
-        document.getElementById('detailInitials').textContent = initials(tenant.name, 'TN');
-        document.getElementById('detailName').textContent = tenant.name || 'N/A';
-        document.getElementById('detailEmail').textContent = tenant.email || 'No email provided';
-        document.getElementById('detailProperty').textContent = tenant.property_name || 'N/A';
-        document.getElementById('detailUnit').textContent = tenant.house_unit || 'N/A';
-        document.getElementById('detailPhone').textContent = tenant.phone || 'N/A';
-        document.getElementById('detailBalance').textContent = `KES ${formatMoney(tenant.balance)}`;
-        document.getElementById('detailLeaseEnd').textContent = formatDate(tenant.lease_end);
-        document.getElementById('detailId').textContent = tenant.id_type ? `${tenant.id_type} • ${tenant.id_number || 'N/A'}` : (tenant.id_number || 'N/A');
-        document.getElementById('tenantDetailsModal').classList.remove('hidden');
-    }
-
-    function closeTenantDetailsModal() {
-        cancelTenantEdit();
-        currentTenantId = null;
-        document.getElementById('tenantDetailsModal').classList.add('hidden');
-    }
-
-    // ========== EDIT HANDLERS ==========
-    let currentTenantId = null;
-    function enableTenantEdit() {
-        if (!currentTenantId) return;
-        // show inputs and fill values
-        const t = tenantsCache.find(x => Number(x.id) === Number(currentTenantId));
-        if (!t) return;
-        document.getElementById('detailNameInput').value = t.name || '';
-        document.getElementById('detailEmailInput').value = t.email || '';
-        document.getElementById('detailPhoneInput').value = t.phone || '';
-        document.getElementById('detailBalanceInput').value = t.balance || 0;
-        document.getElementById('detailLeaseEndInput').value = t.lease_end ? t.lease_end.substring(0,10) : '';
-        document.getElementById('detailIdTypeInput').value = t.id_type || '';
-        document.getElementById('detailIdNumberInput').value = t.id_number || '';
-
-        // toggle visibility
-        ['detailNameInput','detailEmailInput','detailPhoneInput','detailBalanceInput','detailLeaseEndInput','detailIdInputs'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.remove('hidden');
-        });
-        // hide static displays
-        ['detailName','detailEmail','detailPhone','detailBalance','detailLeaseEnd','detailId'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        });
-        document.getElementById('tenantEditBtn').classList.add('hidden');
-        document.getElementById('tenantSaveBtn').classList.remove('hidden');
-        document.getElementById('tenantCancelBtn').classList.remove('hidden');
-    }
-
-    function cancelTenantEdit() {
-        // hide inputs
-        ['detailNameInput','detailEmailInput','detailPhoneInput','detailBalanceInput','detailLeaseEndInput','detailIdInputs'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        });
-        // show static
-        ['detailName','detailEmail','detailPhone','detailBalance','detailLeaseEnd','detailId'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.remove('hidden');
-        });
-        document.getElementById('tenantEditBtn').classList.remove('hidden');
-        document.getElementById('tenantSaveBtn').classList.add('hidden');
-        document.getElementById('tenantCancelBtn').classList.add('hidden');
-    }
-
-    async function saveTenantEdits() {
-        if (!currentTenantId) return;
-        const btn = document.getElementById('tenantSaveBtn');
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
-        const payload = {
-            name: document.getElementById('detailNameInput').value.trim(),
-            email: document.getElementById('detailEmailInput').value.trim() || null,
-            phone: document.getElementById('detailPhoneInput').value.trim() || null,
-            balance: parseFloat(document.getElementById('detailBalanceInput').value) || 0,
-            lease_end: document.getElementById('detailLeaseEndInput').value || null,
-            id_type: document.getElementById('detailIdTypeInput').value || null,
-            id_number: document.getElementById('detailIdNumberInput').value || null,
-        };
-        try {
-            const res = await fetch(`${API}/tenants/${currentTenantId}`, {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to update');
-            // update cache and UI
-            const idx = tenantsCache.findIndex(x => Number(x.id) === Number(currentTenantId));
-            if (idx !== -1) tenantsCache[idx] = { ...tenantsCache[idx], ...data.tenant };
-            // refresh detail display
-            const t = tenantsCache[idx];
-            document.getElementById('detailName').textContent = t.name || 'N/A';
-            document.getElementById('detailEmail').textContent = t.email || 'N/A';
-            document.getElementById('detailPhone').textContent = t.phone || 'N/A';
-            document.getElementById('detailBalance').textContent = `KES ${formatMoney(t.balance)}`;
-            document.getElementById('detailLeaseEnd').textContent = formatDate(t.lease_end);
-            document.getElementById('detailId').textContent = t.id_type ? `${t.id_type} • ${t.id_number||'N/A'}` : (t.id_number||'N/A');
-            toast('Tenant updated', 'success');
-            cancelTenantEdit();
-            loadTenants();
-        } catch (e) {
-            console.error('Update tenant error:', e);
-            toast(e.message || 'Could not update tenant', 'error');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Save';
+        
+        editingTenantId = id;
+        currentStep = 1;
+        showStep(1);
+        
+        // Update modal title and buttons
+        document.getElementById('modalTitle').textContent = 'Edit Tenant';
+        document.getElementById('submitBtnText').textContent = 'Update Tenant';
+        document.getElementById('deleteTenantBtn').classList.remove('hidden');
+        
+        // Populate all form fields with tenant data
+        document.getElementById('tenantName').value = tenant.name || '';
+        document.getElementById('tenantEmail').value = tenant.email || '';
+        document.getElementById('tenantPhone').value = tenant.phone || '';
+        document.getElementById('tenantIdType').value = tenant.id_type || 'National ID';
+        document.getElementById('tenantIdNumber').value = tenant.id_number || '';
+        document.getElementById('tenantEmergency').value = tenant.emergency_contact || '';
+        document.getElementById('nextOfKinName').value = tenant.next_of_kin_name || '';
+        document.getElementById('nextOfKinPhone').value = tenant.next_of_kin_phone || '';
+        document.getElementById('nextOfKinEmail').value = tenant.next_of_kin_email || '';
+        document.getElementById('tenantLeaseStart').value = tenant.lease_start || '';
+        document.getElementById('tenantLeaseEnd').value = tenant.lease_end || '';
+        document.getElementById('tenantRent').value = tenant.rent || 0;
+        document.getElementById('tenantDeposit').value = tenant.deposit || 0;
+        document.getElementById('tenantBalance').value = tenant.balance || 0;
+        
+        // Load documents if any
+        if (tenant.documents) {
+            try {
+                uploadedDocs = JSON.parse(tenant.documents);
+                renderUploadedFiles();
+            } catch(e) {
+                uploadedDocs = [];
+                renderUploadedFiles();
+            }
+        } else {
+            uploadedDocs = [];
+            renderUploadedFiles();
+        }
+        
+        // Load properties first, then set house after a short delay
+        document.getElementById('tenantModal').classList.remove('hidden');
+        loadProperties();
+        
+        // Set property and house after properties load
+        if (tenant.property_id) {
+            setTimeout(() => {
+                document.getElementById('tenantProperty').value = tenant.property_id;
+                // Trigger house load
+                document.getElementById('tenantProperty').dispatchEvent(new Event('change'));
+                // Set house after houses load
+                setTimeout(() => {
+                    if (tenant.house_id) {
+                        document.getElementById('tenantHouse').value = tenant.house_id;
+                    }
+                }, 500);
+            }, 100);
         }
     }
 
-    // ==================== SUBMIT ====================
+    function closeTenantDetailsModal() {
+        closeTenantModal();
+    }
+
+    // ==================== SUBMIT TENANT (ADD/UPDATE) ====================
     async function submitTenant() {
         const btn = event.target;
+        const btnText = document.getElementById('submitBtnText');
         btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (editingTenantId ? 'Updating...' : 'Registering...');
         
         const houseSelect = document.getElementById('tenantHouse');
+        const sanitizedEmail = sanitizeEmail(document.getElementById('tenantEmail').value);
+        const sanitizedKinEmail = sanitizeEmail(document.getElementById('nextOfKinEmail').value);
+        
+        if (sanitizedEmail === null && document.getElementById('tenantEmail').value.trim() !== '') {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant');
+            return;
+        }
+        
         const data = {
             name: document.getElementById('tenantName').value.trim(),
-            email: document.getElementById('tenantEmail').value.trim() || null,
+            email: sanitizedEmail,
             phone: document.getElementById('tenantPhone').value.trim(),
             id_type: document.getElementById('tenantIdType').value,
             id_number: document.getElementById('tenantIdNumber').value.trim(),
+            next_of_kin_name: document.getElementById('nextOfKinName').value.trim() || null,
+            next_of_kin_phone: document.getElementById('nextOfKinPhone').value.trim() || null,
+            next_of_kin_email: sanitizedKinEmail,
             emergency_contact: document.getElementById('tenantEmergency').value.trim() || null,
             property_id: parseInt(document.getElementById('tenantProperty').value) || null,
             house_id: parseInt(houseSelect.value) || null,
@@ -981,32 +924,147 @@ require_once __DIR__ . '/../includes/auth.php';
         };
 
         // Final validation
-        if (!data.name) { toast('Name is required', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> Register Tenant'; return; }
-        if (!data.phone) { toast('Phone is required', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> Register Tenant'; return; }
-        if (!data.id_number) { toast('ID number is required', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> Register Tenant'; return; }
-        if (!data.house_id) { toast('Please assign a house/unit', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> Register Tenant'; return; }
-        if (!data.rent || data.rent <= 0) { toast('Please enter a valid rent amount', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> Register Tenant'; return; }
+        if (!data.name) { toast('Name is required', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant'); return; }
+        if (!data.phone) { toast('Phone is required', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant'); return; }
+        if (!data.id_number) { toast('ID number is required', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant'); return; }
+        if (!data.house_id) { toast('Please assign a house/unit', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant'); return; }
+        if (!data.rent || data.rent <= 0) { toast('Please enter a valid rent amount', 'error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant'); return; }
 
         try {
-            console.log('Submitting tenant:', data);
-            const res = await fetch(`${API}/tenants`, {
-                method: 'POST',
+            console.log(editingTenantId ? 'Updating tenant:' : 'Submitting tenant:', data);
+            
+            const url = editingTenantId ? `${API}/tenants/${editingTenantId}` : `${API}/tenants`;
+            const method = editingTenantId ? 'PUT' : 'POST';
+            
+            const res = await fetch(url, {
+                method: method,
                 headers,
                 body: JSON.stringify(data)
             });
             const text = await res.text();
             let result;
             try { result = JSON.parse(text); } catch(e) { throw new Error('Server error: ' + text.substring(0, 200)); }
-            if (!res.ok) throw new Error(result.error || 'Failed to register tenant');
+            if (!res.ok) throw new Error(result.error || (editingTenantId ? 'Failed to update tenant' : 'Failed to register tenant'));
             
-            toast('Tenant registered successfully! Unit assigned and bill generated.', 'success');
+            toast(editingTenantId ? 'Tenant updated successfully!' : 'Tenant registered successfully! Unit assigned and bill generated.', 'success');
             closeTenantModal();
             loadTenants();
         } catch(err) {
-            console.error('Submit tenant error:', err);
+            console.error(editingTenantId ? 'Update tenant error:' : 'Submit tenant error:', err);
             toast(err.message, 'error');
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> Register Tenant';
+            btn.innerHTML = '<i class="fas fa-check-circle text-sm"></i> ' + (editingTenantId ? 'Update Tenant' : 'Register Tenant');
+        }
+    }
+
+    // ==================== DELETE TENANT ====================
+    async function deleteTenant() {
+        if (!editingTenantId) return;
+        
+        if (!confirm('Are you sure you want to delete this tenant? This action will: \n\n1. Free up the assigned house/unit\n2. Delete all tenant records\n3. Cannot be undone\n\nType "DELETE" to confirm or cancel.')) {
+            return;
+        }
+
+        const confirmText = prompt('Type "DELETE" to confirm deletion:');
+        if (confirmText !== 'DELETE') {
+            toast('Deletion cancelled', 'info');
+            return;
+        }
+        
+        try {
+            const res = await fetch(`${API}/tenants/${editingTenantId}`, {
+                method: 'DELETE',
+                headers
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || 'Failed to delete tenant');
+            
+            toast('Tenant deleted successfully', 'success');
+            closeTenantModal();
+            loadTenants();
+        } catch(err) {
+            console.error('Delete tenant error:', err);
+            toast(err.message || 'Could not delete tenant', 'error');
+        }
+    }
+
+    // ==================== TERMINATION HANDLERS ====================
+    function openTerminateModal(tenantId) {
+        document.getElementById('terminateTenantId').value = tenantId;
+        const d = new Date();
+        d.setDate(d.getDate() + 1); // Default tomorrow
+        document.getElementById('terminateDate').value = d.toISOString().split('T')[0];
+        document.getElementById('terminateReason').value = '';
+        document.getElementById('terminateModal').classList.remove('hidden');
+    }
+
+    function closeTerminateModal() {
+        document.getElementById('terminateModal').classList.add('hidden');
+    }
+
+    async function terminateTenant(event) {
+        event.preventDefault();
+        const tenantId = document.getElementById('terminateTenantId').value;
+        const reason = document.getElementById('terminateReason').value.trim();
+        const effectiveDate = document.getElementById('terminateDate').value;
+        const btn = event.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = 'Terminating...';
+        
+        try {
+            const response = await fetch(`${API}/tenants/${tenantId}/terminate`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ reason, effective_date: effectiveDate })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed');
+            toast('Tenancy terminated successfully. House is now vacant.', 'success');
+            closeTerminateModal();
+            loadTenants();
+        } catch (err) {
+            toast(err.message || 'Failed to terminate tenancy', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Terminate';
+        }
+    }
+
+    function openApproveTerminationModal(tenantId) {
+        document.getElementById('approveTenantId').value = tenantId;
+        const d = new Date();
+        document.getElementById('approveDate').value = d.toISOString().split('T')[0];
+        document.getElementById('approveReason').value = '';
+        document.getElementById('approveTerminationModal').classList.remove('hidden');
+    }
+
+    function closeApproveTerminationModal() {
+        document.getElementById('approveTerminationModal').classList.add('hidden');
+    }
+
+    async function approveTermination(event) {
+        event.preventDefault();
+        const tenantId = document.getElementById('approveTenantId').value;
+        const effectiveDate = document.getElementById('approveDate').value;
+        const reason = document.getElementById('approveReason').value.trim();
+        const btn = event.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = 'Approving...';
+        
+        try {
+            const response = await fetch(`${API}/tenants/${tenantId}/terminate`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ reason, effective_date: effectiveDate })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed');
+            toast('Termination approved. Tenant notified via email.', 'success');
+            closeApproveTerminationModal();
+            loadTenants();
+        } catch (err) {
+            toast(err.message || 'Failed to approve termination', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Approve & Terminate';
         }
     }
 

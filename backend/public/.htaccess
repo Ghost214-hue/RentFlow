@@ -1,0 +1,38 @@
+# Enable mod_rewrite
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /RentFlow/backend/
+
+    # Disable directory listing
+    Options -Indexes
+
+    # Don't rewrite existing files
+    RewriteCond %{REQUEST_FILENAME} !-f
+    # Don't rewrite existing directories
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Rewrite everything to index.php
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# API Security headers
+<IfModule mod_headers.c>
+    # Prevent MIME type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # Enable XSS protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # CORS headers - adjust origin as needed
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+    
+    # Remove server signature
+    Header always unset X-Powered-By
+</IfModule>
+
+# Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json text/plain text/xml
+</IfModule>

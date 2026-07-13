@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Router;
 use App\Services\EmailService;
+use App\Core\Pagination;
 
 class PaymentController
 {
@@ -16,6 +17,8 @@ class PaymentController
         $role = Router::getAuthRole();
         $db = Database::getInstance();
 
+        $page = Pagination::fromRequest();
+
         $sql = "SELECT p.*, t.name as tenant_name, h.unit as house_unit
              FROM payments p
              LEFT JOIN tenants t ON p.tenant_id = t.id
@@ -23,20 +26,36 @@ class PaymentController
              WHERE p.owner_id = ?";
         $queryParams = [$ownerId];
 
+        $countSql = "SELECT COUNT(*) as total FROM payments p LEFT JOIN houses h ON p.house_id = h.id WHERE p.owner_id = ?";
+        $countParams = [$ownerId];
+
         if ($role === 'tenant') {
             $sql .= " AND p.tenant_id = ?";
             $queryParams[] = Router::getAuthTenantId();
+
+            $countSql .= " AND p.tenant_id = ?";
+            $countParams[] = Router::getAuthTenantId();
         } elseif ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) Router::jsonResponse(['payments' => []]);
-            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            if (!$propertyIds) Router::jsonResponse(['payments' => [], 'meta' => Pagination::meta(0, $page['page'], $page['per_page'])]);
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql .= " AND h.property_id IN ($placeholders)";
             $queryParams = array_merge($queryParams, $propertyIds);
+
+            $countSql .= " AND h.property_id IN ($placeholders)";
+            $countParams = array_merge($countParams, $propertyIds);
         }
 
-        $sql .= " ORDER BY p.created_at DESC";
+        $sql .= " ORDER BY p.created_at DESC LIMIT ?, ?";
+        $queryParams[] = $page['offset'];
+        $queryParams[] = $page['limit'];
+
         $payments = $db->fetchAll($sql, $queryParams);
 
-        Router::jsonResponse(['payments' => $payments]);
+        $totalRow = $db->fetchOne($countSql, $countParams);
+        $total = (int) ($totalRow['total'] ?? 0);
+
+        Router::jsonResponse(['payments' => $payments, 'meta' => Pagination::meta($total, $page['page'], $page['per_page'])]);
     }
 
     public function store(array $params = []): void
@@ -96,12 +115,35 @@ class PaymentController
             'tenant_confirmed' => $isTenantSelfPay ? 1 : 0,
         ]);
 
-        // Update tenant balance (reduce balance by payment amount)
+        // Update tenant balance and carry over overpayment to next month
         if (($data['type'] ?? 'Rent') === 'Rent' && ($data['status'] ?? 'completed') === 'completed') {
             $current = $db->fetchOne("SELECT balance FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
-            if ($current) {
-                $newBalance = max(0, (float)$current['balance'] - (float)$data['amount']);
-                $db->update('tenants', ['balance' => $newBalance], 'id = ?', [(int) $data['tenant_id']]);
+            $currentBalance = $current ? (float)$current['balance'] : 0;
+            $newBalance = $currentBalance - (float)$data['amount'];
+            
+            // Update tenant balance (can be negative = overpayment)
+            $db->update('tenants', ['balance' => $newBalance], 'id = ?', [(int) $data['tenant_id']]);
+            
+            // If overpaid (negative balance), apply to next month's bill
+            if ($newBalance < 0) {
+                $currentMonth = $data['month'] ?? date('Y-m');
+                $nextMonth = date('Y-m', strtotime($currentMonth . ' +1 month'));
+                
+                // Find next month's rent bill
+                $nextBill = $db->fetchOne(
+                    "SELECT id, total FROM bills WHERE house_id = ? AND month = ? AND type = 'Rent'",
+                    [$tenant['house_id'], $nextMonth]
+                );
+                
+                if ($nextBill) {
+                    // Apply overpayment to next month (reduce the bill total)
+                    $overpayment = abs($newBalance);
+                    $newTotal = max(0, (float)$nextBill['total'] - $overpayment);
+                    $db->update('bills', ['total' => $newTotal], 'id = ?', [$nextBill['id']]);
+                    
+                    // Reset tenant balance to 0 since overpayment was applied
+                    $db->update('tenants', ['balance' => 0], 'id = ?', [(int) $data['tenant_id']]);
+                }
             }
         }
 
@@ -124,13 +166,34 @@ class PaymentController
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
         
-        // Send payment confirmation email to tenant when owner records
+        // Send payment confirmation email to tenant and next of kin when owner records
         $emailSent = false;
         if (!$isTenantSelfPay) {
             try {
                 $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
                 if ($tenant && !empty($tenant['email'])) {
                     $emailService = new EmailService();
+                    
+                    // Find the bill ID for this payment to generate invoice link
+                    $bill = $db->fetchOne(
+                        "SELECT b.id FROM bills b WHERE b.house_id = ? AND b.month = ? AND b.owner_id = ? LIMIT 1",
+                        [$tenant['house_id'], $payment['month'], $ownerId]
+                    );
+                    
+                    // Generate JWT token for invoice access
+                    $jwt = new \App\Core\JWT();
+                    $invoiceToken = $jwt->encode([
+                        'owner_id' => $ownerId,
+                        'actor_id' => $tenant['id'],
+                        'role' => 'tenant',
+                        'tenant_id' => $tenant['id']
+                    ]);
+                    
+                    // Add invoice URL to payment data
+                    $payment['invoice_url'] = $bill 
+                        ? (getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost') . "/api/bills/{$bill['id']}/invoice?token={$invoiceToken}"
+                        : null;
+                    
                     $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
                 }
             } catch (\Exception $e) {

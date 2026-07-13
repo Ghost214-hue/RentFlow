@@ -111,57 +111,103 @@ $role = $user['role'] ?? 'owner';
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
+    function getLastSixMonths() {
+        const months = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const year = dt.getFullYear();
+            const month = String(dt.getMonth() + 1).padStart(2, '0');
+            months.push(`${year}-${month}`);
+        }
+        return months;
+    }
+
+    function formatMonthLabel(ym) {
+        const [year, month] = ym.split('-');
+        return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+    }
+
+    function buildMonthlyTrend(payments) {
+        const months = getLastSixMonths();
+        const totals = Object.fromEntries(months.map(month => [month, 0]));
+        payments.forEach(p => {
+            const month = p.month || (p.date ? p.date.slice(0, 7) : null);
+            if (!month || !totals.hasOwnProperty(month)) return;
+            const normalized = (p.status || '').toLowerCase();
+            if (!['completed', 'paid', 'confirmed'].includes(normalized)) return;
+            totals[month] += Number(p.amount || 0);
+        });
+        return { labels: months.map(formatMonthLabel), values: months.map(month => totals[month] || 0) };
+    }
+
+    function buildStatusDistribution(payments) {
+        const counts = { paid: 0, partial: 0, pending: 0, other: 0 };
+        payments.forEach(p => {
+            const status = (p.status || '').toLowerCase();
+            if (status === 'paid' || status === 'completed' || status === 'confirmed') counts.paid += 1;
+            else if (status === 'partial') counts.partial += 1;
+            else if (status === 'pending') counts.pending += 1;
+            else counts.other += 1;
+        });
+        return [counts.paid, counts.partial, counts.pending, counts.other];
+    }
+
     async function loadReports() {
         try {
-            // Try loading from API, fallback to demo data
-            let payments = [];
-            try {
-                const res = await fetch(`${API}/payments`, { headers });
-                const data = await res.json();
-                payments = data.payments || [];
-            } catch(e) {}
-            
-            const total = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-            const collected = payments.filter(p => p.status === 'completed' || p.status === 'paid').reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-            const outstanding = total - collected;
-            const rate = total > 0 ? Math.round((collected/total) * 100) : 0;
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            const [paymentsRes, billsRes] = await Promise.all([
+                fetch(`${API}/payments`, { headers }),
+                fetch(`${API}/bills?month=${currentMonth}`, { headers })
+            ]);
+            const payments = paymentsRes.ok ? (await paymentsRes.json()).payments || [] : [];
+            const bills = billsRes.ok ? (await billsRes.json()).bills || [] : [];
 
-            document.getElementById('totalRevenue').textContent = fmtCurrency(total);
+            const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const collected = payments.filter(p => ['completed','paid','confirmed'].includes((p.status || '').toLowerCase())).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const outstanding = bills.reduce((sum, b) => sum + Number(b.balance || 0), 0);
+            const billTotal = bills.reduce((sum, b) => sum + Number(b.total || 0), 0);
+            const collectionRate = billTotal ? Math.round((collected / billTotal) * 100) : 0;
+
+            document.getElementById('totalRevenue').textContent = fmtCurrency(totalRevenue);
             document.getElementById('totalCollected').textContent = fmtCurrency(collected);
             document.getElementById('totalOutstanding').textContent = fmtCurrency(outstanding);
-            document.getElementById('collectionRate').textContent = rate + '%';
+            document.getElementById('collectionRate').textContent = collectionRate + '%';
 
-            // Transactions table
             const tbody = document.getElementById('transactionsTable');
             if (payments.length) {
                 tbody.innerHTML = payments.slice(0, 10).map(p => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
                         <td class="px-6 py-4 text-sm text-slate-500">${p.date ? new Date(p.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A'}</td>
-                        <td class="px-6 py-4"><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${(p.tenant_name||'??').split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm font-medium text-slate-900">${p.tenant_name||'N/A'}</span></div></td>
+                        <td class="px-6 py-4"><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${(p.tenant_name||'??').split(' ').map(s => s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm font-medium text-slate-900">${p.tenant_name||'N/A'}</span></div></td>
                         <td class="px-6 py-4 text-sm text-slate-500">${p.type||'Rent'}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">${fmtCurrency(p.amount)}</td>
-                        <td class="px-6 py-4"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${p.status==='completed'||p.status==='paid'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}">${p.status||'pending'}</span></td>
+                        <td class="px-6 py-4"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${['completed','paid','confirmed'].includes((p.status||'').toLowerCase()) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${p.status || 'pending'}</span></td>
                     </tr>
                 `).join('');
             } else {
                 tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-12 text-center text-slate-400">No transactions yet</td></tr>';
             }
 
-            // Charts
-            initCharts();
-        } catch(e) { console.error(e); }
+            initCharts(payments);
+        } catch(e) {
+            console.error(e);
+            toast('Unable to load reports. Please try again.', 'error');
+            document.getElementById('transactionsTable').innerHTML = '<tr><td colspan="5" class="px-6 py-12 text-center text-slate-400">Unable to load transactions.</td></tr>';
+        }
     }
 
-    function initCharts() {
+    function initCharts(payments) {
+        const trend = buildMonthlyTrend(payments);
         const revCtx = document.getElementById('revenueTrendChart');
         if (revCtx) {
             new Chart(revCtx, {
                 type: 'bar',
                 data: {
-                    labels: ['Jan','Feb','Mar','Apr','May','Jun'],
+                    labels: trend.labels,
                     datasets: [{
                         label: 'Revenue',
-                        data: [320000, 298000, 350000, 335000, 380000, 395000],
+                        data: trend.values,
                         backgroundColor: 'rgba(59,130,246,0.7)',
                         borderColor: '#3b82f6',
                         borderWidth: 1,
@@ -169,7 +215,8 @@ $role = $user['role'] ?? 'owner';
                     }]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: {
                         y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#64748b' } },
@@ -178,15 +225,25 @@ $role = $user['role'] ?? 'owner';
                 }
             });
         }
+
         const distCtx = document.getElementById('paymentDistChart');
         if (distCtx) {
             new Chart(distCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Collected', 'Outstanding'],
-                    datasets: [{ data: [78, 22], backgroundColor: ['#3b82f6', '#e2e8f0'], borderWidth: 0 }]
+                    labels: ['Collected', 'Partial', 'Pending', 'Other'],
+                    datasets: [{
+                        data: buildStatusDistribution(payments),
+                        backgroundColor: ['#3b82f6', '#f59e0b', '#fbbf24', '#e2e8f0'],
+                        borderWidth: 0,
+                    }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom' } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: { legend: { position: 'bottom' } }
+                }
             });
         }
     }

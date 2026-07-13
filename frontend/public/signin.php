@@ -1,5 +1,14 @@
 <?php
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+$csrfToken = '';
+// Generate CSRF token
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION['csrf_token'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -46,6 +55,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             <div class="lg:w-7/12 p-6 sm:p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
                     <div class="text-center mb-6 sm:mb-8">
+                        <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
                         <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Welcome back</h2>
                         <p class="text-slate-500 mt-1 text-sm sm:text-base">Sign in to your account</p>
                     </div>
@@ -82,6 +92,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
     const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const CSRF_TOKEN = '<?php echo htmlspecialchars($csrfToken); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
@@ -116,8 +127,11 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
         try {
             const res = await fetch(API + '/auth/login', {
                 method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({email, password})
+                headers: {
+                    'Content-Type':'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify({email, password, csrf_token: CSRF_TOKEN})
             });
             
             // Check if response is JSON before parsing

@@ -19,7 +19,16 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                 <path d="M0 100 C 40 20 60 20 100 100 Z" fill="white" opacity="0.5"/>
             </svg>
         </div>
-        <div class="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row">
+        <?php
+    // Generate CSRF token
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    ?>
+    <div class="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row">
             <div class="lg:w-5/12 bg-gradient-to-br from-blue-600 to-blue-800 p-8 lg:p-12 flex flex-col justify-between text-white relative">
                 <div class="absolute inset-0 opacity-5">
                     <svg viewBox="0 0 200 200" class="w-full h-full"><path d="M0 200 C 50 0 150 0 200 200 Z" fill="white"/></svg>
@@ -46,6 +55,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             <div class="lg:w-7/12 p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
                     <div class="text-center mb-8">
+                        <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
                         <h2 class="text-2xl font-bold text-slate-900">Create Account</h2>
                         <p class="text-slate-500 mt-1">Start managing your properties</p>
                     </div>
@@ -72,6 +82,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
     const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const CSRF_TOKEN = '<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
@@ -89,6 +100,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             email: document.getElementById('regEmail').value,
             password: document.getElementById('regPassword').value,
             phone: document.getElementById('regPhone').value,
+            csrf_token: CSRF_TOKEN
         };
         
         btn.disabled = true;
@@ -97,7 +109,10 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
         try {
             const res = await fetch(API + '/auth/register', {
                 method: 'POST',
-                headers: {'Content-Type':'application/json'},
+                headers: {
+                    'Content-Type':'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
                 body: JSON.stringify(data)
             });
             

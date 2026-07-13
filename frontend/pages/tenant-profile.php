@@ -40,19 +40,63 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                             <p class="text-xs text-slate-400 mt-0.5" id="userRole">Tenant</p>
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div><label class="block text-sm font-medium text-slate-700 mb-1">Phone</label><input type="text" id="userPhone" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="+254 7XX XXX XXX"></div>
-                        <div><label class="block text-sm font-medium text-slate-700 mb-1">Unit</label><input type="text" id="userUnit" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled></div>
+                    
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Phone Number <span class="text-red-400">*</span></label>
+                                <input type="tel" id="userPhone" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="+254 7XX XXX XXX">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                                <input type="email" id="userEmailInput" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="your@email.com">
+                            </div>
+                        </div>
                     </div>
-                    <button onclick="toast('Profile updated','success')" class="mt-4 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Update Profile</button>
+                    
+                    <button onclick="updateProfile()" class="mt-4 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Update Profile</button>
                 </div>
 
-                <!-- Lease Info -->
+                <!-- Next of Kin (Read-only) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6 mb-6">
+                    <h3 class="font-semibold text-slate-900 mb-4">Next of Kin</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                            <input type="text" id="kinName" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                            <input type="text" id="kinPhone" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                        <input type="email" id="kinEmail" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-3"><i class="fas fa-info-circle mr-1"></i>Next of kin information cannot be edited by tenants. Contact your property manager to update these details.</p>
+                </div>
+
+                <!-- Lease Info (Read-only) -->
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6 mb-6">
                     <h3 class="font-semibold text-slate-900 mb-4">Lease Information</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div><label class="block text-sm font-medium text-slate-700 mb-1">Property</label><input type="text" id="leaseProperty" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled></div>
-                        <div><label class="block text-sm font-medium text-slate-700 mb-1">Lease End</label><input type="text" id="leaseEnd" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled></div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Property</label>
+                            <input type="text" id="leaseProperty" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Unit</label>
+                            <input type="text" id="userUnit" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Lease Start</label>
+                            <input type="text" id="leaseStart" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Lease End</label>
+                            <input type="text" id="leaseEnd" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500" disabled>
+                        </div>
                     </div>
                 </div>
 
@@ -60,10 +104,16 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
                     <h3 class="font-semibold text-slate-900 mb-4">Change Password</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div><label class="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Enter new password"></div>
-                        <div><label class="block text-sm font-medium text-slate-700 mb-1">Confirm</label><input type="password" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Confirm password"></div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                            <input type="password" id="newPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Enter new password">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+                            <input type="password" id="confirmPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Confirm password">
+                        </div>
                     </div>
-                    <button onclick="toast('Password updated','success')" class="mt-4 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Update Password</button>
+                    <button onclick="updatePassword()" class="mt-4 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Update Password</button>
                 </div>
             </div>
         </main>
@@ -94,7 +144,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             if (profileData.user) {
                 document.getElementById('userInitials').textContent = initials(profileData.user.name);
                 document.getElementById('userName').textContent = profileData.user.name;
-                document.getElementById('userEmail').textContent = profileData.user.email;
+                document.getElementById('userEmail').value = profileData.user.email || '';
             }
 
             // Get tenant info
@@ -105,11 +155,105 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 document.getElementById('userPhone').value = me.phone || '';
                 document.getElementById('userUnit').value = me.house_unit || '-';
                 document.getElementById('leaseProperty').value = me.property_name || '-';
+                document.getElementById('leaseStart').value = me.lease_start ? new Date(me.lease_start).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A';
                 document.getElementById('leaseEnd').value = me.lease_end ? new Date(me.lease_end).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A';
+                
+                // Next of Kin (read-only)
+                document.getElementById('kinName').value = me.next_of_kin_name || '-';
+                document.getElementById('kinPhone').value = me.next_of_kin_phone || '-';
+                document.getElementById('kinEmail').value = me.next_of_kin_email || '-';
             }
         } catch(e) {
             console.error(e);
             if (e.message.includes('401')) window.location.href = '/signin';
+        }
+    }
+
+    async function updateProfile() {
+        const phone = document.getElementById('userPhone').value.trim();
+        const email = document.getElementById('userEmailInput').value.trim();
+        
+        if (!phone) {
+            toast('Phone number is required', 'error');
+            return;
+        }
+
+        // Validate and sanitize email if provided
+        let sanitizedEmail = null;
+        if (email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                toast('Invalid email format', 'error');
+                return;
+            }
+            sanitizedEmail = email.toLowerCase();
+        }
+
+        try {
+            // Get tenant ID first
+            const tenantRes = await fetch(`${API}/tenants`, { headers });
+            const tenantData = await tenantRes.json();
+            
+            if (!tenantData.tenants || tenantData.tenants.length === 0) {
+                toast('Tenant record not found', 'error');
+                return;
+            }
+
+            const tenantId = tenantData.tenants[0].id;
+            
+            // Update tenant phone and email
+            const res = await fetch(`${API}/tenants/${tenantId}`, {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({
+                    phone: phone,
+                    email: sanitizedEmail
+                })
+            });
+            
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || 'Failed to update profile');
+            
+            toast('Profile updated successfully!', 'success');
+            loadProfile(); // Reload to show updated data
+        } catch(e) {
+            console.error(e);
+            toast(e.message || 'Failed to update profile', 'error');
+        }
+    }
+
+    async function updatePassword() {
+        const newPassword = document.getElementById('newPassword').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        
+        if (!newPassword || newPassword.length < 6) {
+            toast('Password must be at least 6 characters', 'error');
+            return;
+        }
+        
+        if (newPassword !== confirmPassword) {
+            toast('Passwords do not match', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API}/auth/change-password`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    new_password: newPassword
+                })
+            });
+            
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || 'Failed to update password');
+            
+            toast('Password updated successfully!', 'success');
+            document.getElementById('newPassword').value = '';
+            document.getElementById('confirmPassword').value = '';
+        } catch(e) {
+            console.error(e);
+            toast(e.message || 'Failed to update password', 'error');
         }
     }
 

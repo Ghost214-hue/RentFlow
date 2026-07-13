@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Core\Pagination;
 
 class HouseController
 {
@@ -21,6 +22,8 @@ class HouseController
 
         $propertyId = isset($_GET['property_id']) ? (int) $_GET['property_id'] : null;
 
+        $page = Pagination::fromRequest();
+
         $sql = "SELECT h.*, p.name as property_name, t.name as tenant_name 
                 FROM houses h 
                 LEFT JOIN properties p ON h.property_id = p.id 
@@ -28,25 +31,40 @@ class HouseController
                 WHERE h.owner_id = ?";
         $queryParams = [$ownerId];
 
+        $countSql = "SELECT COUNT(*) as total FROM houses h WHERE h.owner_id = ?";
+        $countParams = [$ownerId];
+
         if ($propertyId) {
             $sql .= " AND h.property_id = ?";
             $queryParams[] = $propertyId;
+            $countSql .= " AND h.property_id = ?";
+            $countParams[] = $propertyId;
         }
 
         if ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
             if (!$propertyIds) {
-                Router::jsonResponse(['houses' => []]);
+                Router::jsonResponse(['houses' => [], 'meta' => Pagination::meta(0, $page['page'], $page['per_page'])]);
                 return;
             }
-            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql .= " AND h.property_id IN ($placeholders)";
             $queryParams = array_merge($queryParams, $propertyIds);
+
+            $countSql .= " AND h.property_id IN ($placeholders)";
+            $countParams = array_merge($countParams, $propertyIds);
         }
 
-        $sql .= " ORDER BY h.created_at DESC";
+        $sql .= " ORDER BY h.created_at DESC LIMIT ?, ?";
+        $queryParams[] = $page['offset'];
+        $queryParams[] = $page['limit'];
+
         $houses = $db->fetchAll($sql, $queryParams);
 
-        Router::jsonResponse(['houses' => $houses]);
+        $totalRow = $db->fetchOne($countSql, $countParams);
+        $total = (int) ($totalRow['total'] ?? 0);
+
+        Router::jsonResponse(['houses' => $houses, 'meta' => Pagination::meta($total, $page['page'], $page['per_page'])]);
     }
 
     /**

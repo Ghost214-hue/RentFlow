@@ -19,6 +19,9 @@ class EmailService
     private string $smtpPassword;
     private string $smtpEncryption;
     
+    private EmailQueueService $queueService;
+    private bool $queueEnabled;
+    
     public function __construct()
     {
         $this->db = Database::getInstance();
@@ -39,6 +42,15 @@ class EmailService
         $this->smtpPassword = $env('MAIL_PASSWORD', '');
         $this->smtpEncryption = $env('MAIL_ENCRYPTION', 'tls');
         
+        // Email queue configuration
+        $this->queueService = new EmailQueueService();
+        $this->queueEnabled = filter_var($env('MAIL_QUEUE_ENABLED', true), FILTER_VALIDATE_BOOLEAN);
+
+        if ($this->queueEnabled && !$this->useSMTP) {
+            error_log("WARNING: MAIL_QUEUE_ENABLED=true but MAIL_USE_SMTP=false. " .
+                "Queued email sending will use PHP mail(), which is unreliable on many Linux hosts. " .
+                "Configure SMTP settings in .env or disable the email queue for immediate delivery.");
+        }
     }
     
     /**
@@ -68,6 +80,12 @@ class EmailService
      */
     public function replaceVariables(string $content, array $data): string
     {
+        // Build invoice section if invoice_url is provided
+        $invoiceSection = '';
+        if (!empty($data['invoice_url'])) {
+            $invoiceSection = "\n\nDownload Invoice:\n{$data['invoice_url']}\n\n";
+        }
+        
         $replacements = [
             '{{name}}' => $data['name'] ?? '',
             '{{code}}' => $data['code'] ?? '',
@@ -94,6 +112,11 @@ class EmailService
             '{{title}}' => $data['title'] ?? '',
             '{{sender_name}}' => $data['sender_name'] ?? '',
             '{{description}}' => $data['description'] ?? '',
+            '{{next_of_kin_intro}}' => $data['next_of_kin_intro'] ?? '',
+            '{{recipient_name}}' => $data['recipient_name'] ?? '',
+            '{{payment_instructions}}' => $data['payment_instructions'] ?? '',
+            '{{invoice_section}}' => $invoiceSection,
+            '{{invoice_url}}' => $data['invoice_url'] ?? '',
         ];
         
         return str_replace(array_keys($replacements), array_values($replacements), $content);
@@ -118,13 +141,19 @@ class EmailService
     }
     
     /**
-     * Send a simple email
+     * Send a simple email via SMTP only
      */
     public function send(string $toEmail, string $toName, string $subject, string $body): bool
     {
         $logId = null;
         
         try {
+            // Validate SMTP configuration
+            if (empty($this->smtpUsername) || empty($this->smtpPassword)) {
+                error_log("EMAIL ERROR: SMTP credentials not configured. Check .env file.");
+                return false;
+            }
+            
             // Try to log email to database (optional - don't fail if table doesn't exist)
             try {
                 $logId = $this->db->insert('email_logs', [
@@ -142,22 +171,14 @@ class EmailService
                 error_log("TIP: Run 'php backend/database/migrate.php' to create email_logs table");
             }
             
-            $sent = false;
-            $errorMsg = '';
+            error_log("EMAIL: Attempting SMTP send to {$toEmail}");
+            $sent = $this->sendViaSMTP($toEmail, $toName, $subject, $body);
             
-            if ($this->useSMTP && !empty($this->smtpUsername) && !empty($this->smtpPassword)) {
-                error_log("EMAIL: Attempting SMTP send to {$toEmail}");
-                $sent = $this->sendViaSMTP($toEmail, $toName, $subject, $body);
-                if (!$sent) {
-                    $errorMsg = 'SMTP delivery failed - check /var/log/apache2/error.log or run: tail -f /var/log/apache2/error.log';
-                }
+            if (!$sent) {
+                $errorMsg = 'SMTP delivery failed - check credentials and firewall settings';
+                error_log("EMAIL FAILED: To: $toEmail, Subject: $subject. $errorMsg");
             } else {
-                // Fallback to PHP mail() function
-                error_log("EMAIL: Attempting PHP mail() send to {$toEmail}");
-                $sent = $this->sendViaMail($toEmail, $toName, $subject, $body);
-                if (!$sent) {
-                    $errorMsg = 'PHP mail() function failed - check server mail configuration';
-                }
+                error_log("EMAIL SENT SUCCESSFULLY: To: $toEmail, Subject: $subject");
             }
             
             // Update log status if logging is available
@@ -165,17 +186,11 @@ class EmailService
                 try {
                     $this->db->update('email_logs', [
                         'status' => $sent ? 'sent' : 'failed',
-                        'error' => $sent ? null : $errorMsg
+                        'error' => $sent ? null : ($errorMsg ?? 'Unknown error')
                     ], 'id = ?', [$logId]);
                 } catch (\Exception $updateException) {
                     error_log("EMAIL LOG UPDATE FAILED: " . $updateException->getMessage());
                 }
-            }
-            
-            if ($sent) {
-                error_log("EMAIL SENT SUCCESSFULLY: To: $toEmail, Subject: $subject");
-            } else {
-                error_log("EMAIL FAILED: To: $toEmail, Subject: $subject. $errorMsg");
             }
             
             return $sent;
@@ -187,9 +202,7 @@ class EmailService
         }
     }
     
-    /**
-     * Send email via SMTP (PHPMailer-style implementation using fsockopen)
-     */
+   
     private function sendViaSMTP(string $toEmail, string $toName, string $subject, string $body): bool
     {
         try {
@@ -364,24 +377,6 @@ class EmailService
     }
     
     /**
-     * Send email using PHP mail() function
-     */
-    private function sendViaMail(string $toEmail, string $toName, string $subject, string $body): bool
-    {
-        $headers = [
-            "From: {$this->fromName} <{$this->fromEmail}>",
-            "Reply-To: {$this->fromEmail}",
-            "MIME-Version: 1.0",
-            "Content-Type: text/plain; charset=UTF-8",
-            "X-Mailer: RentFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
-        ];
-        
-        $headerString = implode("\r\n", $headers);
-        
-        return mail($toEmail, $subject, $body, $headerString);
-    }
-    
-    /**
      * Send welcome email to new tenant
      */
     public function sendTenantWelcome(int $ownerId, array $tenant, string $propertyName, string $houseUnit): bool
@@ -396,7 +391,11 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        return $this->sendTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        $queued = $this->queueTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        if ($this->queueEnabled && $queued) {
+            $this->queueService->process(1);
+        }
+        return $queued;
     }
     
     /**
@@ -412,11 +411,15 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        return $this->sendTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
+        $queued = $this->queueTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
+        if ($this->queueEnabled && $queued) {
+            $this->queueService->process(1);
+        }
+        return $queued;
     }
     
     /**
-     * Send payment confirmation email
+     * Send payment confirmation email to tenant and next of kin - SENDS IMMEDIATELY
      */
     public function sendPaymentConfirmation(int $ownerId, array $tenant, array $payment): bool
     {
@@ -426,10 +429,54 @@ class EmailService
             'balance' => number_format($payment['balance'] ?? 0, 2),
             'month' => $payment['month'] ?? date('F Y'),
             'category' => $payment['category'] ?? 'Rent',
-            'date' => date('Y-m-d', strtotime($payment['date'] ?? 'now'))
+            'date' => date('Y-m-d', strtotime($payment['date'] ?? 'now')),
+            'invoice_url' => $payment['invoice_url'] ?? ''
         ];
         
-        return $this->sendTemplate('Payment Confirmation', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        // Get all recipients (tenant + next of kin)
+        $recipientService = new NotificationRecipientService();
+        $recipients = $recipientService->getRecipients((int)$tenant['id'], $ownerId);
+        
+        if (empty($recipients)) {
+            error_log("No valid recipients for payment confirmation - Tenant ID: {$tenant['id']}");
+            return false;
+        }
+        
+        $allSent = true;
+        
+        foreach ($recipients as $recipient) {
+            $isNextOfKin = ($recipient['type'] === 'next_of_kin');
+            
+            // Add next of kin introduction if applicable
+            $recipientVariables = $variables;
+            if ($isNextOfKin) {
+                $recipientVariables['next_of_kin_intro'] = "Dear {$recipient['name']},\n\nThis email is to inform you that a payment has been successfully recorded for {$tenant['name']}'s accommodation account. As the registered Next of Kin, you are receiving this notification to keep you informed of important payment activities.\n\n";
+                $recipientVariables['recipient_name'] = $recipient['name'];
+            }
+            
+            // Get template
+            $template = $this->getTemplate('Payment Confirmation', $ownerId);
+            if (!$template) {
+                error_log("Payment Confirmation template not found");
+                $allSent = false;
+                continue;
+            }
+            
+            // Replace variables
+            $subject = $this->replaceVariables($template['subject'], $recipientVariables);
+            $body = $this->replaceVariables($template['body'], $recipientVariables);
+            
+            // ALWAYS send immediately - payment confirmations are critical
+            $sent = $this->send($recipient['email'], $recipient['name'], $subject, $body);
+            if (!$sent) {
+                $allSent = false;
+                error_log("FAILED to send payment confirmation to {$recipient['email']}");
+            } else {
+                error_log("SUCCESS: Payment confirmation sent to {$recipient['email']}");
+            }
+        }
+        
+        return $allSent;
     }
     
     /**
@@ -447,11 +494,11 @@ class EmailService
         
         $templateName = $replyText ? 'Complaint Reply' : 'Complaint Update';
         
-        return $this->sendTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
+        return $this->queueTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
     /**
-     * Send rent reminder email
+     * Send rent reminder email - uses direct send for real-time delivery
      */
     public function sendRentReminder(int $ownerId, array $tenant, string $month, float $amount, int $daysUntilDue): bool
     {
@@ -466,6 +513,7 @@ class EmailService
         
         $templateName = $daysUntilDue <= 1 ? 'Rent Reminder Final' : 'Rent Reminder';
         
+        // Rent reminders are sent directly (not queued) for timely delivery
         return $this->sendTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
@@ -491,6 +539,35 @@ class EmailService
             'national_id' => $tenant['id_number'] ?? ''
         ];
         
-        return $this->sendTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        return $this->queueTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
+    }
+    
+    /**
+     * Helper: Queue a template email
+     */
+    private function queueTemplate(string $templateName, int $ownerId, string $toEmail, string $toName, array $variables = []): bool
+    {
+        if (!$this->queueEnabled) {
+            // Queue disabled, send directly
+            return $this->sendTemplate($templateName, $ownerId, $toEmail, $toName, $variables);
+        }
+        
+        $template = $this->getTemplate($templateName, $ownerId);
+        if (!$template) {
+            error_log("Email template not found: $templateName for owner $ownerId");
+            return false;
+        }
+        
+        $subject = $this->replaceVariables($template['subject'], $variables);
+        $body = $this->replaceVariables($template['body'], $variables);
+        
+        return $this->queueService->queue(
+            $ownerId,
+            $templateName,
+            $toEmail,
+            $toName,
+            $subject,
+            $body
+        );
     }
 }

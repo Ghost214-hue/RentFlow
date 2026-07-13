@@ -20,7 +20,16 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                 <path d="M0 100 C 40 20 60 20 100 100 Z" fill="white" opacity="0.5"/>
             </svg>
         </div>
-        <div class="relative z-10 w-full max-w-md bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8">
+        <?php
+    // Generate CSRF token
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    ?>
+    <div class="relative z-10 w-full max-w-md bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-8">
             <div class="text-center mb-8">
                 <div class="flex items-center justify-center gap-3 mb-6">
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
@@ -51,12 +60,12 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
 
             <!-- Step 2: Enter Code -->
             <div id="step2" style="display:none;">
-                <div class="text-center mb-6">
-                    <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
-                        <i class="fas fa-envelope-open-text text-blue-600 text-2xl"></i>
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-envelope-open-text text-blue-600 text-2xl"></i>
+                        </div>
+                        <p class="text-sm text-slate-600">We've sent a 6-digit verification code to <strong id="sentEmail"></strong></p>
                     </div>
-                    <p class="text-sm text-slate-600">We've sent a 6-digit verification code to <strong id="sentEmail"></strong></p>
-                </div>
                 <form id="verifyForm" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1.5">Verification Code</label>
@@ -100,6 +109,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
     const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const CSRF_TOKEN = '<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
@@ -123,8 +133,11 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
         try {
             const res = await fetch(API + '/auth/forgot-password', {
                 method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({email})
+                headers: {
+                    'Content-Type':'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify({email, csrf_token: CSRF_TOKEN})
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to send reset code');
@@ -132,7 +145,12 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             document.getElementById('step1').style.display = 'none';
             document.getElementById('step2').style.display = 'block';
             document.getElementById('sentEmail').textContent = email;
-            toast('Reset code sent to your email', 'success');
+            
+            if (!data.email_sent) {
+                toast('Failed to send email. Please check your email configuration.', 'error');
+            } else {
+                toast('Reset code sent to your email', 'success');
+            }
         } catch(err) {
             toast(err.message, 'error');
             btn.disabled = false;
@@ -155,8 +173,11 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
         try {
             const res = await fetch(API + '/auth/verify-reset-code', {
                 method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({email, code})
+                headers: {
+                    'Content-Type':'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify({email, code, csrf_token: CSRF_TOKEN})
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Invalid code');
@@ -191,8 +212,11 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
         try {
             const res = await fetch(API + '/auth/reset-password', {
                 method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({email, code, password})
+                headers: {
+                    'Content-Type':'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify({email, code, password, csrf_token: CSRF_TOKEN})
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to reset password');
@@ -211,8 +235,11 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
         try {
             const res = await fetch(API + '/auth/forgot-password', {
                 method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({email})
+                headers: {
+                    'Content-Type':'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify({email, csrf_token: CSRF_TOKEN})
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to resend code');

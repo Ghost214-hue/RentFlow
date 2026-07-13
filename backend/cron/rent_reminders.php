@@ -15,11 +15,13 @@ require_once __DIR__ . '/../app/Core/Env.php';
 use App\Core\Env;
 use App\Core\Database;
 use App\Services\EmailService;
+use App\Services\NotificationRecipientService;
 
 Env::load(__DIR__ . '/../../.env');
 
 $db = Database::getInstance();
 $emailService = new EmailService();
+$recipientService = new NotificationRecipientService();
 
 // Check database setup
 try {
@@ -111,41 +113,79 @@ foreach ($overdueBills as $row) {
         $templateBody
     );
 
-    try {
-        $sent = $emailService->send(
-            $tenantEmail,
-            $tenantName,
-            'Rent Reminder - ' . $month,
-            $body
-        );
-
-        if ($sent) {
-            $totalSent++;
-            echo "  ✓ Sent to {$tenantName} ({$tenantEmail}) - {$month} - KES {$amount}\n";
-
-            try {
-                $db->insert('rent_reminders', [
-                    'owner_id' => 1,
-                    'tenant_id' => $row['tenant_id'],
-                    'house_id' => $row['house_id'],
-                    'bill_id' => $row['bill_id'],
-                    'month' => $month,
-                    'amount' => $row['bill_amount'],
-                    'days_before_due' => (new DateTime())->diff(new DateTime($row['due_date']))->days,
-                    'sent_at' => date('Y-m-d H:i:s'),
-                    'status' => 'sent'
-                ]);
-            } catch (\Exception $logException) {
-                error_log("Rent reminder log error: " . $logException->getMessage());
-            }
-        } else {
-            echo "  ✗ {$tenantName} ({$tenantEmail}) - SEND FAILED\n";
-            $errors[] = "Failed to send to {$tenantEmail}";
+    // Get all recipients (tenant + next of kin)
+    $recipients = $recipientService->getRecipients((int)$row['tenant_id'], 1);
+    
+    if (empty($recipients)) {
+        echo "  ! {$tenantName} - No valid recipients found\n";
+        continue;
+    }
+    
+    // Send to each recipient
+    $billSent = false;
+    foreach ($recipients as $recipient) {
+        $isNextOfKin = ($recipient['type'] === 'next_of_kin');
+        
+        // For next of kin, add introduction to the body
+        $recipientBody = $body;
+        if ($isNextOfKin) {
+            $intro = "Dear {$recipient['name']},\n\nThis is a friendly reminder that a payment of KES {$amount} is due for {$tenantName}'s accommodation for the month of {$month}. As the registered Next of Kin, you are receiving this notification to help ensure timely payment.\n\n";
+            $recipientBody = $intro . $body;
         }
-    } catch (\Exception $e) {
-        echo "  ! {$tenantName} ({$tenantEmail}) - ERROR: " . $e->getMessage() . "\n";
-        $errors[] = "Error for {$tenantEmail}: " . $e->getMessage();
-        error_log("Rent reminder error for {$tenantEmail}: " . $e->getMessage());
+        
+        try {
+            $sent = $emailService->send(
+                $recipient['email'],
+                $recipient['name'],
+                'Rent Reminder - ' . $month,
+                $recipientBody
+            );
+            
+            // Log the notification
+            $recipientService->logNotification(
+                (int)$row['tenant_id'],
+                $tenantName,
+                $recipient['type'],
+                $recipient['name'],
+                $recipient['email'],
+                'Payment Reminder',
+                $sent
+            );
+
+            if ($sent) {
+                if (!$billSent) {
+                    $totalSent++;
+                    $billSent = true;
+                }
+                echo "  ✓ Sent to {$recipient['name']} ({$recipient['email']}) - {$month} - KES {$amount}\n";
+            } else {
+                echo "  ✗ {$recipient['name']} ({$recipient['email']}) - SEND FAILED\n";
+                $errors[] = "Failed to send to {$recipient['email']}";
+            }
+        } catch (\Exception $e) {
+            echo "  ! {$recipient['name']} ({$recipient['email']}) - ERROR: " . $e->getMessage() . "\n";
+            $errors[] = "Error for {$recipient['email']}: " . $e->getMessage();
+            error_log("Rent reminder error for {$recipient['email']}: " . $e->getMessage());
+        }
+    }
+    
+    // Log reminder record if at least one email was sent
+    if ($billSent) {
+        try {
+            $db->insert('rent_reminders', [
+                'owner_id' => 1,
+                'tenant_id' => $row['tenant_id'],
+                'house_id' => $row['house_id'],
+                'bill_id' => $row['bill_id'],
+                'month' => $month,
+                'amount' => $row['bill_amount'],
+                'days_before_due' => (new DateTime())->diff(new DateTime($row['due_date']))->days,
+                'sent_at' => date('Y-m-d H:i:s'),
+                'status' => 'sent'
+            ]);
+        } catch (\Exception $logException) {
+            error_log("Rent reminder log error: " . $logException->getMessage());
+        }
     }
 }
 
