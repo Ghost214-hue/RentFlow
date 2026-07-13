@@ -4,7 +4,7 @@
  * Processes pending emails from the queue
  * 
  * Run this via cron every minute:
- * * * * * * php /path/to/rentflow/backend/cron/email_queue.php
+ * * * * * php /path/to/rentflow/backend/cron/email_queue.php
  */
 
 // Autoload
@@ -22,6 +22,28 @@ use App\Core\Env;
 use App\Services\EmailQueueService;
 
 Env::load(__DIR__ . '/../../.env');
+
+$checkMode = in_array('--check', $argv ?? [], true);
+if ($checkMode) {
+    try {
+        $queueService = new EmailQueueService();
+        $batchSize = (int) $queueService->getSetting('batch_size', '10');
+        $enabled = $queueService->getSetting('enabled', '1') === '1' ? 'yes' : 'no';
+        $stats = $queueService->getStats();
+
+        echo "Cron check passed: email queue processor loaded successfully.\n";
+        echo "  Batch size: {$batchSize}\n";
+        echo "  Queue enabled: {$enabled}\n";
+        echo "  Pending: {$stats['pending']}\n";
+        echo "  Processing: {$stats['processing']}\n";
+        echo "  Sent: {$stats['sent']}\n";
+        echo "  Failed: {$stats['failed']}\n";
+        exit(0);
+    } catch (\Throwable $e) {
+        echo "Cron check failed: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+}
 
 // Prevent concurrent processing
 $lockFile = __DIR__ . '/../logs/email_queue.lock';
@@ -68,10 +90,9 @@ try {
 } catch (\Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";
     error_log("Email queue processor error: " . $e->getMessage());
+} finally {
+    @unlink($lockFile);
 }
-
-// Remove lock file
-@unlink($lockFile);
 
 echo "\nDone.\n";
 exit(0);

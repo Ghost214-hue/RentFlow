@@ -64,7 +64,6 @@ class EmailQueueService
         }
 
         $batchSize = max(1, min($batchSize, (int) $this->getSetting('batch_size', '10')));
-        $maxAttempts = (int) $this->getSetting('max_retry_delay', '300');
 
         // Get pending emails ordered by priority and creation time
         $emails = $this->db->fetchAll(
@@ -80,6 +79,8 @@ class EmailQueueService
         $processed = 0;
         $failed = 0;
 
+        $emailService = new EmailService();
+
         foreach ($emails as $email) {
             // Mark as processing
             $this->db->update('email_queue', [
@@ -88,7 +89,6 @@ class EmailQueueService
             ], 'id = ?', [$email['id']]);
 
             // Send the email
-            $emailService = new EmailService();
             $sent = $emailService->send(
                 $email['recipient_email'],
                 $email['recipient_name'] ?? '',
@@ -131,7 +131,7 @@ class EmailQueueService
         }
 
         // Reset failed emails back to pending for retry
-        $this->db->query(
+        $stmt = $this->db->query(
             "UPDATE email_queue 
              SET status = 'pending', attempts = 0, error_message = NULL 
              WHERE status = 'failed' 
@@ -141,8 +141,16 @@ class EmailQueueService
             [$batchSize]
         );
 
-        // Process them
-        return $this->process($batchSize);
+        $retried = $stmt ? $stmt->affected_rows : 0;
+
+        $result = $this->process($batchSize);
+
+        return [
+            'retried' => $retried,
+            'failed' => $result['failed'] ?? 0,
+            'processed' => $result['processed'] ?? 0,
+            'total' => $result['total'] ?? 0,
+        ];
     }
 
     /**
@@ -188,7 +196,7 @@ class EmailQueueService
     /**
      * Get a setting value from the database
      */
-    private function getSetting(string $key, string $default = ''): string
+    public function getSetting(string $key, string $default = ''): string
     {
         try {
             $setting = $this->db->fetchOne(

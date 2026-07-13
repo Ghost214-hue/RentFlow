@@ -8,6 +8,24 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
+// Security headers
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header('Content-Security-Policy: default-src \'self\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: https:; font-src \'self\' data:; connect-src \'self\'; frame-ancestors \'none\';');
+
+// HTTPS enforcement
+if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
+
+// Prevent caching
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 // Autoload
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';
@@ -243,7 +261,10 @@ $router->post('/upload', function() {
         Router::jsonResponse(['error' => 'Failed to upload file'], 500);
     }
 
-    chmod($uploadDir . $filename, 0644);
+    chmod($uploadDir . $filename, 0640);
+    
+    // Generate file hash for integrity verification
+    $fileHash = hash_file('sha256', $uploadDir . $filename);
     
     Router::jsonResponse([
         'message' => 'File uploaded',
@@ -252,6 +273,8 @@ $router->post('/upload', function() {
             'url' => '/uploads/' . $filename,
             'size' => $file['size'],
             'type' => $detectedType,
+            'hash' => $fileHash,
+            'hash_algorithm' => 'sha256'
         ]
     ]);
 }, [function() { \App\Middleware\AuthMiddleware::authenticate(); }]);

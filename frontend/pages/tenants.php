@@ -33,7 +33,9 @@ require_once __DIR__ . '/../includes/auth.php';
                         </tbody>
                     </table>
                 </div>
+                <div id="tenantsPager" class="p-4"></div>
             </div>
+            <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
 
@@ -397,6 +399,48 @@ require_once __DIR__ . '/../includes/auth.php';
             </form>
         </div>
     </div>
+
+    <script>
+    const TENANTS_API = '/api';
+    const TENANTS_TOKEN = localStorage.getItem('rf_token') || '';
+    const TENANTS_HEADERS = TENANTS_TOKEN ? {'Authorization':'Bearer '+TENANTS_TOKEN, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    const TENANTS_PER_PAGE_KEY = 'rf_tenants_per_page';
+    const TENANTS_PER_PAGE_DEFAULT = 25;
+
+    async function loadTenants(page = 1, perPage = window.getSavedPerPage(TENANTS_PER_PAGE_KEY, TENANTS_PER_PAGE_DEFAULT)) {
+        try {
+            const res = await fetch(`${TENANTS_API}/tenants?page=${page}&per_page=${perPage}`, { headers: TENANTS_HEADERS });
+            const data = await res.json();
+            const tbody = document.getElementById('tenantsTable');
+            if (data.tenants && data.tenants.length) {
+                tbody.innerHTML = data.tenants.map(t => `
+                    <tr class="hover:bg-blue-50/30 transition-colors">
+                        <td class="px-6 py-4 text-sm font-medium text-slate-900">${(t.name||'N/A')}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${t.property_name||'N/A'}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${t.house_unit||'N/A'}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${t.phone||'N/A'}</td>
+                        <td class="px-6 py-4 text-sm font-medium ${t.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${(t.balance||0).toLocaleString()}</td>
+                        <td class="px-6 py-4 text-sm text-slate-500">${t.lease_end||'-'}</td>
+                        <td class="px-6 py-4"> <button onclick="viewTenant(${t.id})" class="text-blue-600">View</button> </td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No tenants found</td></tr>';
+            }
+            if (data.meta) renderPagination('tenantsPager', data.meta, (p) => loadTenants(p, perPage), {
+                perPageKey: TENANTS_PER_PAGE_KEY,
+                defaultPerPage: TENANTS_PER_PAGE_DEFAULT,
+                onPerPageChange: (newPerPage) => loadTenants(1, newPerPage),
+            });
+        } catch (e) { console.error('loadTenants error', e); }
+    }
+
+    // small helper to view tenant (uses existing page)
+    function viewTenant(id) { window.location.href = '/pages/tenant-profile.php?id=' + id; }
+
+    // initialize
+    loadTenants();
+    </script>
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
 

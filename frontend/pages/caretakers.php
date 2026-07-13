@@ -35,7 +35,9 @@ require_once __DIR__ . '/../includes/auth.php';
                         </tbody>
                     </table>
                 </div>
+                <div id="caretakersPager" class="p-4"></div>
             </div>
+            <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
 
@@ -73,6 +75,8 @@ require_once __DIR__ . '/../includes/auth.php';
     <script>
     const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
     const API = (BASE || '') + '/api';
+    const CARETAKERS_PER_PAGE_KEY = 'rf_caretakers_per_page';
+    const CARETAKERS_PER_PAGE_DEFAULT = 25;
     
     // Get token from cookie (current request's auth)
     function getCookie(name) {
@@ -121,9 +125,9 @@ require_once __DIR__ . '/../includes/auth.php';
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
-    async function loadCaretakers() {
+    async function loadCaretakers(page = 1, perPage = window.getSavedPerPage(CARETAKERS_PER_PAGE_KEY, CARETAKERS_PER_PAGE_DEFAULT)) {
         try {
-            const res = await fetch(`${API}/caretakers`, { headers });
+            const res = await fetch(`${API}/caretakers?page=${page}&per_page=${perPage}`, { headers });
             const data = await parseJsonResponse(res);
             const tbody = document.getElementById('caretakersTable');
             
@@ -149,10 +153,43 @@ require_once __DIR__ . '/../includes/auth.php';
             } else {
                 tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-12 text-center text-slate-400">No caretakers found. Add a caretaker to assign them properties.</td></tr>';
             }
+            if (data.meta) renderPagination('caretakersPager', data.meta, (p) => loadCaretakersPage(p, perPage), {
+                perPageKey: CARETAKERS_PER_PAGE_KEY,
+                defaultPerPage: CARETAKERS_PER_PAGE_DEFAULT,
+                onPerPageChange: (newPerPage) => loadCaretakersPage(1, newPerPage),
+            });
         } catch(e) {
             console.error('loadCaretakers error:', e);
             document.getElementById('caretakersTable').innerHTML = `<tr><td colspan="5" class="px-6 py-12 text-center text-red-400"><strong>Error:</strong> ${e.message}</td></tr>`;
         }
+    }
+
+    // wrapper to load a specific page
+    async function loadCaretakersPage(page = 1, perPage = window.getSavedPerPage(CARETAKERS_PER_PAGE_KEY, CARETAKERS_PER_PAGE_DEFAULT)) {
+        try {
+            const res = await fetch(`${API}/caretakers?page=${page}&per_page=${perPage}`, { headers });
+            const data = await parseJsonResponse(res);
+            const tbody = document.getElementById('caretakersTable');
+            if (data.caretakers && data.caretakers.length) {
+                caretakersCache = data.caretakers;
+                tbody.innerHTML = data.caretakers.map(c => `
+                    <tr class="hover:bg-blue-50/30 transition-colors">
+                        <td class="px-6 py-4"><div class="flex items-center gap-3"><div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold">${(c.name||'CT').split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><div><p class="text-sm font-medium text-slate-900">${c.name}</p></div></div></td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${c.email || 'N/A'}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${c.phone || 'N/A'}</td>
+                        <td class="px-6 py-4 text-sm text-slate-900">${c.property_count || 0}${c.assigned_property_names && c.assigned_property_names.length ? `<div class="text-xs text-slate-500 mt-1">${c.assigned_property_names.slice(0,3).join(', ')}${c.assigned_property_names.length > 3 ? '...' : ''}</div>` : ''}</td>
+                        <td class="px-6 py-4 flex items-center gap-2"><button onclick="openCaretakerModal(${c.id})" class="px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors">Edit</button><button onclick="deleteCaretaker(${c.id})" class="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors">Remove</button></td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-12 text-center text-slate-400">No caretakers found. Add a caretaker to assign them properties.</td></tr>';
+            }
+            if (data.meta) renderPagination('caretakersPager', data.meta, (p) => loadCaretakersPage(p, perPage), {
+                perPageKey: CARETAKERS_PER_PAGE_KEY,
+                defaultPerPage: CARETAKERS_PER_PAGE_DEFAULT,
+                onPerPageChange: (newPerPage) => loadCaretakersPage(1, newPerPage),
+            });
+        } catch(e) { console.error('loadCaretakersPage error:', e); }
     }
 
     async function loadProperties(selectedIds = []) {

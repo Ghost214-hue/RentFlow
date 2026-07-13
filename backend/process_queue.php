@@ -19,11 +19,23 @@ require_once __DIR__ . '/app/Core/Env.php';
 use App\Core\Env;
 use App\Services\EmailQueueService;
 
-Env::load(__DIR__ . '/../../.env');
+Env::load(__DIR__ . '/../.env');
 
 echo "=== Processing Email Queue ===\n\n";
 
 try {
+    $mailUseSmtp = filter_var($_ENV['MAIL_USE_SMTP'] ?? getenv('MAIL_USE_SMTP'), FILTER_VALIDATE_BOOLEAN);
+    $mailUsername = $_ENV['MAIL_USERNAME'] ?? getenv('MAIL_USERNAME');
+    $mailPassword = $_ENV['MAIL_PASSWORD'] ?? getenv('MAIL_PASSWORD');
+
+    if (!$mailUseSmtp) {
+        if (!empty($mailUsername) && !empty($mailPassword)) {
+            echo "WARNING: MAIL_USE_SMTP=false but SMTP credentials are configured. Set MAIL_USE_SMTP=true in .env to use SMTP instead of PHP mail().\n\n";
+        } else {
+            echo "WARNING: MAIL_USE_SMTP=false and SMTP is not configured. PHP mail() will be used and may fail on this host.\n\n";
+        }
+    }
+
     $queueService = new EmailQueueService();
     
     // Get pending count first

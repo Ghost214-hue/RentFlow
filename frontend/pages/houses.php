@@ -34,7 +34,9 @@ $propertyId = $_GET['property_id'] ?? null;
                         </tbody>
                     </table>
                 </div>
+                <div id="housesPager" class="p-4"></div>
             </div>
+            <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
     <div id="modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeModal()">
@@ -63,6 +65,8 @@ $propertyId = $_GET['property_id'] ?? null;
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const urlParams = new URLSearchParams(window.location.search);
     const filterPropId = urlParams.get('property_id');
+    const HOUSES_PER_PAGE_KEY = 'rf_houses_per_page';
+    const HOUSES_PER_PAGE_DEFAULT = 25;
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -74,11 +78,11 @@ $propertyId = $_GET['property_id'] ?? null;
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
-    async function loadHouses() {
+    async function loadHouses(page = 1, perPage = window.getSavedPerPage(HOUSES_PER_PAGE_KEY, HOUSES_PER_PAGE_DEFAULT)) {
         try {
             console.log('Fetching houses from:', `${API}/houses${filterPropId ? `?property_id=${filterPropId}` : ''}`);
             const qs = filterPropId ? `?property_id=${filterPropId}` : '';
-            const res = await fetch(`${API}/houses${qs}`, { headers });
+            const res = await fetch(`${API}/houses${qs}${qs ? '&' : '?'}page=${page}&per_page=${perPage}`, { headers });
             const data = await res.json();
             console.log('Houses API response:', data);
             const tbody = document.getElementById('housesTable');
@@ -100,6 +104,11 @@ $propertyId = $_GET['property_id'] ?? null;
             } else {
                 tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No units found</td></tr>';
             }
+            if (data.meta) renderPagination('housesPager', data.meta, (p) => loadHouses(p, perPage), {
+                perPageKey: HOUSES_PER_PAGE_KEY,
+                defaultPerPage: HOUSES_PER_PAGE_DEFAULT,
+                onPerPageChange: (newPerPage) => loadHouses(1, newPerPage),
+            });
         } catch(e) {
             console.error('loadHouses error:', e);
             document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;

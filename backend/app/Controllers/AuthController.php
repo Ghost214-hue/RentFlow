@@ -11,6 +11,12 @@ class AuthController
     public function register(): void
     {
         try {
+            // Apply rate limiting
+            \App\Middleware\RateLimitMiddleware::check('register');
+            
+            // Apply bot protection
+            \App\Middleware\BotProtectionMiddleware::check();
+            
             $data = Router::getRequestBody();
             $required = ['name', 'email', 'password'];
             foreach ($required as $field) {
@@ -59,6 +65,12 @@ class AuthController
     public function login(array $params = []): void
     {
         try {
+            // Apply rate limiting for login attempts
+            \App\Middleware\RateLimitMiddleware::check('login');
+            
+            // Apply bot protection
+            \App\Middleware\BotProtectionMiddleware::check();
+            
             $data = Router::getRequestBody();
             if (empty($data['email']) || empty($data['password'])) {
                 Router::jsonResponse(['error' => 'Email and password are required'], 400);
@@ -66,23 +78,48 @@ class AuthController
             $db = Database::getInstance();
             $owner = $db->fetchOne("SELECT id, name, email, password, phone, avatar FROM owners WHERE email = ?", [$data['email']]);
             if ($owner && password_verify($data['password'], $owner['password'])) {
+                // Regenerate session ID to prevent session fixation
+                if (session_status() === PHP_SESSION_NONE) {
+                    session_start();
+                }
+                session_regenerate_id(true);
+                
                 $db->update('owners', ['last_login' => date('Y-m-d H:i:s')], 'id = ?', [$owner['id']]);
                 $token = JWT::encode(['owner_id' => (int)$owner['id'], 'actor_id' => (int)$owner['id'], 'email' => $owner['email'], 'role' => 'owner', 'name' => $owner['name']]);
+                \App\Middleware\SecurityAuditMiddleware::logAuthAttempt($data['email'], true, 'owner');
                 Router::jsonResponse(['message' => 'Login successful', 'token' => $token, 'user' => ['id' => (int)$owner['id'], 'name' => $owner['name'], 'email' => $owner['email'], 'phone' => $owner['phone'] ?? '', 'avatar' => $owner['avatar'] ?? 'OW', 'role' => 'owner', 'lastLogin' => date('Y-m-d H:i:s')]]);
             }
             $caretaker = $db->fetchOne("SELECT id, owner_id, name, email, password, phone, avatar, assigned_properties FROM caretakers WHERE email = ?", [$data['email']]);
             if ($caretaker && password_verify($data['password'], $caretaker['password'])) {
+                // Regenerate session ID to prevent session fixation
+                if (session_status() === PHP_SESSION_NONE) {
+                    session_start();
+                }
+                session_regenerate_id(true);
+                
                 $token = JWT::encode(['owner_id' => (int)$caretaker['owner_id'], 'actor_id' => (int)$caretaker['id'], 'email' => $caretaker['email'], 'role' => 'caretaker', 'name' => $caretaker['name']]);
+                \App\Middleware\SecurityAuditMiddleware::logAuthAttempt($data['email'], true, 'caretaker');
                 Router::jsonResponse(['message' => 'Login successful', 'token' => $token, 'user' => ['id' => (int)$caretaker['id'], 'owner_id' => (int)$caretaker['owner_id'], 'name' => $caretaker['name'], 'email' => $caretaker['email'], 'phone' => $caretaker['phone'] ?? '', 'avatar' => $caretaker['avatar'] ?? 'CT', 'role' => 'caretaker', 'assigned_properties' => $caretaker['assigned_properties'] ?? '']]);
             }
             $tenant = $db->fetchOne("SELECT id, owner_id, name, email, password, phone, status FROM tenants WHERE email = ?", [$data['email']]);
             if ($tenant && !empty($tenant['password']) && password_verify($data['password'], $tenant['password'])) {
+                // Regenerate session ID to prevent session fixation
+                if (session_status() === PHP_SESSION_NONE) {
+                    session_start();
+                }
+                session_regenerate_id(true);
+                
                 if (($tenant['status'] ?? 'active') === 'terminated') {
+                    \App\Middleware\SecurityAuditMiddleware::logAuthAttempt($data['email'], true, 'tenant');
                     Router::jsonResponse(['error' => 'Your tenancy has been terminated. Please contact the property owner for assistance.'], 403);
                 }
                 $token = JWT::encode(['owner_id' => (int)$tenant['owner_id'], 'actor_id' => (int)$tenant['id'], 'tenant_id' => (int)$tenant['id'], 'email' => $tenant['email'], 'role' => 'tenant', 'name' => $tenant['name']]);
+                \App\Middleware\SecurityAuditMiddleware::logAuthAttempt($data['email'], true, 'tenant');
                 Router::jsonResponse(['message' => 'Login successful', 'token' => $token, 'user' => ['id' => (int)$tenant['id'], 'owner_id' => (int)$tenant['owner_id'], 'name' => $tenant['name'], 'email' => $tenant['email'], 'phone' => $tenant['phone'] ?? '', 'avatar' => 'TN', 'role' => 'tenant']]);
             }
+            // Log failed login attempt
+            \App\Middleware\SecurityAuditMiddleware::logAuthAttempt($data['email'], false, 'unknown');
+            \App\Middleware\RateLimitMiddleware::reset('login');
             Router::jsonResponse(['error' => 'Invalid email or password'], 401);
         } catch (\Throwable $e) {
             error_log('Login error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
@@ -134,10 +171,15 @@ class AuthController
     public function forgotPassword(): void
     {
         try {
+            // Apply rate limiting
+            \App\Middleware\RateLimitMiddleware::check('forgot_password');
+            
             $data = Router::getRequestBody();
             $email = trim((string)($data['email'] ?? ''));
-            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                Router::jsonResponse(['error' => 'Please enter a valid email address'], 400);
+            if (empty($email)) {
+                Router::jsonResponse(['error' => 'Email is required'], 400);
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                Router::jsonResponse(['error' => 'Invalid email format'], 400);
             }
             $db = Database::getInstance();
             
@@ -161,7 +203,8 @@ class AuthController
                 Router::jsonResponse(['error' => 'No account found with that email address. Please check the email or create a new account.', 'recommend_signup' => true], 404);
             }
             
-            $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            // Generate cryptographically secure 32-character hex code
+            $code = bin2hex(random_bytes(16));
             // Use DATE_ADD with MySQL NOW() to stay in sync with DB timezone
             $db->update('password_reset_tokens', ['used' => 1], 'email = ? AND used = 0', [$email]);
             $db->insert('password_reset_tokens', [
@@ -257,6 +300,28 @@ class AuthController
             error_log('Reset password error: ' . $e->getMessage());
             Router::jsonResponse(['error' => 'An error occurred. Please try again.'], 500);
         }
+    }
+
+    /**
+     * Validate CSRF token
+     */
+    private function validateCsrfToken(string $token): bool
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        if (empty($_SESSION['csrf_token']) || empty($token)) {
+            return false;
+        }
+        
+        // Token expires after 2 hours
+        if (isset($_SESSION['csrf_token_time']) && (time() - $_SESSION['csrf_token_time']) > 7200) {
+            unset($_SESSION['csrf_token']);
+            return false;
+        }
+        
+        return hash_equals($_SESSION['csrf_token'], $token);
     }
 
     private function createDefaultTemplates(Database $db, int $ownerId): void

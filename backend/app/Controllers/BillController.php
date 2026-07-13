@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middleware\AuthMiddleware;
+use App\Core\Pagination;
 
 class BillController
 {
@@ -15,6 +16,8 @@ class BillController
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
+
+        $page = Pagination::fromRequest();
 
         $month = $_GET['month'] ?? date('Y-m');
         $propertyId = isset($_GET['property_id']) ? (int) $_GET['property_id'] : 0;
@@ -27,22 +30,38 @@ class BillController
              WHERE b.owner_id = ? AND b.month = ?";
         $queryParams = [$ownerId, $month];
 
+        $countSql = "SELECT COUNT(DISTINCT b.id) as total FROM bills b LEFT JOIN houses h ON b.house_id = h.id WHERE b.owner_id = ? AND b.month = ?";
+        $countParams = [$ownerId, $month];
+
         if ($role === 'tenant') {
             $sql .= " AND t.id = ?";
             $queryParams[] = Router::getAuthTenantId();
+
+            $countSql .= " AND b.tenant_id = ?";
+            $countParams[] = Router::getAuthTenantId();
         } elseif ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) Router::jsonResponse(['bills' => []]);
-            $sql .= " AND h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+            if (!$propertyIds) Router::jsonResponse(['bills' => [], 'meta' => Pagination::meta(0, $page['page'], $page['per_page'])]);
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql .= " AND h.property_id IN ($placeholders)";
             $queryParams = array_merge($queryParams, $propertyIds);
+
+            $countSql .= " AND h.property_id IN ($placeholders)";
+            $countParams = array_merge($countParams, $propertyIds);
         }
 
         if ($propertyId > 0) {
             $sql .= " AND p.id = ?";
             $queryParams[] = $propertyId;
+
+            $countSql .= " AND p.id = ?";
+            $countParams[] = $propertyId;
         }
 
-        $sql .= " ORDER BY p.name, h.unit";
+        $sql .= " ORDER BY p.name, h.unit LIMIT ?, ?";
+        $queryParams[] = $page['offset'];
+        $queryParams[] = $page['limit'];
+
         $bills = $db->fetchAll($sql, $queryParams);
 
         // Calculate actual paid amount and balance from payments (scoped to the bill month)
@@ -59,7 +78,10 @@ class BillController
             else $bill['status'] = 'partial';
         }
 
-        Router::jsonResponse(['bills' => $bills]);
+        $totalRow = $db->fetchOne($countSql, $countParams);
+        $total = (int) ($totalRow['total'] ?? 0);
+
+        Router::jsonResponse(['bills' => $bills, 'meta' => Pagination::meta($total, $page['page'], $page['per_page'])]);
     }
 
     /**

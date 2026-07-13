@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Core\Pagination;
 use App\Services\EmailService;
 
 class TenantController
@@ -14,13 +15,14 @@ class TenantController
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
+           $page = Pagination::fromRequest();
 
-        $sql = "SELECT t.*, p.name as property_name, h.unit as house_unit, h.rent
-             FROM tenants t
-             LEFT JOIN properties p ON t.property_id = p.id
-             LEFT JOIN houses h ON t.house_id = h.id
-             WHERE t.owner_id = ?";
-        $queryParams = [$ownerId];
+           $sql = "SELECT t.*, p.name as property_name, h.unit as house_unit, h.rent
+               FROM tenants t
+               LEFT JOIN properties p ON t.property_id = p.id
+               LEFT JOIN houses h ON t.house_id = h.id
+               WHERE t.owner_id = ?";
+           $queryParams = [$ownerId];
 
         if ($role === 'tenant') {
             $sql .= " AND t.id = ?";
@@ -34,10 +36,37 @@ class TenantController
             $queryParams = array_merge($queryParams, $propertyIds);
         }
 
-        $sql .= " ORDER BY t.name ASC";
+        $sqlCount = "SELECT COUNT(*) as total FROM tenants t WHERE t.owner_id = ?";
+        $countParams = [$ownerId];
+
+        if ($role === 'tenant') {
+            $sql .= " AND t.id = ?";
+            $queryParams[] = Router::getAuthTenantId();
+            $sqlCount .= " AND t.id = ?";
+            $countParams[] = Router::getAuthTenantId();
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) {
+                Router::jsonResponse(['tenants' => [], 'meta' => Pagination::meta(0, $page['page'], $page['per_page'])]);
+            }
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql .= " AND t.property_id IN ($placeholders)";
+            $queryParams = array_merge($queryParams, $propertyIds);
+
+            $sqlCount .= " AND t.property_id IN ($placeholders)";
+            $countParams = array_merge($countParams, $propertyIds);
+        }
+
+        $sql .= " ORDER BY t.name ASC LIMIT ?, ?";
+        $queryParams[] = $page['offset'];
+        $queryParams[] = $page['limit'];
+
         $tenants = $db->fetchAll($sql, $queryParams);
 
-        Router::jsonResponse(['tenants' => $tenants]);
+        $totalRow = $db->fetchOne($sqlCount, $countParams);
+        $total = (int) ($totalRow['total'] ?? 0);
+
+        Router::jsonResponse(['tenants' => $tenants, 'meta' => Pagination::meta($total, $page['page'], $page['per_page'])]);
     }
 
     

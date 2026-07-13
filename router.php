@@ -1,57 +1,57 @@
 <?php
-/**
- * PHP Dev Server Router
- * Routes /api/* to backend, everything else to frontend
- */
+// Development router for PHP built-in server
+// Usage: php -S localhost:8080 router.php
 
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-
-// Route API requests to backend
-if (strpos($uri, '/api') === 0) {
-    // Remove /api prefix and route to backend
-    $_SERVER['REQUEST_URI'] = substr($uri, 4);
-    if (empty($_SERVER['REQUEST_URI'])) {
-        $_SERVER['REQUEST_URI'] = '/';
+// Helper to serve static files with correct MIME type
+function serve_static_file(string $path)
+{
+    if (!file_exists($path) || !is_file($path)) {
+        return false;
     }
-    require __DIR__ . '/backend/public/index.php';
-    return true;
-}
-
-// Static files - serve directly if they exist in frontend/public
-$staticPath = __DIR__ . '/frontend/public' . $uri;
-if ($uri !== '/' && file_exists($staticPath) && !is_dir($staticPath)) {
-    // Serve the static file directly with correct MIME type
-    $ext = pathinfo($staticPath, PATHINFO_EXTENSION);
-    $mimeTypes = [
+    
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $mimes = [
         'css' => 'text/css',
         'js' => 'application/javascript',
-        'json' => 'application/json',
+        'html' => 'text/html; charset=utf-8',
+        'htm' => 'text/html; charset=utf-8',
         'png' => 'image/png',
         'jpg' => 'image/jpeg',
         'jpeg' => 'image/jpeg',
-        'gif' => 'image/gif',
         'svg' => 'image/svg+xml',
         'ico' => 'image/x-icon',
+        'json' => 'application/json',
         'woff' => 'font/woff',
         'woff2' => 'font/woff2',
+        'ttf' => 'font/ttf',
+        'eot' => 'application/vnd.ms-fontobject',
+        'map' => 'application/json'
     ];
-    $mimeType = $mimeTypes[$ext] ?? mime_content_type($staticPath);
-    header('Content-Type: ' . $mimeType);
-    readfile($staticPath);
-    return true;
+    
+    $mime = $mimes[$ext] ?? 'application/octet-stream';
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . filesize($path));
+    readfile($path);
+    exit;
 }
 
-// Route standalone page files (houses.php, properties.php, etc.)
-$pagePath = __DIR__ . '/frontend/pages' . $uri . '.php';
-if ($uri !== '/' && file_exists($pagePath)) {
-    require $pagePath;
-    return true;
+// This router is invoked for ALL requests when using PHP built-in server
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+// API routes go to backend
+if (str_starts_with($uri, '/api') || str_starts_with($uri, '/backend')) {
+    require __DIR__ . '/backend/public/index.php';
+    exit;
 }
 
-// Route to frontend SPA
-$_SERVER['SCRIPT_NAME'] = '/index.php';
-$_SERVER['SCRIPT_FILENAME'] = __DIR__ . '/frontend/public/index.php';
+// Static files - serve directly from frontend/public
+$staticFile = __DIR__ . '/frontend/public' . $uri;
+if ($uri !== '/' && str_contains($uri, '.')) {
+    // Has a file extension - check if it's a static file
+    if (serve_static_file($staticFile)) {
+        exit;
+    }
+}
 
-// All non-API, non-static routes go to the SPA (index.php)
+// All other requests go to the frontend router (SPA)
 require __DIR__ . '/frontend/public/index.php';
-return true;

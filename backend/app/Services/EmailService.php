@@ -44,8 +44,13 @@ class EmailService
         
         // Email queue configuration
         $this->queueService = new EmailQueueService();
-        $this->queueEnabled = $env('MAIL_QUEUE_ENABLED', true);
-        
+        $this->queueEnabled = filter_var($env('MAIL_QUEUE_ENABLED', true), FILTER_VALIDATE_BOOLEAN);
+
+        if ($this->queueEnabled && !$this->useSMTP) {
+            error_log("WARNING: MAIL_QUEUE_ENABLED=true but MAIL_USE_SMTP=false. " .
+                "Queued email sending will use PHP mail(), which is unreliable on many Linux hosts. " .
+                "Configure SMTP settings in .env or disable the email queue for immediate delivery.");
+        }
     }
     
     /**
@@ -136,13 +141,19 @@ class EmailService
     }
     
     /**
-     * Send a simple email
+     * Send a simple email via SMTP only
      */
     public function send(string $toEmail, string $toName, string $subject, string $body): bool
     {
         $logId = null;
         
         try {
+            // Validate SMTP configuration
+            if (empty($this->smtpUsername) || empty($this->smtpPassword)) {
+                error_log("EMAIL ERROR: SMTP credentials not configured. Check .env file.");
+                return false;
+            }
+            
             // Try to log email to database (optional - don't fail if table doesn't exist)
             try {
                 $logId = $this->db->insert('email_logs', [
@@ -160,22 +171,14 @@ class EmailService
                 error_log("TIP: Run 'php backend/database/migrate.php' to create email_logs table");
             }
             
-            $sent = false;
-            $errorMsg = '';
+            error_log("EMAIL: Attempting SMTP send to {$toEmail}");
+            $sent = $this->sendViaSMTP($toEmail, $toName, $subject, $body);
             
-            if ($this->useSMTP && !empty($this->smtpUsername) && !empty($this->smtpPassword)) {
-                error_log("EMAIL: Attempting SMTP send to {$toEmail}");
-                $sent = $this->sendViaSMTP($toEmail, $toName, $subject, $body);
-                if (!$sent) {
-                    $errorMsg = 'SMTP delivery failed - check /var/log/apache2/error.log or run: tail -f /var/log/apache2/error.log';
-                }
+            if (!$sent) {
+                $errorMsg = 'SMTP delivery failed - check credentials and firewall settings';
+                error_log("EMAIL FAILED: To: $toEmail, Subject: $subject. $errorMsg");
             } else {
-                // Fallback to PHP mail() function
-                error_log("EMAIL: Attempting PHP mail() send to {$toEmail}");
-                $sent = $this->sendViaMail($toEmail, $toName, $subject, $body);
-                if (!$sent) {
-                    $errorMsg = 'PHP mail() function failed - check server mail configuration';
-                }
+                error_log("EMAIL SENT SUCCESSFULLY: To: $toEmail, Subject: $subject");
             }
             
             // Update log status if logging is available
@@ -183,17 +186,11 @@ class EmailService
                 try {
                     $this->db->update('email_logs', [
                         'status' => $sent ? 'sent' : 'failed',
-                        'error' => $sent ? null : $errorMsg
+                        'error' => $sent ? null : ($errorMsg ?? 'Unknown error')
                     ], 'id = ?', [$logId]);
                 } catch (\Exception $updateException) {
                     error_log("EMAIL LOG UPDATE FAILED: " . $updateException->getMessage());
                 }
-            }
-            
-            if ($sent) {
-                error_log("EMAIL SENT SUCCESSFULLY: To: $toEmail, Subject: $subject");
-            } else {
-                error_log("EMAIL FAILED: To: $toEmail, Subject: $subject. $errorMsg");
             }
             
             return $sent;
@@ -205,9 +202,7 @@ class EmailService
         }
     }
     
-    /**
-     * Send email via SMTP (PHPMailer-style implementation using fsockopen)
-     */
+   
     private function sendViaSMTP(string $toEmail, string $toName, string $subject, string $body): bool
     {
         try {
@@ -382,24 +377,6 @@ class EmailService
     }
     
     /**
-     * Send email using PHP mail() function
-     */
-    private function sendViaMail(string $toEmail, string $toName, string $subject, string $body): bool
-    {
-        $headers = [
-            "From: {$this->fromName} <{$this->fromEmail}>",
-            "Reply-To: {$this->fromEmail}",
-            "MIME-Version: 1.0",
-            "Content-Type: text/plain; charset=UTF-8",
-            "X-Mailer: RentFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
-        ];
-        
-        $headerString = implode("\r\n", $headers);
-        
-        return mail($toEmail, $subject, $body, $headerString);
-    }
-    
-    /**
      * Send welcome email to new tenant
      */
     public function sendTenantWelcome(int $ownerId, array $tenant, string $propertyName, string $houseUnit): bool
@@ -414,7 +391,11 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        return $this->queueTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        $queued = $this->queueTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
+        if ($this->queueEnabled && $queued) {
+            $this->queueService->process(1);
+        }
+        return $queued;
     }
     
     /**
@@ -430,7 +411,11 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        return $this->queueTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
+        $queued = $this->queueTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
+        if ($this->queueEnabled && $queued) {
+            $this->queueService->process(1);
+        }
+        return $queued;
     }
     
     /**
@@ -457,7 +442,6 @@ class EmailService
             return false;
         }
         
-        // Send emails IMMEDIATELY - bypass queue completely
         $allSent = true;
         
         foreach ($recipients as $recipient) {
@@ -482,12 +466,13 @@ class EmailService
             $subject = $this->replaceVariables($template['subject'], $recipientVariables);
             $body = $this->replaceVariables($template['body'], $recipientVariables);
             
-            // Send IMMEDIATELY - bypass queue
+            // ALWAYS send immediately - payment confirmations are critical
             $sent = $this->send($recipient['email'], $recipient['name'], $subject, $body);
-            
             if (!$sent) {
                 $allSent = false;
-                error_log("Failed to send payment confirmation to {$recipient['email']}");
+                error_log("FAILED to send payment confirmation to {$recipient['email']}");
+            } else {
+                error_log("SUCCESS: Payment confirmation sent to {$recipient['email']}");
             }
         }
         

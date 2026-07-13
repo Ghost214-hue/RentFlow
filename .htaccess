@@ -1,29 +1,92 @@
-# RentFlow - Apache Rewrite Rules
-RewriteEngine On
-RewriteBase /RentalFlow/
+# RentFlow - Apache Security Configuration
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /rentflow/
+    
+    # Security Headers
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
+    
+    # Disable directory listing
+    Options -Indexes
+    
+    # Protect hidden files
+    <FilesMatch "^\.">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    
+    # Protect sensitive files
+    <FilesMatch "\.(env|log|sql|md)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    
+    # Protect config files
+    <FilesMatch "^(composer\.json|composer\.lock|package\.json)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    
+    # Limit file upload size
+    LimitRequestBody 5242880
+    
+    # Disable PHP execution in upload directories
+    # (Moved to a local uploads/.htaccess since <Directory> is invalid in .htaccess files.)
 
-# Route /api/* requests to backend entry point
-RewriteRule ^api/(.*)$ backend/public/index.php [QSA,L]
+    # Prevent access to git directory
+    RedirectMatch 404 /\.git
+    
+    # Route signin/signup/forgot-password pages
+    RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
+    RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
+    RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
+    RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
+    
+    # Route standalone page files (houses, properties, dashboard, etc.)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{DOCUMENT_ROOT}/RentFlow/frontend/pages/$0.php -f
+    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L]
+    
+    # Route /css/* to static files in frontend/public/css/
+    RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
+    
+    # Route /js/* to static files in frontend/src/js/
+    RewriteRule ^js/(.*)$ frontend/src/js/$1 [QSA,L]
+    
+    # All other non-file, non-directory routes go to the SPA (frontend/public/index.php)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
+</IfModule>
 
-# Route signin/signup/forgot-password pages
-RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
-RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
-RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
-RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
+# PHP Security Settings
+<IfModule mod_php7.c>
+    php_flag expose_php Off
+    php_flag display_errors Off
+    php_flag display_startup_errors Off
+    php_flag log_errors On
+    php_value error_log "/opt/lampp/htdocs/RentFlow/backend/logs/php_errors.log"
+    php_value max_execution_time 30
+    php_value max_input_time 30
+    php_value memory_limit 128M
+    php_value post_max_size 10M
+    php_value upload_max_filesize 5M
+    php_flag session.cookie_httponly On
+    php_flag session.cookie_secure Off
+    php_value session.cookie_samesite "Strict"
+    php_value session.gc_maxlifetime 7200
+</IfModule>
 
-# Route standalone page files (houses, properties, dashboard, etc.)
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteCond %{DOCUMENT_ROOT}/RentFlow/frontend/pages/$0.php -f
-RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L]
-
-# Route /css/* to static files in frontend/public/css/
-RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
-
-# Route /js/* to static files in frontend/src/js/
-RewriteRule ^js/(.*)$ frontend/src/js/$1 [QSA,L]
-
-# All other non-file, non-directory routes go to the SPA (frontend/public/index.php)
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
+# Cache Control for sensitive files
+<FilesMatch "\.(php|sql|env|log)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+</FilesMatch>

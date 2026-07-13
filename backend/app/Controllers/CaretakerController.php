@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Core\Pagination;
 use App\Services\EmailService;
 
 class CaretakerController
@@ -16,13 +17,18 @@ class CaretakerController
             Router::requireOwner();
             $ownerId = Router::getAuthUserId();
             $db = Database::getInstance();
+            $page = Pagination::fromRequest();
+
+            // Get total
+            $totalRow = $db->fetchOne("SELECT COUNT(*) as total FROM caretakers c WHERE c.owner_id = ?", [$ownerId]);
+            $total = (int) ($totalRow['total'] ?? 0);
 
             $caretakers = $db->fetchAll(
                 "SELECT c.id, c.owner_id, c.name, c.email, c.phone, c.avatar, c.assigned_properties, c.created_at, c.updated_at
              FROM caretakers c 
              WHERE c.owner_id = ? 
-             ORDER BY c.name ASC",
-                [$ownerId]
+             ORDER BY c.name ASC LIMIT ?, ?",
+                [$ownerId, $page['offset'], $page['limit']]
             );
 
             $propertyIds = [];
@@ -57,7 +63,7 @@ class CaretakerController
             }
             unset($caretaker);
 
-            Router::jsonResponse(['caretakers' => $caretakers]);
+            Router::jsonResponse(['caretakers' => $caretakers, 'meta' => Pagination::meta($total, $page['page'], $page['per_page'])]);
         } catch (\Throwable $e) {
             error_log('CaretakerController@index error: ' . $e->getMessage());
             Router::jsonResponse(['error' => 'Caretaker list failed'], 500);

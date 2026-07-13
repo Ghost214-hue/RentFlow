@@ -52,7 +52,7 @@ function isActive($uri, $path) {
 <aside id="sidebarMobile" class="lg:hidden fixed inset-y-0 left-0 z-40 w-64 bg-gradient-to-b from-blue-700 to-blue-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out flex flex-col min-h-screen">
     <div class="h-16 flex items-center px-5 border-b border-white/10">
         <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white font-bold text-sm backdrop-blur">RF</div>
+            <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="h-8 w-auto object-contain" onerror="this.style.display='none'">
             <span class="font-bold text-lg text-white">RentalFlow</span>
         </div>
         <button onclick="closeSidebar()" class="ml-auto text-white/60 hover:text-white"><i class="fas fa-times text-xl"></i></button>
@@ -82,7 +82,7 @@ function isActive($uri, $path) {
 <aside id="sidebarDesktop" class="hidden lg:flex w-64 flex-shrink-0 bg-gradient-to-b from-blue-700 to-blue-900 shadow-2xl flex-col min-h-screen">
     <div class="h-16 flex items-center px-5 border-b border-white/10">
         <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white font-bold text-sm backdrop-blur">RF</div>
+            <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="h-8 w-auto object-contain" onerror="this.style.display='none'">
             <span class="font-bold text-lg text-white">RentalFlow</span>
         </div>
     </div>

@@ -68,6 +68,36 @@ if (($userRole ?? 'owner') === 'tenant') {
         return colors[s] || 'bg-slate-100 text-slate-600';
     }
 
+    function getLastSixMonths() {
+        const months = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const year = dt.getFullYear();
+            const month = String(dt.getMonth() + 1).padStart(2, '0');
+            months.push(`${year}-${month}`);
+        }
+        return months;
+    }
+
+    function formatMonthLabel(ym) {
+        const [year, month] = ym.split('-');
+        return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+    }
+
+    function buildMonthlyTrend(payments) {
+        const months = getLastSixMonths();
+        const totals = Object.fromEntries(months.map(month => [month, 0]));
+        payments.forEach(p => {
+            const month = p.month || (p.date ? p.date.slice(0, 7) : null);
+            if (!month || !totals.hasOwnProperty(month)) return;
+            const status = (p.status || '').toLowerCase();
+            if (!['completed', 'paid', 'confirmed'].includes(status)) return;
+            totals[month] += Number(p.amount || 0);
+        });
+        return { labels: months.map(formatMonthLabel), values: months.map(month => totals[month] || 0) };
+    }
+
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
@@ -90,10 +120,21 @@ if (($userRole ?? 'owner') === 'tenant') {
     }
 
     async function loadOwnerDashboard() {
-        const res = await fetch(`${API}/dashboard`, { headers });
-        const data = await res.json();
+        const [dashRes, paymentsRes] = await Promise.all([
+            fetch(`${API}/dashboard`, { headers }),
+            fetch(`${API}/payments`, { headers })
+        ]);
+        if (!dashRes.ok) throw new Error('Failed to load dashboard');
+        const data = await dashRes.json();
+        const paymentsData = paymentsRes.ok ? await paymentsRes.json() : { payments: [] };
+        const payments = paymentsData.payments || [];
         const p = data.properties || {};
         const h = data.houses || {};
+        const totalUnits = h.total || 0;
+        const occupied = h.occupied || 0;
+        const vacant = totalUnits - occupied;
+        const occupancyRate = totalUnits ? Math.round((occupied / totalUnits) * 100) : 0;
+
         document.getElementById('statsGrid').innerHTML = `
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                 <div class="flex items-center justify-between mb-3">
@@ -105,11 +146,11 @@ if (($userRole ?? 'owner') === 'tenant') {
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                 <div class="flex items-center justify-between mb-3">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center"><i class="fas fa-door-open text-emerald-600"></i></div>
-                    <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">${h.total ? Math.round((h.occupied||0)/(h.total||1)*100)+'%' : '0%'}</span>
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center"><i class="fas fa-users text-emerald-600"></i></div>
+                    <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">${data.tenants || 0} tenants</span>
                 </div>
-                <p class="text-2xl font-bold text-slate-900">${h.occupied||0}/${h.total||0}</p>
-                <p class="text-sm text-slate-500">Occupied Units</p>
+                <p class="text-2xl font-bold text-slate-900">${data.tenants || 0}</p>
+                <p class="text-sm text-slate-500">Active Tenants</p>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                 <div class="flex items-center justify-between mb-3">
@@ -127,6 +168,7 @@ if (($userRole ?? 'owner') === 'tenant') {
                 <p class="text-2xl font-bold text-slate-900">${fmtCurrency(data.outstanding||0)}</p>
                 <p class="text-sm text-slate-500">Outstanding Rent</p>
             </div>`;
+
         document.getElementById('chartsRow').style.display = 'grid';
         document.getElementById('activityRow').innerHTML = `
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
@@ -156,7 +198,8 @@ if (($userRole ?? 'owner') === 'tenant') {
                         </div>
                     </div>`).join('')}</div>
             </div>`;
-        setTimeout(() => initCharts(data), 100);
+
+        setTimeout(() => initCharts(data, payments), 100);
     }
 
     async function loadCaretakerDashboard() {
@@ -201,15 +244,57 @@ if (($userRole ?? 'owner') === 'tenant') {
             </div>`;
     }
 
-    function initCharts(data) {
+    function initCharts(data, payments = []) {
         const h = data.houses || {};
+        const trend = buildMonthlyTrend(payments);
         const revCtx = document.getElementById('revenueChart');
         if (revCtx) {
-            new Chart(revCtx, { type:'line', data: { labels:['Aug','Sep','Oct','Nov','Dec','Jan'], datasets:[{ label:'Revenue', data:[320000,335000,310000,350000,380000,395000], borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)', borderWidth:2, fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#3b82f6' }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, grid:{ color:'rgba(0,0,0,0.05)' }, ticks:{ color:'#64748b' } }, x:{ grid:{ display:false }, ticks:{ color:'#64748b' } } } } });
+            new Chart(revCtx, {
+                type: 'line',
+                data: {
+                    labels: trend.labels,
+                    datasets: [{
+                        label: 'Revenue',
+                        data: trend.values,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59,130,246,0.12)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#3b82f6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#64748b' } },
+                        x: { grid: { display: false }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
         }
         const occCtx = document.getElementById('occChart');
         if (occCtx) {
-            new Chart(occCtx, { type:'doughnut', data:{ labels:['Occupied','Vacant'], datasets:[{ data:[h.occupied||0, (h.total||0)-(h.occupied||0)], backgroundColor:['#3b82f6', '#e2e8f0'], borderWidth:0 }] }, options:{ responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ display:false } } } });
+            new Chart(occCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Occupied', 'Vacant'],
+                    datasets: [{
+                        data: [h.occupied||0, (h.total||0)-(h.occupied||0)],
+                        backgroundColor: ['#3b82f6', '#e2e8f0'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: { legend: { display: false } }
+                }
+            });
         }
         document.getElementById('occLegend').textContent = (h.occupied||0) + ' units';
         document.getElementById('vacLegend').textContent = ((h.total||0)-(h.occupied||0)) + ' units';

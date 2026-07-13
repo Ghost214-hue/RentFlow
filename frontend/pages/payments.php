@@ -43,7 +43,9 @@ $role = $user['role'] ?? 'owner';
                         </tbody>
                     </table>
                 </div>
+                <div id="paymentsPager" class="p-4"></div>
             </div>
+            <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
     <div id="modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeModal()">
@@ -66,6 +68,8 @@ $role = $user['role'] ?? 'owner';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $role; ?>';
+    const PAYMENTS_PER_PAGE_KEY = 'rf_payments_per_page';
+    const PAYMENTS_PER_PAGE_DEFAULT = 25;
 
     function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
     function toast(msg, type='success') {
@@ -78,9 +82,9 @@ $role = $user['role'] ?? 'owner';
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
-    async function loadPayments() {
+    async function loadPayments(page = 1, perPage = window.getSavedPerPage(PAYMENTS_PER_PAGE_KEY, PAYMENTS_PER_PAGE_DEFAULT)) {
         try {
-            const res = await fetch(`${API}/payments`, { headers });
+            const res = await fetch(`${API}/payments?page=${page}&per_page=${perPage}`, { headers });
             const data = await res.json();
             const tbody = document.getElementById('paymentsTable');
             if (data.payments && data.payments.length) {
@@ -101,6 +105,11 @@ $role = $user['role'] ?? 'owner';
             } else {
                 tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-12 text-center text-slate-400">No payments found</td></tr>';
             }
+            if (data.meta) renderPagination('paymentsPager', data.meta, (p) => loadPayments(p, perPage), {
+                perPageKey: PAYMENTS_PER_PAGE_KEY,
+                defaultPerPage: PAYMENTS_PER_PAGE_DEFAULT,
+                onPerPageChange: (newPerPage) => loadPayments(1, newPerPage),
+            });
         } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
     }
 

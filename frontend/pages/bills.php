@@ -48,7 +48,9 @@ $role = $user['role'] ?? 'owner';
                         </tbody>
                     </table>
                 </div>
+                <div id="billsPager" class="p-4"></div>
             </div>
+            <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
@@ -56,6 +58,8 @@ $role = $user['role'] ?? 'owner';
     const API = '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    const BILLS_PER_PAGE_KEY = 'rf_bills_per_page';
+    const BILLS_PER_PAGE_DEFAULT = 25;
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -67,7 +71,7 @@ $role = $user['role'] ?? 'owner';
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
-    async function loadBills() {
+    async function loadBills(page = 1, perPage = window.getSavedPerPage(BILLS_PER_PAGE_KEY, BILLS_PER_PAGE_DEFAULT)) {
         try {
             const url = new URL(`${API}/bills`, window.location.origin);
             const propertySelect = document.getElementById('propertyFilter');
@@ -75,6 +79,8 @@ $role = $user['role'] ?? 'owner';
             const monthInput = document.getElementById('monthFilter');
             if (monthInput && monthInput.value) url.searchParams.set('month', monthInput.value);
             else url.searchParams.set('month', new Date().toISOString().substring(0,7));
+            url.searchParams.set('page', page);
+            url.searchParams.set('per_page', perPage);
 
             const res = await fetch(url.pathname + url.search, { headers });
             const data = await res.json();
@@ -98,6 +104,14 @@ $role = $user['role'] ?? 'owner';
                 `).join('');
             } else {
                 tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No bills found</td></tr>';
+            }
+            // Render pagination if meta available
+            if (data.meta) {
+                renderPagination('billsPager', data.meta, (p) => loadBills(p, perPage), {
+                    perPageKey: BILLS_PER_PAGE_KEY,
+                    defaultPerPage: BILLS_PER_PAGE_DEFAULT,
+                    onPerPageChange: (newPerPage) => loadBills(1, newPerPage),
+                });
             }
         } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
     }
