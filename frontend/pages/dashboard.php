@@ -1,8 +1,14 @@
 <?php
+// Force no-cache BEFORE any output
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+$basePath = '/RentFlow';
+
 require_once __DIR__ . '/../includes/auth.php';
-// $userRole is set by auth.php; redirect tenants to their dedicated dashboard
 if (($userRole ?? 'owner') === 'tenant') {
-    header('Location: /tenant-dashboard');
+    header('Location: /RentFlow/tenant-dashboard');
     exit;
 }
 ?>
@@ -12,10 +18,11 @@ if (($userRole ?? 'owner') === 'tenant') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="<?php echo $basePath; ?>/js/base-path.js?v=2"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
@@ -54,11 +61,35 @@ if (($userRole ?? 'owner') === 'tenant') {
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
-    const API = (BASE || '') + '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $userRole ?? 'owner'; ?>';
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function fmtCurrency(n) { return 'KES ' + Number(n).toLocaleString(); }
     function fmtDate(d) { return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
@@ -115,21 +146,17 @@ if (($userRole ?? 'owner') === 'tenant') {
         } catch(e) {
             console.error(e);
             document.getElementById('statsGrid').innerHTML = '<div class="col-span-full py-12 text-center text-red-400">Failed to load dashboard.</div>';
-            if (e.message.includes('401')) window.location.href = '/signin';
         }
     }
 
     async function loadOwnerDashboard() {
-        const [dashRes, paymentsRes] = await Promise.all([
-            fetch(`${API}/dashboard`, { headers }),
-            fetch(`${API}/payments`, { headers })
+        const [dashData, paymentsData] = await Promise.all([
+            apiRequest(`${API}/dashboard`),
+            apiRequest(`${API}/payments`)
         ]);
-        if (!dashRes.ok) throw new Error('Failed to load dashboard');
-        const data = await dashRes.json();
-        const paymentsData = paymentsRes.ok ? await paymentsRes.json() : { payments: [] };
         const payments = paymentsData.payments || [];
-        const p = data.properties || {};
-        const h = data.houses || {};
+        const p = dashData.properties || {};
+        const h = dashData.houses || {};
         const totalUnits = h.total || 0;
         const occupied = h.occupied || 0;
         const vacant = totalUnits - occupied;
@@ -147,9 +174,9 @@ if (($userRole ?? 'owner') === 'tenant') {
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                 <div class="flex items-center justify-between mb-3">
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center"><i class="fas fa-users text-emerald-600"></i></div>
-                    <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">${data.tenants || 0} tenants</span>
+                    <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">${dashData.tenants || 0} tenants</span>
                 </div>
-                <p class="text-2xl font-bold text-slate-900">${data.tenants || 0}</p>
+                <p class="text-2xl font-bold text-slate-900">${dashData.tenants || 0}</p>
                 <p class="text-sm text-slate-500">Active Tenants</p>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
@@ -157,7 +184,7 @@ if (($userRole ?? 'owner') === 'tenant') {
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center"><i class="fas fa-money-bill-wave text-blue-600"></i></div>
                     <span class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">This month</span>
                 </div>
-                <p class="text-2xl font-bold text-slate-900">${fmtCurrency(data.revenue||0)}</p>
+                <p class="text-2xl font-bold text-slate-900">${fmtCurrency(dashData.revenue||0)}</p>
                 <p class="text-sm text-slate-500">Monthly Revenue</p>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
@@ -165,7 +192,7 @@ if (($userRole ?? 'owner') === 'tenant') {
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center"><i class="fas fa-exclamation-circle text-amber-600"></i></div>
                     <span class="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Outstanding</span>
                 </div>
-                <p class="text-2xl font-bold text-slate-900">${fmtCurrency(data.outstanding||0)}</p>
+                <p class="text-2xl font-bold text-slate-900">${fmtCurrency(dashData.outstanding||0)}</p>
                 <p class="text-sm text-slate-500">Outstanding Rent</p>
             </div>`;
 
@@ -177,7 +204,7 @@ if (($userRole ?? 'owner') === 'tenant') {
                     <thead><tr class="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-blue-50">
                         <th class="pb-3 pr-4">Tenant</th><th class="pb-3 pr-4">Amount</th><th class="pb-3 pr-4">Date</th><th class="pb-3">Status</th>
                     </tr></thead>
-                    <tbody class="divide-y divide-blue-50">${(data.recentPayments||[]).map(p => `
+                    <tbody class="divide-y divide-blue-50">${(dashData.recentPayments||[]).map(p => `
                         <tr class="hover:bg-blue-50/30 transition-colors">
                             <td class="py-3 pr-4"><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${initials(p.tenant_name)}</div><span class="text-sm font-medium text-slate-900">${p.tenant_name||'N/A'}</span></div></td>
                             <td class="py-3 pr-4 text-sm font-medium text-slate-900">${fmtCurrency(p.amount)}</td>
@@ -188,7 +215,7 @@ if (($userRole ?? 'owner') === 'tenant') {
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                 <h3 class="font-semibold text-slate-900 mb-4">Active Complaints</h3>
-                <div class="space-y-3">${(data.activeComplaints||[]).slice(0,4).map(c => `
+                <div class="space-y-3">${(dashData.activeComplaints||[]).slice(0,4).map(c => `
                     <div class="flex items-start gap-3 p-3 rounded-xl bg-blue-50/50 border border-blue-100/50">
                         <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0"><i class="fas fa-exclamation text-xs"></i></div>
                         <div class="flex-1 min-w-0">
@@ -199,16 +226,17 @@ if (($userRole ?? 'owner') === 'tenant') {
                     </div>`).join('')}</div>
             </div>`;
 
-        setTimeout(() => initCharts(data, payments), 100);
+        setTimeout(() => initCharts(dashData, payments), 100);
     }
 
     async function loadCaretakerDashboard() {
-        const [propRes, houseRes, tenantRes, compRes, payRes] = await Promise.all([
-            fetch(`${API}/properties`, { headers }), fetch(`${API}/houses`, { headers }),
-            fetch(`${API}/tenants`, { headers }), fetch(`${API}/complaints`, { headers }),
-            fetch(`${API}/payments`, { headers })]);
-        const props = await propRes.json(); const houses = await houseRes.json(); const tenants = await tenantRes.json();
-        const complaints = await compRes.json(); const payments = await payRes.json();
+        const [props, houses, tenants, complaints, payments] = await Promise.all([
+            apiRequest(`${API}/properties`),
+            apiRequest(`${API}/houses`),
+            apiRequest(`${API}/tenants`),
+            apiRequest(`${API}/complaints`),
+            apiRequest(`${API}/payments`)
+        ]);
         document.getElementById('statsGrid').innerHTML = `
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5"><div class="flex items-center justify-between mb-3"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center"><i class="fas fa-building text-blue-600"></i></div></div><p class="text-2xl font-bold text-slate-900">${props.properties ? props.properties.length : 0}</p><p class="text-sm text-slate-500">Properties</p></div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5"><div class="flex items-center justify-between mb-3"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center"><i class="fas fa-home text-emerald-600"></i></div></div><p class="text-2xl font-bold text-slate-900">${houses.houses ? houses.houses.length : 0}</p><p class="text-sm text-slate-500">Total Units</p></div>

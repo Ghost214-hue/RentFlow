@@ -1,13 +1,13 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
 ?>
@@ -17,7 +17,7 @@ $role = $user['role'] ?? 'owner';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Complaints - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="/RentFlow/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -31,7 +31,7 @@ $role = $user['role'] ?? 'owner';
                 <button onclick="openModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>New <?php echo $role === 'tenant' ? 'Complaint' : 'Notice'; ?></button>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="complaintsGrid">
-                <div class="col-span-full py-12 text-center text-slate-400">Loading...</div>
+                <div class="col-span-full py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading complaints...</span></div></div>
             </div>
         </main>
     </div>
@@ -97,10 +97,35 @@ $role = $user['role'] ?? 'owner';
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $role; ?>';
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
 
@@ -116,10 +141,8 @@ $role = $user['role'] ?? 'owner';
 
     async function loadComplaints() {
         try {
-            const res = await fetch(`${API}/complaints`, { headers });
-            const data = await res.json();
+            const data = await apiRequest(`${API}/complaints`);
             const grid = document.getElementById('complaintsGrid');
-            if (!res.ok) throw new Error(data.error || 'Failed');
             if (data.complaints && data.complaints.length) {
                 grid.innerHTML = data.complaints.map(c => {
                     const isUnread = c.is_unread ? '<span class="ml-2 px-2 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white">NEW</span>' : '';
@@ -142,14 +165,12 @@ $role = $user['role'] ?? 'owner';
             } else {
                 grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-400">No complaints or notices found</div>';
             }
-        } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+        } catch(e) { console.error(e); }
     }
 
     async function viewComplaintDetail(complaintId) {
         try {
-            const res = await fetch(`${API}/complaints/${complaintId}`, { headers });
-            if (!res.ok) throw new Error('Not found');
-            const data = await res.json();
+            const data = await apiRequest(`${API}/complaints/${complaintId}`);
             const c = data.complaint;
             const senderLabel = c.sender_role === 'tenant' ? (c.tenant_name || 'Tenant') : (c.sender_role === 'caretaker' ? (c.caretaker_name || 'Manager') : (c.owner_name || 'Owner'));
             document.getElementById('detailTitle').textContent = c.title || 'Untitled';
@@ -187,10 +208,10 @@ $role = $user['role'] ?? 'owner';
     async function loadSelectOptions() {
         if (userRole === 'tenant') return;
         try {
-            const tRes = await fetch(`${API}/tenants`, { headers }); const tData = await tRes.json();
+            const tData = await apiRequest(`${API}/tenants`);
             const tSelect = document.getElementById('compTenant');
             if (tSelect && tData.tenants) { tSelect.innerHTML = '<option value="">Select tenant...</option>' + tData.tenants.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${t.house_unit || 'No unit'})</option>`).join(''); }
-            const pRes = await fetch(`${API}/properties`, { headers }); const pData = await pRes.json();
+            const pData = await apiRequest(`${API}/properties`);
             const pSelect = document.getElementById('compProperty');
             if (pSelect && pData.properties) { pSelect.innerHTML = '<option value="">Select property...</option>' + pData.properties.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(''); }
         } catch(e) { console.error('Failed to load select options', e); }
@@ -214,9 +235,7 @@ $role = $user['role'] ?? 'owner';
             if (data.recipient_type === 'property') data.property_id = document.getElementById('compProperty').value;
         }
         try {
-            const res = await fetch(`${API}/complaints`, { method:'POST', headers, body:JSON.stringify(data) });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            const result = await apiRequest(`${API}/complaints`, { method:'POST', body:JSON.stringify(data) });
             toast('Submitted successfully!');
             closeModal();
             loadComplaints();
@@ -233,9 +252,7 @@ $role = $user['role'] ?? 'owner';
         const commentText = document.getElementById('detailReplyText').value.trim();
         if (!commentText) { toast('Please enter a reply', 'error'); return; }
         try {
-            const res = await fetch(`${API}/complaints/${window.currentDetailComplaintId}`, { method:'PUT', headers, body: JSON.stringify({ status:'in-progress', comments:commentText, comment_user:'<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>' }) });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            const result = await apiRequest(`${API}/complaints/${window.currentDetailComplaintId}`, { method:'PUT', body: JSON.stringify({ status:'in-progress', comments:commentText, comment_user:'<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>' }) });
             toast('Reply sent!');
             closeComplaintDetailModal();
             loadComplaints();

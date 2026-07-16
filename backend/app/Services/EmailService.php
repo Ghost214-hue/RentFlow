@@ -42,9 +42,9 @@ class EmailService
         $this->smtpPassword = $env('MAIL_PASSWORD', '');
         $this->smtpEncryption = $env('MAIL_ENCRYPTION', 'tls');
         
-        // Email queue configuration
+        // Email queue configuration - disabled by default for simplicity
         $this->queueService = new EmailQueueService();
-        $this->queueEnabled = filter_var($env('MAIL_QUEUE_ENABLED', true), FILTER_VALIDATE_BOOLEAN);
+        $this->queueEnabled = false; // Queue disabled by default - sends immediately
 
         if ($this->queueEnabled && !$this->useSMTP) {
             error_log("WARNING: MAIL_QUEUE_ENABLED=true but MAIL_USE_SMTP=false. " .
@@ -391,11 +391,8 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        $queued = $this->queueTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
-        if ($this->queueEnabled && $queued) {
-            $this->queueService->process(1);
-        }
-        return $queued;
+        // Send immediately for critical onboarding emails
+        return $this->sendTemplate('Tenant Welcome', $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
     /**
@@ -411,11 +408,8 @@ class EmailService
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
-        $queued = $this->queueTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
-        if ($this->queueEnabled && $queued) {
-            $this->queueService->process(1);
-        }
-        return $queued;
+        // Send immediately for critical onboarding emails
+        return $this->sendTemplate('Caretaker Welcome', $ownerId, $caretaker['email'], $caretaker['name'], $variables);
     }
     
     /**
@@ -539,35 +533,7 @@ class EmailService
             'national_id' => $tenant['id_number'] ?? ''
         ];
         
-        return $this->queueTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
-    }
-    
-    /**
-     * Helper: Queue a template email
-     */
-    private function queueTemplate(string $templateName, int $ownerId, string $toEmail, string $toName, array $variables = []): bool
-    {
-        if (!$this->queueEnabled) {
-            // Queue disabled, send directly
-            return $this->sendTemplate($templateName, $ownerId, $toEmail, $toName, $variables);
-        }
-        
-        $template = $this->getTemplate($templateName, $ownerId);
-        if (!$template) {
-            error_log("Email template not found: $templateName for owner $ownerId");
-            return false;
-        }
-        
-        $subject = $this->replaceVariables($template['subject'], $variables);
-        $body = $this->replaceVariables($template['body'], $variables);
-        
-        return $this->queueService->queue(
-            $ownerId,
-            $templateName,
-            $toEmail,
-            $toName,
-            $subject,
-            $body
-        );
+        // Send immediately for critical notifications
+        return $this->sendTemplate('Tenant Vacate', $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
 }

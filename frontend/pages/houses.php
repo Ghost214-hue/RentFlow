@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 $propertyId = $_GET['property_id'] ?? null;
+$basePath = '/RentFlow';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -8,7 +9,8 @@ $propertyId = $_GET['property_id'] ?? null;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Houses & Units - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <base href="/RentFlow/">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -59,10 +61,34 @@ $propertyId = $_GET['property_id'] ?? null;
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
-    const API = (BASE || '') + '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
     const urlParams = new URLSearchParams(window.location.search);
     const filterPropId = urlParams.get('property_id');
     const HOUSES_PER_PAGE_KEY = 'rf_houses_per_page';
@@ -82,13 +108,8 @@ $propertyId = $_GET['property_id'] ?? null;
         try {
             console.log('Fetching houses from:', `${API}/houses${filterPropId ? `?property_id=${filterPropId}` : ''}`);
             const qs = filterPropId ? `?property_id=${filterPropId}` : '';
-            const res = await fetch(`${API}/houses${qs}${qs ? '&' : '?'}page=${page}&per_page=${perPage}`, { headers });
-            const data = await res.json();
-            console.log('Houses API response:', data);
+            const data = await apiRequest(`${API}/houses${qs}${qs ? '&' : '?'}page=${page}&per_page=${perPage}`);
             const tbody = document.getElementById('housesTable');
-            if (!res.ok) {
-                throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
-            }
             if (data.houses && data.houses.length) {
                 tbody.innerHTML = data.houses.map(h => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
@@ -112,9 +133,8 @@ $propertyId = $_GET['property_id'] ?? null;
         } catch(e) {
             console.error('loadHouses error:', e);
             document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;
-            if (e.message.includes('401') || e.message.includes('Authentication')) {
-                toast('Session expired. Redirecting...', 'error');
-                setTimeout(() => window.location.href = '/signin', 1500);
+            if (e.message.includes('401')) {
+                window.location.href = '../public/signin.php';
             }
         }
     }
@@ -122,12 +142,8 @@ $propertyId = $_GET['property_id'] ?? null;
     async function loadProperties() {
         try {
             console.log('Fetching properties...');
-            const res = await fetch(`${API}/properties`, { headers });
-            const data = await res.json();
+            const data = await apiRequest(`${API}/properties`);
             console.log('Properties API response:', data);
-            if (!res.ok) {
-                throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
-            }
             const select = document.getElementById('houseProperty');
             if (data.properties && data.properties.length) {
                 select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${p.id}" ${filterPropId==p.id?'selected':''}>${p.name}</option>`).join('');
@@ -188,12 +204,10 @@ $propertyId = $_GET['property_id'] ?? null;
             const url = isEdit ? `${API}/houses/${houseId}` : `${API}/houses`;
             const method = isEdit ? 'PUT' : 'POST';
             console.log(`Saving house: ${method} ${url}`, data);
-            const res = await fetch(url, { method, headers, body:JSON.stringify(data) });
-            const text = await res.text();
-            console.log('Response text:', text);
-            let result;
-            try { result = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server: ' + text.substring(0, 200)); }
-            if(!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+            const result = await apiRequest(url, {
+                method,
+                body: JSON.stringify(data)
+            });
             toast(isEdit ? 'Unit updated!' : 'Unit added!');
             closeModal();
             loadHouses();

@@ -1,5 +1,5 @@
 <?php
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+$basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], '', dirname(__DIR__, 2))), '/');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -7,7 +7,8 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Up - RentalFlow</title>
-   <link rel="stylesheet" href="/css/output.css">
+    <base href="<?php echo $basePath; ?>/">
+    <link rel="stylesheet" href="css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -55,7 +56,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             <div class="lg:w-7/12 p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
                     <div class="text-center mb-8">
-                        <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
+                        <img src="<?php echo $basePath; ?>/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
                         <h2 class="text-2xl font-bold text-slate-900">Create Account</h2>
                         <p class="text-slate-500 mt-1">Start managing your properties</p>
                     </div>
@@ -68,7 +69,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Password</label><input type="password" id="regPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Min 6 characters" minlength="6" required></div>
                         <div class="flex items-start gap-2">
                             <input type="checkbox" id="regTerms" class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" required>
-                            <label for="regTerms" class="text-sm text-slate-600">I have read and agree to the <a href="/terms-and-conditions" target="_blank" class="text-blue-600 hover:underline font-medium">terms and conditions</a> of RentalFlow</label>
+                            <label for="regTerms" class="text-sm text-slate-600">I have read and agree to the <a href="<?php echo $basePath; ?>/terms-and-conditions" target="_blank" class="text-blue-600 hover:underline font-medium">terms and conditions</a> of RentalFlow</label>
                         </div>
                         <button type="submit" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Create Account</button>
                     </form>
@@ -81,7 +82,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const API = '<?php echo $basePath; ?>/api';
     const CSRF_TOKEN = '<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');

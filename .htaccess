@@ -1,7 +1,9 @@
 # RentFlow - Apache Security Configuration
+DirectoryIndex frontend/public/index.php
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /rentflow/
+    RewriteBase /RentFlow/
     
     # Security Headers
     Header set X-Content-Type-Options "nosniff"
@@ -10,7 +12,12 @@
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
     Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src 'self' https:; frame-ancestors 'none'; style-src-elem 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; style-src-attr 'self' 'unsafe-inline';"
+    
+    <IfModule mod_substitute.c>
+        AddOutputFilterByType SUBSTITUTE text/html
+        Substitute "s|<head>|<head><base href=\"/RentFlow/\">|"
+    </IfModule>
     
     # Disable directory listing
     Options -Indexes
@@ -35,24 +42,12 @@
     
     # Limit file upload size
     LimitRequestBody 5242880
-    
-    # Disable PHP execution in upload directories
-    # (Moved to a local uploads/.htaccess since <Directory> is invalid in .htaccess files.)
 
     # Prevent access to git directory
     RedirectMatch 404 /\.git
     
-    # Route signin/signup/forgot-password pages
-    RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
-    RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
-    RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
-    RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
-    
-    # Route standalone page files (houses, properties, dashboard, etc.)
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteCond %{DOCUMENT_ROOT}/RentFlow/frontend/pages/$0.php -f
-    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L]
+    # --- MUST BE FIRST: API routes go to backend ---
+    RewriteRule ^api(/.*)?$ backend/public/index.php [QSA,L]
     
     # Route /css/* to static files in frontend/public/css/
     RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
@@ -60,7 +55,21 @@
     # Route /js/* to static files in frontend/src/js/
     RewriteRule ^js/(.*)$ frontend/src/js/$1 [QSA,L]
     
-    # All other non-file, non-directory routes go to the SPA (frontend/public/index.php)
+    # Route images and fonts
+    RewriteRule ^images/(.*)$ frontend/public/images/$1 [QSA,L]
+    
+    # Route signin/signup/forgot-password pages
+    RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
+    RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
+    RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
+    RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
+    
+    # Route standalone page files - hide internal paths from browser
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L,PT]
+    
+    # All other routes go to the SPA
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]

@@ -47,11 +47,10 @@ class ComplaintController
         } elseif ($role === 'caretaker') {
             // Caretakers see complaints for their assigned properties
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) {
-                Router::jsonResponse(['complaints' => []]);
+            if ($propertyIds) {
+                $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
+                $params = array_merge($params, $propertyIds);
             }
-            $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
-            $params = array_merge($params, $propertyIds);
         } else {
             // Owner sees all, with optional direction filter
             if ($direction === 'sent') {
@@ -280,8 +279,10 @@ class ComplaintController
             $queryParams[] = (string)$actorId;
         } elseif ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
-            $queryParams = array_merge($queryParams, $propertyIds);
+            if ($propertyIds) {
+                $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
+                $queryParams = array_merge($queryParams, $propertyIds);
+            }
         }
 
         $complaint = $db->fetchOne($sql, $queryParams);
@@ -324,12 +325,14 @@ class ComplaintController
         // Authorization check for caretaker
         if ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            $allowed = $db->fetchOne(
-                "SELECT c.id FROM complaints c LEFT JOIN houses h ON c.house_id = h.id WHERE c.id = ? AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')",
-                array_merge([$complaintId], $propertyIds)
-            );
-            if (!$allowed) {
-                Router::jsonResponse(['error' => 'Not authorized'], 403);
+            if ($propertyIds) {
+                $allowed = $db->fetchOne(
+                    "SELECT c.id FROM complaints c LEFT JOIN houses h ON c.house_id = h.id WHERE c.id = ? AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')",
+                    array_merge([$complaintId], $propertyIds)
+                );
+                if (!$allowed) {
+                    Router::jsonResponse(['error' => 'Not authorized'], 403);
+                }
             }
         }
 

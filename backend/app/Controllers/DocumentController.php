@@ -36,9 +36,10 @@ class DocumentController
         }
 
         if ($role === 'caretaker') {
+            $caretakerId = Router::getAuthActorId();
             $caretaker = $db->fetchOne(
-                "SELECT assigned_properties FROM caretakers WHERE owner_id = ? AND id = (SELECT caretaker_id FROM users WHERE id = ?)",
-                [$ownerId, Router::getAuthUserId()]
+                "SELECT assigned_properties FROM caretakers WHERE id = ? AND owner_id = ?",
+                [$caretakerId, $ownerId]
             );
             $propertyIds = [];
             if (!empty($caretaker['assigned_properties'])) {
@@ -94,15 +95,16 @@ class DocumentController
                 Router::jsonResponse(['error' => 'Document not found'], 404);
             }
         } elseif ($role === 'caretaker') {
+            $caretakerId = Router::getAuthActorId();
             $caretaker = $db->fetchOne(
-                "SELECT assigned_properties FROM caretakers WHERE owner_id = ? AND id = (SELECT caretaker_id FROM users WHERE id = ?)",
-                [$ownerId, Router::getAuthUserId()]
+                "SELECT assigned_properties FROM caretakers WHERE id = ? AND owner_id = ?",
+                [$caretakerId, $ownerId]
             );
             $propertyIds = [];
             if (!empty($caretaker['assigned_properties'])) {
                 $propertyIds = array_map('intval', explode(',', $caretaker['assigned_properties']));
             }
-            if (!in_array($document['property_id'], $propertyIds, true)) {
+            if (!empty($propertyIds) && !in_array($document['property_id'], $propertyIds, true)) {
                 Router::jsonResponse(['error' => 'Document not found'], 404);
             }
             if (!$document['is_active']) {
@@ -283,9 +285,10 @@ class DocumentController
                 if ($house) $propertyId = (int) $house['property_id'];
             } elseif ($role === 'caretaker') {
                 $ownerId = Router::getAuthUserId();
+                $caretakerId = Router::getAuthActorId();
                 $caretaker = $db->fetchOne(
-                    "SELECT assigned_properties FROM caretakers WHERE owner_id = ? AND id = (SELECT caretaker_id FROM users WHERE id = ?)",
-                    [$ownerId, Router::getAuthUserId()]
+                    "SELECT assigned_properties FROM caretakers WHERE id = ? AND owner_id = ?",
+                    [$caretakerId, $ownerId]
                 );
                 if (!empty($caretaker['assigned_properties'])) {
                     $ids = array_map('intval', explode(',', $caretaker['assigned_properties']));

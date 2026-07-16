@@ -2,7 +2,10 @@
  * RentFlow API Client
  * Handles all communication with the backend
  */
-const API_BASE = "/api";
+// Auto-detect base path from current page URL (e.g., /RentFlow/api)
+const scriptPath = document.currentScript ? document.currentScript.src : "";
+const API_BASE =
+  (scriptPath.includes("/RentFlow/") ? "/RentFlow" : "") + "/api";
 
 const Api = {
   token: localStorage.getItem("rf_token") || null,

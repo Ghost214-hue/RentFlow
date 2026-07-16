@@ -1,10 +1,11 @@
 <?php
+$basePath = '/RentFlow'; // Hardcoded for this deployment
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';
 
 // Get current page name from URI
-$pageName = trim($requestUri, '/');
+$pageName = trim(str_replace($basePath, '', $requestUri), '/');
 if (empty($pageName)) $pageName = 'dashboard';
 $pageDisplay = ucwords(str_replace('-', ' ', $pageName));
 ?>
@@ -32,7 +33,7 @@ function deleteRfTokenCookie() {
 
 async function logout() {
     try {
-        await fetch('/api/auth/logout', {
+        await fetch('<?php echo $basePath; ?>/api/auth/logout', {
             method: 'POST',
             headers: {'Content-Type':'application/json'}
         });
@@ -41,7 +42,7 @@ async function logout() {
     }
     deleteRfTokenCookie();
     if (window.sessionStorage) window.sessionStorage.clear();
-    window.location.href = '/signin';
+    window.location.href = '<?php echo $basePath; ?>/signin';
 }
 
 window.addEventListener('pageshow', (event) => {

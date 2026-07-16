@@ -15,7 +15,7 @@ class HouseController
      */
     public function index(array $params = []): void
     {
-        Router::requireOwner();
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
@@ -73,7 +73,7 @@ class HouseController
      */
     public function available(array $params = []): void
     {
-        Router::requireOwner();
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
 

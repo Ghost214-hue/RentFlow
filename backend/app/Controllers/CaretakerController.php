@@ -98,6 +98,11 @@ class CaretakerController
 
         $propertyIds = array_values(array_filter(array_map('intval', explode(',', (string) ($data['assigned_properties'] ?? '')))));
         
+        // Validate at least one property is assigned
+        if (empty($propertyIds)) {
+            Router::jsonResponse(['error' => 'At least one property must be assigned to the caretaker'], 400);
+        }
+        
         // Enforce one-caretaker-per-property rule
         foreach ($propertyIds as $propertyId) {
             $property = $db->fetchOne("SELECT id, name FROM properties WHERE id = ? AND owner_id = ?", [$propertyId, $ownerId]);
@@ -180,6 +185,11 @@ class CaretakerController
         // Enforce one-caretaker-per-property on update too
         if (isset($updateData['assigned_properties'])) {
             $propertyIds = array_values(array_filter(array_map('intval', explode(',', (string) $updateData['assigned_properties']))));
+            
+            // Validate at least one property is assigned
+            if (empty($propertyIds)) {
+                Router::jsonResponse(['error' => 'At least one property must be assigned to the caretaker'], 400);
+            }
             foreach ($propertyIds as $propertyId) {
                 $property = $db->fetchOne("SELECT id, name FROM properties WHERE id = ? AND owner_id = ?", [$propertyId, $ownerId]);
                 if (!$property) {

@@ -1,13 +1,13 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
 ?>
@@ -17,7 +17,7 @@ $role = $user['role'] ?? 'owner';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bills - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="/RentFlow/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -44,7 +44,7 @@ $role = $user['role'] ?? 'owner';
                             <th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Unit</th><th class="px-6 py-4">Month</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Paid</th><th class="px-6 py-4">Balance</th><th class="px-6 py-4">Status</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="billsTable">
-                            <tr><td colspan="8" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
+                            <tr id="loadingRow"><td colspan="8" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading bills...</span></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -55,11 +55,36 @@ $role = $user['role'] ?? 'owner';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const BILLS_PER_PAGE_KEY = 'rf_bills_per_page';
     const BILLS_PER_PAGE_DEFAULT = 25;
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -82,8 +107,7 @@ $role = $user['role'] ?? 'owner';
             url.searchParams.set('page', page);
             url.searchParams.set('per_page', perPage);
 
-            const res = await fetch(url.pathname + url.search, { headers });
-            const data = await res.json();
+            const data = await apiRequest(url.pathname + url.search);
             const tbody = document.getElementById('billsTable');
             if (data.bills && data.bills.length) {
                 tbody.innerHTML = data.bills.map(b => `
@@ -113,7 +137,7 @@ $role = $user['role'] ?? 'owner';
                     onPerPageChange: (newPerPage) => loadBills(1, newPerPage),
                 });
             }
-        } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+        } catch(e) { console.error(e); }
     }
 
     async function generateBills() {
@@ -121,9 +145,7 @@ $role = $user['role'] ?? 'owner';
         const propertyId = document.getElementById('propertyFilter')?.value || null;
         const body = propertyId ? JSON.stringify({month, property_id: Number(propertyId)}) : JSON.stringify({month});
         try {
-            const res = await fetch(`${API}/bills/generate`, { method:'POST', headers, body });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            const result = await apiRequest(`${API}/bills/generate`, { method:'POST', body });
             toast('Bills generated!');
             loadBills();
             if (result.summary && result.summary.length) showArrearsSummary(result.summary);
@@ -201,8 +223,7 @@ $role = $user['role'] ?? 'owner';
 
     async function loadProperties() {
         try {
-            const res = await fetch(`${API}/properties`, { headers });
-            const data = await res.json();
+            const data = await apiRequest(`${API}/properties`);
             const select = document.getElementById('propertyFilter');
             if (select && data.properties) {
                 data.properties.forEach(p => {

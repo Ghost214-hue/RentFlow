@@ -1,16 +1,17 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
+$basePath = '/RentFlow';
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'caretaker';
-if ($role !== 'caretaker') { header('Location: /signin'); exit; }
+if ($role !== 'caretaker') { header('Location: ../public/signin.php'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,7 +19,7 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Caretaker Dashboard - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -69,7 +70,7 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                     <h3 class="font-semibold text-slate-900 mb-4">Recent Complaints</h3>
                     <div class="space-y-3" id="recentComplaints">
-                        <div class="py-8 text-center text-slate-400">Loading...</div>
+                        <div class="py-8 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading...</span></div></div>
                     </div>
                 </div>
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
@@ -80,7 +81,7 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
                                 <th class="pb-3 pr-4">Tenant</th><th class="pb-3 pr-4">Amount</th><th class="pb-3 pr-4">Date</th><th class="pb-3">Status</th>
                             </tr></thead>
                             <tbody class="divide-y divide-blue-50" id="recentPayments">
-                                <tr><td colspan="4" class="py-8 text-center text-slate-400">Loading...</td></tr>
+                                <tr><td colspan="4" class="py-8 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading...</span></div></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -90,9 +91,34 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -106,29 +132,36 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
 
     async function loadCaretakerDashboard() {
         try {
-            const [propRes, houseRes, tenantRes, compRes, payRes] = await Promise.all([
-                fetch(`${API}/properties`, { headers }),
-                fetch(`${API}/houses`, { headers }),
-                fetch(`${API}/tenants`, { headers }),
-                fetch(`${API}/complaints`, { headers }),
-                fetch(`${API}/payments`, { headers }),
+            // Load each section independently so one failure doesn't break everything
+            const results = await Promise.allSettled([
+                apiRequest(`${API}/properties`),
+                apiRequest(`${API}/tenants`),
+                apiRequest(`${API}/complaints`),
+                apiRequest(`${API}/payments`),
             ]);
 
-            const props = await propRes.json();
-            const houses = await houseRes.json();
-            const tenants = await tenantRes.json();
-            const complaints = await compRes.json();
-            const payments = await payRes.json();
-
-            document.getElementById('propCount').textContent = props.properties ? props.properties.length : 0;
-            document.getElementById('houseCount').textContent = houses.houses ? houses.houses.length : 0;
-            document.getElementById('tenantCount').textContent = tenants.tenants ? tenants.tenants.length : 0;
-            document.getElementById('complaintCount').textContent = complaints.complaints ? complaints.complaints.filter(c => c.status === 'open' || c.status === 'in-progress').length : 0;
+            const [propsResult, tenantsResult, complaintsResult, paymentsResult] = results;
+            
+            // Properties count
+            const propCount = propsResult.status === 'fulfilled' && propsResult.value.properties ? propsResult.value.properties.length : 0;
+            document.getElementById('propCount').textContent = propCount;
+            document.getElementById('houseCount').textContent = '0';
+            
+            // Tenants count
+            const tenantCount = tenantsResult.status === 'fulfilled' && tenantsResult.value.tenants ? tenantsResult.value.tenants.length : 0;
+            document.getElementById('tenantCount').textContent = tenantCount;
+            
+            // Complaints count
+            let complaintCount = 0;
+            if (complaintsResult.status === 'fulfilled' && complaintsResult.value.complaints) {
+                complaintCount = complaintsResult.value.complaints.filter(c => c.status === 'open' || c.status === 'in-progress').length;
+            }
+            document.getElementById('complaintCount').textContent = complaintCount;
 
             // Recent complaints
             const compDiv = document.getElementById('recentComplaints');
-            if (complaints.complaints && complaints.complaints.length) {
-                compDiv.innerHTML = complaints.complaints.slice(0,5).map(c => `
+            if (complaintsResult.status === 'fulfilled' && complaintsResult.value.complaints && complaintsResult.value.complaints.length) {
+                compDiv.innerHTML = complaintsResult.value.complaints.slice(0,5).map(c => `
                     <div class="flex items-start gap-3 p-3 rounded-xl bg-blue-50/50 border border-blue-100/50">
                         <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0"><i class="fas fa-exclamation text-xs"></i></div>
                         <div class="flex-1 min-w-0">
@@ -143,8 +176,8 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
 
             // Recent payments
             const payTbody = document.getElementById('recentPayments');
-            if (payments.payments && payments.payments.length) {
-                payTbody.innerHTML = payments.payments.slice(0,5).map(p => `
+            if (paymentsResult.status === 'fulfilled' && paymentsResult.value.payments && paymentsResult.value.payments.length) {
+                payTbody.innerHTML = paymentsResult.value.payments.slice(0,5).map(p => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
                         <td class="py-3 pr-4 text-sm font-medium text-slate-900">${p.tenant_name||'N/A'}</td>
                         <td class="py-3 pr-4 text-sm font-medium text-slate-900">KES ${(p.amount||0).toLocaleString()}</td>
@@ -156,8 +189,7 @@ if ($role !== 'caretaker') { header('Location: /signin'); exit; }
                 payTbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400">No payments</td></tr>';
             }
         } catch(e) {
-            console.error(e);
-            if (e.message.includes('401')) window.location.href = '/signin';
+            console.error('Dashboard load error:', e);
         }
     }
 

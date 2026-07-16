@@ -1,13 +1,13 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
 ?>
@@ -17,7 +17,7 @@ $role = $user['role'] ?? 'owner';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="/RentFlow/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -87,7 +87,7 @@ $role = $user['role'] ?? 'owner';
                             <th class="px-6 py-4">Date</th><th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Type</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Status</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="transactionsTable">
-                            <tr><td colspan="5" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
+                            <tr><td colspan="5" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading transactions...</span></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -96,9 +96,34 @@ $role = $user['role'] ?? 'owner';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function fmtCurrency(n) { return 'KES ' + Number(n).toLocaleString(); }
     function toast(msg, type='success') {
@@ -156,12 +181,12 @@ $role = $user['role'] ?? 'owner';
     async function loadReports() {
         try {
             const currentMonth = new Date().toISOString().slice(0, 7);
-            const [paymentsRes, billsRes] = await Promise.all([
-                fetch(`${API}/payments`, { headers }),
-                fetch(`${API}/bills?month=${currentMonth}`, { headers })
+            const [paymentsData, billsData] = await Promise.all([
+                apiRequest(`${API}/payments`),
+                apiRequest(`${API}/bills?month=${currentMonth}`)
             ]);
-            const payments = paymentsRes.ok ? (await paymentsRes.json()).payments || [] : [];
-            const bills = billsRes.ok ? (await billsRes.json()).bills || [] : [];
+            const payments = paymentsData.payments || [];
+            const bills = billsData.bills || [];
 
             const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
             const collected = payments.filter(p => ['completed','paid','confirmed'].includes((p.status || '').toLowerCase())).reduce((sum, p) => sum + Number(p.amount || 0), 0);

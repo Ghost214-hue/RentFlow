@@ -9,7 +9,7 @@ $token = $token ?? '';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Properties | RentFlow Kenya</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="/RentFlow/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
       .pay-group { display: none; }
@@ -108,7 +108,7 @@ $token = $token ?? '';
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    const API = '<?php echo $basePath; ?>/api';
     let token = localStorage.getItem('rf_token') || '';
     if (!token) {
         const m = document.cookie.match(/(?:^|; )rf_token=([^;]+)/);

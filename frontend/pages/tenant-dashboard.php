@@ -1,16 +1,17 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
+$basePath = '/RentFlow';
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'tenant';
-if ($role !== 'tenant') { header('Location: /signin'); exit; }
+if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,9 +19,10 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Dashboard - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="<?php echo $basePath; ?>/js/base-path.js?v=2"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
@@ -121,7 +123,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                                 <th class="pb-3 pr-4">Date</th><th class="pb-3 pr-4">Amount</th><th class="pb-3 pr-4">Method</th><th class="pb-3">Status</th>
                             </tr></thead>
                             <tbody class="divide-y divide-blue-50" id="myPayments">
-                                <tr><td colspan="4" class="py-8 text-center text-slate-400">Loading...</td></tr>
+                                <tr><td colspan="4" class="py-8 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading payments...</span></div></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -129,7 +131,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                     <h3 class="font-semibold text-slate-900 mb-4">My Complaints</h3>
                     <div class="space-y-3" id="myComplaints">
-                        <div class="py-8 text-center text-slate-400">Loading...</div>
+                        <div class="py-8 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading complaints...</span></div></div>
                     </div>
                 </div>
             </div>
@@ -137,9 +139,34 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
 
@@ -160,10 +187,11 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         const payTbody = document.getElementById('myPayments');
         try {
             // Load tenant profile
-            const tenantRes = await fetch(`${API}/tenants`, { headers });
-            const tenantData = await tenantRes.json();
+            const tenantData = await apiRequest(`${API}/tenants`);
+            let tenantId = null;
             if (tenantData.tenants && tenantData.tenants.length > 0) {
                 const me = tenantData.tenants[0];
+                tenantId = me.id;
                 document.getElementById('myUnit').textContent = me.house_unit || '-';
                 document.getElementById('myBalance').textContent = 'KES ' + (me.balance || 0).toLocaleString();
                 
@@ -175,9 +203,8 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 }
             }
 
-            // Load payments
-            const payRes = await fetch(`${API}/payments`, { headers });
-            const payData = await payRes.json();
+            // Load payments for this tenant
+            const payData = await apiRequest(`${API}/payments?tenant_id=${tenantId}`);
             if (payData.payments && payData.payments.length) {
                 payTbody.innerHTML = payData.payments.slice(0,5).map(p => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
@@ -192,11 +219,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             }
 
             // Load all complaints/notices and filter client-side
-            const allRes = await fetch(`${API}/complaints`, { headers });
-            const allData = await allRes.json();
-            if (!allRes.ok) {
-                throw new Error(allData.error || 'Failed to load communications');
-            }
+            const allData = await apiRequest(`${API}/complaints`);
             const list = allData.complaints || [];
             const notices = list.filter(c => (c.sender_role || 'tenant') !== 'tenant');
             const myComplaints = list.filter(c => (c.sender_role || 'tenant') === 'tenant');
@@ -243,9 +266,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
 
     async function viewNotice(complaintId) {
         try {
-            const res = await fetch(`${API}/complaints/${complaintId}`, { headers });
-            if (!res.ok) throw new Error('Not found');
-            const data = await res.json();
+            const data = await apiRequest(`${API}/complaints/${complaintId}`);
             const c = data.complaint;
             const html = `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -260,7 +281,8 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             `;
             const w = window.open('', '_blank');
             if (w) {
-                w.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(c.title)}</title><link rel="stylesheet" href="/css/output.css"></head><body class="bg-slate-50 p-4 sm:p-8">${html}</body></html>`);
+                const cssPath = BASE + '/css/output.css';
+            w.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(c.title)}</title><link rel="stylesheet" href="${cssPath}"></head><body class="bg-slate-50 p-4 sm:p-8">${html}</body></html>`);
                 w.document.close();
             } else {
                 toast('Please allow popups to view notice details', 'info');
@@ -296,26 +318,17 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         btn.textContent = 'Submitting...';
         
         try {
-            const response = await fetch(`${API}/tenants/request-termination`, {
+            const result = await apiRequest(`${API}/tenants/request-termination`, {
                 method: 'POST',
-                headers: headers,
                 body: JSON.stringify({
                     reason: reason,
                     effective_date: effectiveDate
                 })
             });
             
-            const result = await response.json();
-            
-            if (response.ok) {
-                toast(result.message || 'Termination request submitted', 'success');
-                hideTerminationModal();
-                setTimeout(() => location.reload(), 2000);
-            } else {
-                toast(result.error || 'Failed to submit request', 'error');
-                btn.disabled = false;
-                btn.textContent = 'Submit Request';
-            }
+            toast(result.message || 'Termination request submitted', 'success');
+            hideTerminationModal();
+            setTimeout(() => location.reload(), 2000);
         } catch (e) {
             console.error(e);
             toast('An error occurred. Please try again.', 'error');

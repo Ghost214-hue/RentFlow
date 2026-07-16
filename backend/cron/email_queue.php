@@ -21,7 +21,7 @@ require_once __DIR__ . '/../app/Core/Env.php';
 use App\Core\Env;
 use App\Services\EmailQueueService;
 
-Env::load(__DIR__ . '/../../.env');
+Env::load(__DIR__ . '/../.env');
 
 $checkMode = in_array('--check', $argv ?? [], true);
 if ($checkMode) {

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+$basePath = '/RentFlow';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -7,7 +8,7 @@ require_once __DIR__ . '/../includes/auth.php';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tenants - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -29,7 +30,7 @@ require_once __DIR__ . '/../includes/auth.php';
                             <th class="px-6 py-4">Name</th><th class="px-6 py-4">Property</th><th class="px-6 py-4">Unit</th><th class="px-6 py-4">Phone</th><th class="px-6 py-4">Balance</th><th class="px-6 py-4">Lease End</th><th class="px-6 py-4">Actions</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="tenantsTable">
-                            <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
+                            <tr id="loadingRow"><td colspan="7" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading tenants...</span></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -400,56 +401,37 @@ require_once __DIR__ . '/../includes/auth.php';
         </div>
     </div>
 
-    <script>
-    const TENANTS_API = '/api';
-    const TENANTS_TOKEN = localStorage.getItem('rf_token') || '';
-    const TENANTS_HEADERS = TENANTS_TOKEN ? {'Authorization':'Bearer '+TENANTS_TOKEN, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
-    const TENANTS_PER_PAGE_KEY = 'rf_tenants_per_page';
-    const TENANTS_PER_PAGE_DEFAULT = 25;
-
-    async function loadTenants(page = 1, perPage = window.getSavedPerPage(TENANTS_PER_PAGE_KEY, TENANTS_PER_PAGE_DEFAULT)) {
-        try {
-            const res = await fetch(`${TENANTS_API}/tenants?page=${page}&per_page=${perPage}`, { headers: TENANTS_HEADERS });
-            const data = await res.json();
-            const tbody = document.getElementById('tenantsTable');
-            if (data.tenants && data.tenants.length) {
-                tbody.innerHTML = data.tenants.map(t => `
-                    <tr class="hover:bg-blue-50/30 transition-colors">
-                        <td class="px-6 py-4 text-sm font-medium text-slate-900">${(t.name||'N/A')}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${t.property_name||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${t.house_unit||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${t.phone||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm font-medium ${t.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${(t.balance||0).toLocaleString()}</td>
-                        <td class="px-6 py-4 text-sm text-slate-500">${t.lease_end||'-'}</td>
-                        <td class="px-6 py-4"> <button onclick="viewTenant(${t.id})" class="text-blue-600">View</button> </td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No tenants found</td></tr>';
-            }
-            if (data.meta) renderPagination('tenantsPager', data.meta, (p) => loadTenants(p, perPage), {
-                perPageKey: TENANTS_PER_PAGE_KEY,
-                defaultPerPage: TENANTS_PER_PAGE_DEFAULT,
-                onPerPageChange: (newPerPage) => loadTenants(1, newPerPage),
-            });
-        } catch (e) { console.error('loadTenants error', e); }
-    }
-
-    // small helper to view tenant (uses existing page)
-    function viewTenant(id) { window.location.href = '/pages/tenant-profile.php?id=' + id; }
-
-    // initialize
-    loadTenants();
-    </script>
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
 
     <script>
-    // ==================== CONFIG ====================
-    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
-    const API = (BASE || '') + '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
     let tenantsCache = [];
     let uploadedDocs = [];
     let currentStep = 1;
@@ -584,12 +566,13 @@ require_once __DIR__ . '/../includes/auth.php';
 
     // ==================== LOAD TENANTS TABLE ====================
     async function loadTenants() {
+        const tbody = document.getElementById('tenantsTable');
         try {
-            const res = await fetch(`${API}/tenants`, { headers });
-            const data = await res.json();
+            // Show loading spinner
+            tbody.innerHTML = '<tr id="loadingRow"><td colspan="7" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading tenants...</span></div></td></tr>';
+            
+            const data = await apiRequest(`${API}/tenants`);
             tenantsCache = data.tenants || [];
-            const tbody = document.getElementById('tenantsTable');
-            if (!res.ok) throw new Error(data.error || 'Failed to load');
             if (data.tenants && data.tenants.length) {
                 tbody.innerHTML = data.tenants.map(t => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
@@ -617,23 +600,30 @@ require_once __DIR__ . '/../includes/auth.php';
         } catch(e) {
             console.error('loadTenants error:', e);
             document.getElementById('tenantsTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error: ${escapeHtml(e.message)}</td></tr>`;
-            if (e.message.includes('401')) window.location.href = '/signin';
         }
     }
 
     // ==================== LOAD PROPERTIES ====================
     async function loadProperties() {
+        const select = document.getElementById('tenantProperty');
         try {
-            const res = await fetch(`${API}/properties`, { headers });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed');
-            const select = document.getElementById('tenantProperty');
+            // Show loading state
+            select.innerHTML = '<option value="">Loading properties...</option>';
+            select.disabled = true;
+            
+            const data = await apiRequest(`${API}/properties`);
             if (data.properties && data.properties.length) {
                 select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${Number(p.id)||0}">${escapeHtml(p.name)} (${Number(p.units)||0} units)</option>`).join('');
             } else {
                 select.innerHTML = '<option value="">No properties available</option>';
             }
-        } catch(e) { console.error('loadProperties:', e); toast('Could not load properties: ' + e.message, 'error'); }
+        } catch(e) { 
+            console.error('loadProperties:', e); 
+            select.innerHTML = '<option value="">Failed to load</option>';
+            toast('Could not load properties: ' + e.message, 'error'); 
+        } finally {
+            select.disabled = false;
+        }
     }
 
     // ==================== LOAD HOUSES (on property change) ====================
@@ -650,10 +640,9 @@ require_once __DIR__ . '/../includes/auth.php';
         }
         
         houseSelect.innerHTML = '<option value="">Loading...</option>';
+        houseSelect.disabled = true;
         try {
-            const res = await fetch(`${API}/houses/available?property_id=${propId}`, { headers });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed');
+            const data = await apiRequest(`${API}/houses/available?property_id=${propId}`);
             
             if (data.houses && data.houses.length) {
                 houseSelect.innerHTML = '<option value="">Select house...</option>' + data.houses.map(h => 
@@ -675,7 +664,12 @@ require_once __DIR__ . '/../includes/auth.php';
                 houseSelect.innerHTML = '<option value="">No vacant units available</option>';
                 housePreview.classList.add('hidden');
             }
-        } catch(e) { console.error(e); }
+        } catch(e) { 
+            console.error(e); 
+            houseSelect.innerHTML = '<option value="">Failed to load</option>';
+        } finally {
+            houseSelect.disabled = false;
+        }
     });
 
     function selectHouseFromList(id, clickEvent) {
@@ -710,14 +704,11 @@ require_once __DIR__ . '/../includes/auth.php';
             container.innerHTML += `<div id="${uploadId}" class="flex items-center gap-2 text-sm text-slate-500"><i class="fas fa-spinner fa-spin text-blue-400"></i> Uploading ${escapeHtml(file.name)}...</div>`;
             
             try {
-                const res = await fetch(`${API}/upload`, {
+                const data = await apiRequest(`${API}/upload`, {
                     method: 'POST',
-                    headers: {'Authorization': 'Bearer ' + token},
                     body: formData
                 });
-                const data = await res.json();
                 document.getElementById(uploadId)?.remove();
-                if (!res.ok) throw new Error(data.error || 'Upload failed');
                 uploadedDocs.push(data.file);
                 renderUploadedFiles();
                 toast(`${file.name} uploaded successfully`, 'success');
@@ -936,15 +927,10 @@ require_once __DIR__ . '/../includes/auth.php';
             const url = editingTenantId ? `${API}/tenants/${editingTenantId}` : `${API}/tenants`;
             const method = editingTenantId ? 'PUT' : 'POST';
             
-            const res = await fetch(url, {
-                method: method,
-                headers,
+            const result = await apiRequest(url, {
+                method,
                 body: JSON.stringify(data)
             });
-            const text = await res.text();
-            let result;
-            try { result = JSON.parse(text); } catch(e) { throw new Error('Server error: ' + text.substring(0, 200)); }
-            if (!res.ok) throw new Error(result.error || (editingTenantId ? 'Failed to update tenant' : 'Failed to register tenant'));
             
             toast(editingTenantId ? 'Tenant updated successfully!' : 'Tenant registered successfully! Unit assigned and bill generated.', 'success');
             closeTenantModal();
@@ -972,12 +958,9 @@ require_once __DIR__ . '/../includes/auth.php';
         }
         
         try {
-            const res = await fetch(`${API}/tenants/${editingTenantId}`, {
-                method: 'DELETE',
-                headers
+            const result = await apiRequest(`${API}/tenants/${editingTenantId}`, {
+                method: 'DELETE'
             });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to delete tenant');
             
             toast('Tenant deleted successfully', 'success');
             closeTenantModal();
@@ -1012,13 +995,10 @@ require_once __DIR__ . '/../includes/auth.php';
         btn.textContent = 'Terminating...';
         
         try {
-            const response = await fetch(`${API}/tenants/${tenantId}/terminate`, {
+            const result = await apiRequest(`${API}/tenants/${tenantId}/terminate`, {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({ reason, effective_date: effectiveDate })
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed');
             toast('Tenancy terminated successfully. House is now vacant.', 'success');
             closeTerminateModal();
             loadTenants();
@@ -1051,13 +1031,10 @@ require_once __DIR__ . '/../includes/auth.php';
         btn.textContent = 'Approving...';
         
         try {
-            const response = await fetch(`${API}/tenants/${tenantId}/terminate`, {
+            const result = await apiRequest(`${API}/tenants/${tenantId}/terminate`, {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({ reason, effective_date: effectiveDate })
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed');
             toast('Termination approved. Tenant notified via email.', 'success');
             closeApproveTerminationModal();
             loadTenants();

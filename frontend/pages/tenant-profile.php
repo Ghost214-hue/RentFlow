@@ -1,16 +1,18 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
 \App\Core\Env::load();
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
+// Determine base path - should be /RentFlow or empty string if at root
+$basePath = '/RentFlow';
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'tenant';
-if ($role !== 'tenant') { header('Location: /signin'); exit; }
+if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,7 +20,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Profile - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -120,9 +122,34 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = '../public/signin.php';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -139,8 +166,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
     async function loadProfile() {
         try {
             // Get profile from JWT
-            const profileRes = await fetch(`${API}/auth/me`, { headers });
-            const profileData = await profileRes.json();
+            const profileData = await apiRequest(`${API}/auth/me`);
             if (profileData.user) {
                 document.getElementById('userInitials').textContent = initials(profileData.user.name);
                 document.getElementById('userName').textContent = profileData.user.name;
@@ -148,8 +174,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             }
 
             // Get tenant info
-            const tenantRes = await fetch(`${API}/tenants`, { headers });
-            const tenantData = await tenantRes.json();
+            const tenantData = await apiRequest(`${API}/tenants`);
             if (tenantData.tenants && tenantData.tenants.length > 0) {
                 const me = tenantData.tenants[0];
                 document.getElementById('userPhone').value = me.phone || '';
@@ -165,7 +190,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             }
         } catch(e) {
             console.error(e);
-            if (e.message.includes('401')) window.location.href = '/signin';
+            if (e.message.includes('401')) window.location.href = '../public/signin.php';
         }
     }
 
@@ -191,8 +216,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
 
         try {
             // Get tenant ID first
-            const tenantRes = await fetch(`${API}/tenants`, { headers });
-            const tenantData = await tenantRes.json();
+            const tenantData = await apiRequest(`${API}/tenants`);
             
             if (!tenantData.tenants || tenantData.tenants.length === 0) {
                 toast('Tenant record not found', 'error');
@@ -202,17 +226,13 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             const tenantId = tenantData.tenants[0].id;
             
             // Update tenant phone and email
-            const res = await fetch(`${API}/tenants/${tenantId}`, {
+            const result = await apiRequest(`${API}/tenants/${tenantId}`, {
                 method: 'PUT',
-                headers,
                 body: JSON.stringify({
                     phone: phone,
                     email: sanitizedEmail
                 })
             });
-            
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to update profile');
             
             toast('Profile updated successfully!', 'success');
             loadProfile(); // Reload to show updated data
@@ -237,16 +257,12 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         }
 
         try {
-            const res = await fetch(`${API}/auth/change-password`, {
+            const result = await apiRequest(`${API}/auth/change-password`, {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({
                     new_password: newPassword
                 })
             });
-            
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to update password');
             
             toast('Password updated successfully!', 'success');
             document.getElementById('newPassword').value = '';

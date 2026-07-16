@@ -1,10 +1,13 @@
 <?php
-/**
- * Shared authentication utility
- * Ensures consistent session and token validation across all pages
- */
 
+// Set session cookie path to / so sessions work across all pages in subdirectory
 if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'path' => '/',
+        'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
     session_start();
 }
 
@@ -23,7 +26,10 @@ if (!$token && isset($_SESSION['rf_token'])) {
 
 // Redirect to signin if no token found
 if (!$token) {
-    header('Location: /signin');
+    // Calculate base path: find /RentFlow/ in script name and use everything before it
+    $scriptName = $_SERVER['SCRIPT_NAME'];
+    $basePath = '/RentFlow'; // Hardcoded for this deployment
+    header('Location: ' . $basePath . '/signin');
     exit;
 }
 
@@ -40,7 +46,8 @@ if (!$user) {
     setcookie('rf_token', '', time() - 42000, '/');
     $_SESSION = [];
     session_destroy();
-    header('Location: /signin');
+    $basePath = '/RentFlow'; // Hardcoded for this deployment
+    header('Location: ' . $basePath . '/signin');
     exit;
 }
 

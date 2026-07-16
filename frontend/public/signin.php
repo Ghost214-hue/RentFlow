@@ -1,8 +1,15 @@
 <?php
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+$basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], '', dirname(__DIR__, 2))), '/');
 $csrfToken = '';
 // Generate CSRF token
 if (session_status() === PHP_SESSION_NONE) {
+    // Set session cookie path to root so it works across all pages
+    session_set_cookie_params([
+        'path' => '/',
+        'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
     session_start();
 }
 if (empty($_SESSION['csrf_token'])) {
@@ -16,7 +23,8 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <base href="<?php echo $basePath; ?>/">
+    <link rel="stylesheet" href="css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -55,7 +63,7 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
             <div class="lg:w-7/12 p-6 sm:p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
                     <div class="text-center mb-6 sm:mb-8">
-                        <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
+                        <img src="<?php echo $basePath; ?>/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
                         <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Welcome back</h2>
                         <p class="text-slate-500 mt-1 text-sm sm:text-base">Sign in to your account</p>
                     </div>
@@ -91,7 +99,7 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const API = '<?php echo $basePath; ?>/api';
     const CSRF_TOKEN = '<?php echo htmlspecialchars($csrfToken); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -155,17 +163,16 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
             
             toast('Login successful! Redirecting...', 'success');
             
-            const base = window.location.pathname.replace(/\/[^\/]*$/, '');
             const role = data.user.role || 'owner';
             console.log('Redirecting to dashboard for role:', role);
             
             // Redirect WITHOUT token in URL - cookie handles auth now
             setTimeout(() => {
-                const dashboard = role === 'tenant' ? base + '/tenant-dashboard' : 
-                                  role === 'caretaker' ? base + '/caretaker-dashboard' : 
-                                  base + '/dashboard';
+                const dashboard = role === 'tenant' ? '/RentFlow/tenant-dashboard' : 
+                                  role === 'caretaker' ? '/RentFlow/caretaker-dashboard' : 
+                                  '/RentFlow/dashboard';
                 window.location.href = dashboard;
-            }, 500);
+            }, 1000);
         } catch(err) {
             console.error('Login error:', err);
             toast(err.message || 'Login failed', 'error');

@@ -8,14 +8,14 @@
 // Autoload
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';
-    $baseDir = __DIR__ . '/app/';
+    $baseDir = __DIR__ . '/../app/';
     $len = strlen($prefix);
     if (strncmp($prefix, $class, $len) !== 0) return;
     $file = $baseDir . str_replace('\\', '/', substr($class, $len)) . '.php';
     if (file_exists($file)) require $file;
 });
 
-require_once __DIR__ . '/app/Core/Env.php';
+require_once __DIR__ . '/../app/Core/Env.php';
 use App\Core\Env;
 use App\Services\EmailQueueService;
 
