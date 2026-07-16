@@ -38,18 +38,24 @@ require_once __DIR__ . '/database.php';
 // JWT configuration
 require_once __DIR__ . '/jwt.php';
 
-// Load environment variables
+// Register autoloader
+spl_autoload_register(function ($class) {
+    $prefix = 'App\\';
+    $baseDir = BACKEND_PATH . '/app/';
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) return;
+    $file = $baseDir . str_replace('\\', '/', substr($class, $len)) . '.php';
+    if (file_exists($file)) require $file;
+});
+
+// Load environment variables using custom Env loader (supports all value types)
 if (file_exists(BASE_PATH . '/.env')) {
-    $env = parse_ini_file(BASE_PATH . '/.env');
-    foreach ($env as $key => $value) {
-        if (!isset($_ENV[$key])) {
-            $_ENV[$key] = $value;
-        }
-    }
+    require_once __DIR__ . '/../app/Core/Env.php';
+    \App\Core\Env::load(BASE_PATH . '/.env');
 }
 
 // Application meta
-const APP_NAME = 'RentFlow';
+const APP_NAME = 'RentaFlow';
 const APP_VERSION = '1.0.0';
 
 // API Routes

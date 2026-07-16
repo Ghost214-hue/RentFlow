@@ -31,8 +31,8 @@ class EmailService
             return $_ENV[$key] ?? getenv($key) ?: $default;
         };
         
-        $this->fromEmail = $env('MAIL_FROM_EMAIL', 'noreply@rentflow.com');
-        $this->fromName = $env('MAIL_FROM_NAME', 'RentFlow');
+        $this->fromEmail = $env('MAIL_FROM_EMAIL', 'noreply@rentaflow.com');
+        $this->fromName = $env('MAIL_FROM_NAME', 'RentaFlow');
         
         // SMTP configuration
         $this->useSMTP = filter_var($env('MAIL_USE_SMTP', false), FILTER_VALIDATE_BOOLEAN);
@@ -332,7 +332,7 @@ class EmailService
                 "Subject: {$subject}",
                 "MIME-Version: 1.0",
                 "Content-Type: text/html; charset=UTF-8",
-                "X-Mailer: RentFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
+                "X-Mailer: RentaFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
             ];
             
             $message = implode("\r\n", $headers) . "\r\n\r\n" . nl2br($body) . "\r\n.\r\n";

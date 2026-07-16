@@ -8,8 +8,8 @@ require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
 if (!$user) { header('Location: ../public/signin.php'); exit; }
-// Determine base path - should be /RentFlow or empty string if at root
-$basePath = '/RentFlow';
+// Determine base path - should be /RentaFlow or empty string if at root
+$basePath = '/RentaFlow';
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'tenant';
 if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
@@ -19,7 +19,7 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Profile - RentFlow</title>
+    <title>My Profile - RentaFlow</title>
     <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">

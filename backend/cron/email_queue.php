@@ -4,7 +4,7 @@
  * Processes pending emails from the queue
  * 
  * Run this via cron every minute:
- * * * * * php /path/to/rentflow/backend/cron/email_queue.php
+ * * * * * php /path/to/rentaflow/backend/cron/email_queue.php
  */
 
 // Autoload

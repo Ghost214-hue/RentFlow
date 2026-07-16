@@ -111,7 +111,7 @@ class Router
         \App\Core\SecurityMiddleware::initialize();
 
         // Remove base path if behind a subdirectory
-        // Handle both /api/houses and /rentflow/api/houses patterns
+        // Handle both /api/houses and /rentaflow/api/houses patterns
         $apiPos = strpos($uri, '/api');
         if ($apiPos !== false) {
             $uri = substr($uri, $apiPos + 4); // +4 to skip '/api'

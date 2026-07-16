@@ -15,7 +15,12 @@ class EmailQueueService
     public function __construct()
     {
         $this->db = Database::getInstance();
-        $this->enabled = $this->getSetting('enabled', '1') === '1';
+        try {
+            $this->enabled = $this->getSetting('enabled', '1') === '1';
+        } catch (\Throwable $e) {
+            $this->enabled = false;
+            error_log('EmailQueueService init error: ' . $e->getMessage());
+        }
     }
 
     /**

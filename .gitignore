@@ -1,6 +1,7 @@
 # Environment
 .env
 .env.local
+.env.production
 
 # Dependencies
 node_modules/
@@ -18,6 +19,7 @@ Thumbs.db
 
 # Logs
 *.log
+backend/logs/
 
 # Cache
 backend/storage/cache/
@@ -31,6 +33,9 @@ backend/public/uploads/*
 frontend/public/css/output.css
 dist/
 build/
+
+# Composer
+backend/composer.lock
 
 # Database (keep migrations)
 *.sqlite

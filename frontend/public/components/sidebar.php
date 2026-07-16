@@ -1,5 +1,5 @@
 <?php
-$basePath = '/RentFlow'; // Hardcoded for this deployment
+$basePath = '/RentaFlow'; // Hardcoded for this deployment
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';

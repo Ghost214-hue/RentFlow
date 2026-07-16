@@ -5,7 +5,7 @@ require_once __DIR__ . '/../app/Core/Database.php';
 
 use App\Core\Database;
 
-echo "=== RentFlow Database Migration ===\n\n";
+echo "=== RentaFlow Database Migration ===\n\n";
 
 try {
     $db = Database::getInstance();

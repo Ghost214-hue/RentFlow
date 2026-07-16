@@ -33,5 +33,5 @@ return [
     'secret_key'      => $jwtSecret,
     'algorithm'       => 'HS256',
     'expiry_seconds'  => 86400 * 7, // 7 days
-    'issuer'          => 'rentflow.app',
+    'issuer'          => 'rentaflow.app',
 ];

@@ -4,7 +4,7 @@
  * Provides dynamic base path for subdirectory deployment
  */
 
-// Compute base path (e.g. /RentFlow)
+// Compute base path (e.g. /RentaFlow)
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 
 // Helper to prefix a path with the base path

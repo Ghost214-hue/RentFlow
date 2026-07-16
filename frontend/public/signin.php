@@ -22,7 +22,7 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - RentFlow</title>
+    <title>Sign In - RentaFlow</title>
     <base href="<?php echo $basePath; ?>/">
     <link rel="stylesheet" href="css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -168,9 +168,9 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
             
             // Redirect WITHOUT token in URL - cookie handles auth now
             setTimeout(() => {
-                const dashboard = role === 'tenant' ? '/RentFlow/tenant-dashboard' : 
-                                  role === 'caretaker' ? '/RentFlow/caretaker-dashboard' : 
-                                  '/RentFlow/dashboard';
+                const dashboard = role === 'tenant' ? '/RentaFlow/tenant-dashboard' :
+                                  role === 'caretaker' ? '/RentaFlow/caretaker-dashboard' : 
+                                  '/RentaFlow/dashboard';
                 window.location.href = dashboard;
             }, 1000);
         } catch(err) {

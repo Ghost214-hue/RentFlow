@@ -6,7 +6,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terms and Conditions - RentFlow</title>
+    <title>Terms and Conditions - RentaFlow</title>
     <link rel="stylesheet" href="/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -37,11 +37,11 @@
 
             <div class="terms-content">
                 <h2>1. Introduction</h2>
-                <p>Welcome to <strong>RentFlow</strong>. These Terms and Conditions govern your use of the RentFlow property management platform. By accessing or using RentFlow, you agree to be bound by these terms. If you do not agree with any part of these terms, you may not use the service.</p>
+                <p>Welcome to <strong>RentaFlow</strong>. These Terms and Conditions govern your use of the RentaFlow property management platform. By accessing or using RentaFlow, you agree to be bound by these terms. If you do not agree with any part of these terms, you may not use the service.</p>
 
                 <h2>2. Definitions</h2>
                 <ul>
-                    <li><strong>"Service"</strong> means the RentFlow web application and related services.</li>
+                    <li><strong>"Service"</strong> means the RentaFlow web application and related services.</li>
                     <li><strong>"Owner"</strong> means a registered property owner using the Service.</li>
                     <li><strong>"Tenant"</strong> means a registered occupant of a property managed through the Service.</li>
                     <li><strong>"Caretaker"</strong> means an authorized individual managing properties on behalf of an Owner.</li>
@@ -51,7 +51,7 @@
                 <p>You are responsible for maintaining the confidentiality of your account and password. You agree to accept responsibility for all activities that occur under your account.</p>
 
                 <h2>4. Data Protection and Privacy</h2>
-                <p>RentFlow is committed to protecting your personal data in accordance with applicable data protection laws. We implement appropriate technical and organizational measures to safeguard your information.</p>
+                <p>RentaFlow is committed to protecting your personal data in accordance with applicable data protection laws. We implement appropriate technical and organizational measures to safeguard your information.</p>
                 <ul>
                     <li>We collect and process personal data solely for the purpose of providing property management services.</li>
                     <li>Your data is not shared with third parties without your consent, except as required by law.</li>
@@ -63,19 +63,19 @@
                 <p>You agree not to use the Service for any unlawful purpose, or in any way that could damage, disable, or impair the Service or interfere with any other party's use of the Service.</p>
 
                 <h2>6. Payments and Billing</h2>
-                <p>All payment transactions are processed securely. Owners are responsible for verifying the accuracy of all payment records. RentFlow is not a party to payment agreements between Owners and Tenants.</p>
+                <p>All payment transactions are processed securely. Owners are responsible for verifying the accuracy of all payment records. RentaFlow is not a party to payment agreements between Owners and Tenants.</p>
 
                 <h2>7. Termination</h2>
                 <p>We reserve the right to suspend or terminate your access to the Service at our sole discretion, without notice, for conduct that we believe violates these Terms or is harmful to other users, us, or third parties.</p>
 
                 <h2>8. Limitation of Liability</h2>
-                <p>RentFlow shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the Service.</p>
+                <p>RentaFlow shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the Service.</p>
 
                 <h2>9. Changes to Terms</h2>
                 <p>We reserve the right to update these Terms at any time. Continued use of the Service after changes constitutes acceptance of the new Terms.</p>
 
                 <h2>10. Contact Us</h2>
-                <p>If you have any questions about these Terms and Conditions, please contact us at <a href="mailto:support@rentflow.com" class="text-blue-600 hover:underline">support@rentflow.com</a>.</p>
+                <p>If you have any questions about these Terms and Conditions, please contact us at <a href="mailto:support@rentaflow.com" class="text-blue-600 hover:underline">support@rentaflow.com</a>.</p>
             </div>
         </div>
     </div>

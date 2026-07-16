@@ -26,9 +26,9 @@ if (!$token && isset($_SESSION['rf_token'])) {
 
 // Redirect to signin if no token found
 if (!$token) {
-    // Calculate base path: find /RentFlow/ in script name and use everything before it
+    // Calculate base path: find /RentaFlow/ in script name and use everything before it
     $scriptName = $_SERVER['SCRIPT_NAME'];
-    $basePath = '/RentFlow'; // Hardcoded for this deployment
+    $basePath = '/RentaFlow'; // Hardcoded for this deployment
     header('Location: ' . $basePath . '/signin');
     exit;
 }
@@ -46,7 +46,7 @@ if (!$user) {
     setcookie('rf_token', '', time() - 42000, '/');
     $_SESSION = [];
     session_destroy();
-    $basePath = '/RentFlow'; // Hardcoded for this deployment
+    $basePath = '/RentaFlow'; // Hardcoded for this deployment
     header('Location: ' . $basePath . '/signin');
     exit;
 }

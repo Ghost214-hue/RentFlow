@@ -2,11 +2,15 @@
 
 /**
  * Health Check Endpoint
- * Place this in backend/public/health-check.php
- * Access via: /api/health-check
+ * Access via: https://yourdomain.com/api/health-check
  */
 
 header('Content-Type: application/json');
+
+// Bootstrap environment
+require_once __DIR__ . '/../config/bootstrap.php';
+
+use App\Core\Database;
 
 $health = [
     'status' => 'healthy',
@@ -21,9 +25,8 @@ $allHealthy = true;
 
 // Check database
 try {
-    require_once __DIR__ . '/../config/database.php';
-    // Attempt a simple query
-    $db = new Database();
+    $db = Database::getInstance();
+    $db->fetchOne("SELECT 1");
     $health['checks']['database'] = [
         'status' => 'connected',
         'timestamp' => date('c')
@@ -32,7 +35,7 @@ try {
     $allHealthy = false;
     $health['checks']['database'] = [
         'status' => 'error',
-        'message' => 'Database connection failed',
+        'message' => 'Database connection failed: ' . $e->getMessage(),
         'timestamp' => date('c')
     ];
 }
@@ -56,7 +59,7 @@ if (is_writable($uploadDir)) {
 }
 
 // Check logs directory
-$logsDir = __DIR__ . '/../../logs';
+$logsDir = __DIR__ . '/../logs';
 if (is_writable($logsDir)) {
     $health['checks']['logs'] = [
         'status' => 'writable',

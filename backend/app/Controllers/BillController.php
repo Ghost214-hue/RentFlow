@@ -540,7 +540,7 @@ class BillController
     <div class="invoice-container">
         <div class="invoice-header">
             <div class="company-info">
-                <h1>RentFlow</h1>
+                <h1>RentaFlow</h1>
                 <p>Property Management Solutions</p>
                 <p><?php echo htmlspecialchars($appUrl); ?></p>
             </div>
@@ -557,7 +557,7 @@ class BillController
                 <div class="address-box">
                     <h3>From</h3>
                     <p>
-                        <strong>RentFlow Property Management</strong><br>
+                        <strong>RentaFlow Property Management</strong><br>
                         <?php echo htmlspecialchars($bill['property_name'] ?? 'Property'); ?><br>
                         Unit <?php echo htmlspecialchars($bill['unit'] ?? 'N/A'); ?><br>
                         <br>
@@ -663,7 +663,7 @@ class BillController
         </div>
 
         <div class="invoice-footer">
-            <p><strong>RentFlow</strong> - Professional Property Management</p>
+            <p><strong>RentaFlow</strong> - Professional Property Management</p>
             <p style="margin-top: 5px;">Generated on <?php echo date('F d, Y'); ?> at <?php echo date('h:i A'); ?> | This is a computer-generated invoice</p>
             <p style="margin-top: 8px; font-size: 10px; color: #94a3b8;">For inquiries, contact property management</p>
         </div>

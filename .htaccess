@@ -1,9 +1,9 @@
-# RentFlow - Apache Security Configuration
+# RentaFlow - Apache Security Configuration
 DirectoryIndex frontend/public/index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /RentFlow/
+    RewriteBase /RentaFlow/
     
     # Security Headers
     Header set X-Content-Type-Options "nosniff"
@@ -12,11 +12,11 @@ DirectoryIndex frontend/public/index.php
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
     Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src 'self' https:; frame-ancestors 'none'; style-src-elem 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; style-src-attr 'self' 'unsafe-inline';"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; connect-src 'self' https:; frame-ancestors 'none'; style-src-elem 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com;"
     
     <IfModule mod_substitute.c>
         AddOutputFilterByType SUBSTITUTE text/html
-        Substitute "s|<head>|<head><base href=\"/RentFlow/\">|"
+        Substitute "s|<head>|<head><base href=\"/RentaFlow/\">|"
     </IfModule>
     
     # Disable directory listing
@@ -81,7 +81,7 @@ DirectoryIndex frontend/public/index.php
     php_flag display_errors Off
     php_flag display_startup_errors Off
     php_flag log_errors On
-    php_value error_log "/opt/lampp/htdocs/RentFlow/backend/logs/php_errors.log"
+    php_value error_log "/opt/lampp/htdocs/RentaFlow/backend/logs/php_errors.log"
     php_value max_execution_time 30
     php_value max_input_time 30
     php_value memory_limit 128M

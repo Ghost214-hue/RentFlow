@@ -1,6 +1,6 @@
 <?php
 /**
- * RentFlow Database Seeder
+ * RentaFlow Database Seeder
  * Run: php backend/database/seeders/seed.php
  */
 
@@ -8,21 +8,21 @@ require_once __DIR__ . '/../../app/Core/Database.php';
 
 use App\Core\Database;
 
-echo "=== RentFlow Database Seeder ===\n\n";
+echo "=== RentaFlow Database Seeder ===\n\n";
 
 try {
     $db = Database::getInstance();
 
     // 1. Create demo owner
     echo "Creating demo owner... ";
-    $existing = $db->fetchOne("SELECT id FROM owners WHERE email = 'owner@rentflow.co'");
+    $existing = $db->fetchOne("SELECT id FROM owners WHERE email = 'owner@rentaflow.co'");
     if ($existing) {
         echo "Already exists (ID: {$existing['id']})\n";
         $ownerId = $existing['id'];
     } else {
         $ownerId = $db->insert('owners', [
             'name'       => 'James Mwangi',
-            'email'      => 'owner@rentflow.co',
+            'email'      => 'owner@rentaflow.co',
             'password'   => password_hash('admin123', PASSWORD_BCRYPT),
             'phone'      => '+254 712 345 678',
             'avatar'     => 'JM',
@@ -262,7 +262,7 @@ try {
         ['name' => 'Maintenance Notice', 'type' => 'email', 'subject' => 'Scheduled Maintenance - {{property}}', 'body' => 'Dear Residents,\n\nPlease be informed that maintenance will be conducted on {{date}} from {{time}}: {{details}}'],
         ['name' => 'Complaint Update', 'type' => 'email', 'subject' => 'Update on Your Complaint #{{id}}', 'body' => 'Dear {{tenant}},\n\nYour complaint regarding {{issue}} has been updated to status: {{status}}.\n\n{{message}}'],
         ['name' => 'Lease Renewal', 'type' => 'email', 'subject' => 'Lease Renewal Notice', 'body' => 'Dear {{tenant}},\n\nYour lease for {{house}} expires on {{date}}. Please contact us to discuss renewal options.'],
-        ['name' => 'Management Notice', 'type' => 'email', 'subject' => '{{title}} - RentFlow Management Notice', 'body' => "Dear {{tenant_name}},\n\nYou have received an important notice from {{sender_name}}.\n\n--- MESSAGE ---\n{{description}}\n\n--- NEXT STEPS ---\nPlease log in to your RentFlow account to view full details, track updates, and respond if needed.\n\nIf you have any questions, contact the property owner or caretaker directly.\n\nBest regards,\nRentFlow Team"],
+        ['name' => 'Management Notice', 'type' => 'email', 'subject' => '{{title}} - RentaFlow Management Notice', 'body' => "Dear {{tenant_name}},\n\nYou have received an important notice from {{sender_name}}.\n\n--- MESSAGE ---\n{{description}}\n\n--- NEXT STEPS ---\nPlease log in to your RentaFlow account to view full details, track updates, and respond if needed.\n\nIf you have any questions, contact the property owner or caretaker directly.\n\nBest regards,\nRentaFlow Team"],
     ];
 
     foreach ($templates as $t) {
@@ -273,8 +273,44 @@ try {
         }
     }
 
+    // 10. Seed email_templates table (used by EmailService for password reset, etc.)
+    echo "\nCreating email templates...\n";
+    $emailTemplates = [
+        [
+            'owner_id' => $ownerId,
+            'name' => 'Password Reset',
+            'type' => 'email',
+            'subject' => 'Password Reset Code - RentaFlow',
+            'body' => "Dear {{name}},\n\nWe received a request to reset your password for your RentaFlow account.\n\nYour verification code is: {{code}}\n\nThis code will expire in {{expires}}.\n\nIf you did not request a password reset, please ignore this email and your password will remain unchanged.\n\nTo reset your password:\n1. Enter the verification code above\n2. Create a new secure password\n\nBest regards,\nRentaFlow Team",
+        ],
+        [
+            'owner_id' => $ownerId,
+            'name' => 'Tenant Welcome',
+            'type' => 'email',
+            'subject' => 'Welcome to {{property}} - Your New Home',
+            'body' => "Dear {{tenant}},\n\nWelcome to {{property}}! We're excited to have you as our new tenant.\n\nHere are your details:\n- Property: {{property}}\n- Unit/House: {{house}}\n- Email: {{email}}\n- Password: {{password}}\n\nYou can login to your tenant portal at: {{link}}\n\nPlease keep your login credentials secure.\n\nWelcome home!\n\nBest regards,\nProperty Management",
+        ],
+        [
+            'owner_id' => $ownerId,
+            'name' => 'Payment Confirmation',
+            'type' => 'email',
+            'subject' => 'Payment Confirmation - KES {{amount}}',
+            'body' => "Hi {{tenant}},\n\nYour payment has been successfully recorded.\n\nPayment Details:\n- Amount: KES {{amount}}\n- Category: {{category}}\n- Date: {{date}}\n- Current Balance: KES {{balance}}\n\nThank you for your payment!\n\nBest regards,\nProperty Management",
+        ],
+    ];
+
+    foreach ($emailTemplates as $t) {
+        $existing = $db->fetchOne("SELECT id FROM email_templates WHERE name = ? AND owner_id = ?", [$t['name'], $ownerId]);
+        if (!$existing) {
+            $db->insert('email_templates', $t);
+            echo "  - {$t['name']}: Created\n";
+        } else {
+            echo "  - {$t['name']}: Already exists\n";
+        }
+    }
+
     echo "\n=== Seeding Complete! ===\n";
-    echo "Login with: owner@rentflow.co / admin123\n";
+    echo "Login with: owner@rentaflow.co / admin123\n";
 
 } catch (Exception $e) {
     echo "ERROR: " . $e->getMessage() . "\n";

@@ -1,7 +1,7 @@
 # Enable mod_rewrite
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /RentFlow/backend/
+    RewriteBase /RentaFlow/backend/
 
     # Disable directory listing
     Options -Indexes

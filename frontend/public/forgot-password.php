@@ -7,7 +7,7 @@ $basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forgot Password - RentFlow</title>
+    <title>Forgot Password - RentaFlow</title>
     <base href="<?php echo $basePath; ?>/">
     <link rel="stylesheet" href="css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -36,7 +36,7 @@ $basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], 
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
                         <i class="fas fa-key text-blue-600"></i>
                     </div>
-                    <span class="font-bold text-xl text-slate-900">RentFlow</span>
+                    <span class="font-bold text-xl text-slate-900">RentaFlow</span>
                 </div>
                 <h1 class="text-2xl font-bold text-slate-900">Forgot Password?</h1>
                 <p class="text-slate-500 mt-2 text-sm">Enter your email address and we'll send you a verification code to reset your password.</p>

@@ -1,9 +1,9 @@
-// RentFlow base path fix for subdirectory deployments
+// RentaFlow base path fix for subdirectory deployments
 (function () {
   // Detect base path from current URL
   const path = window.location.pathname;
   const base = path.replace(/\/[^\/]*$/, ""); // remove filename
-  window.RENTFLOW_BASE = base;
+  window.RENTAFLOW_BASE = base;
 
   // Patch fetch to rewrite root-relative /api/* URLs
   const originalFetch = window.fetch;

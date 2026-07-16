@@ -359,7 +359,7 @@ class DocumentController
         {$paymentBlock}
         
         <div class="footer">
-            <p>RentFlow Property Management System</p>
+            <p>RentaFlow Property Management System</p>
             <p>Generated on {date('F j, Y')}</p>
         </div>
     </div>

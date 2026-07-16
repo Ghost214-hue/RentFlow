@@ -2,7 +2,7 @@
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-// Extract page name from URL (e.g. /RentFlow/dashboard -> dashboard)
+// Extract page name from URL (e.g. /RentaFlow/dashboard -> dashboard)
 $pageName = trim(str_replace($basePath, '', $requestUri), '/');
 if (empty($pageName)) $pageName = 'signin';
 

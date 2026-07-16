@@ -173,22 +173,29 @@ class AuthController
         try {
             // Apply rate limiting
             \App\Middleware\RateLimitMiddleware::check('forgot_password');
-            
-            $data = Router::getRequestBody();
-            $email = trim((string)($data['email'] ?? ''));
-            if (empty($email)) {
-                Router::jsonResponse(['error' => 'Email is required'], 400);
-            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                Router::jsonResponse(['error' => 'Invalid email format'], 400);
-            }
-            $db = Database::getInstance();
-            
-            // Get DB current time to stay in sync with MySQL's NOW()
-            $dbTimeResult = $db->fetchOne("SELECT NOW() as db_now");
-            $dbNow = $dbTimeResult['db_now'] ?? date('Y-m-d H:i:s');
-            
-            $user = null;
-            $userType = null;
+        } catch (\Throwable $e) {
+            // Rate limit check failed
+            Router::jsonResponse(['error' => 'Too many requests. Please try again later.', 'retry_after' => 60], 429);
+            return;
+        }
+
+        $data = Router::getRequestBody();
+        $email = trim((string)($data['email'] ?? ''));
+        if (empty($email)) {
+            Router::jsonResponse(['error' => 'Email is required'], 400);
+            return;
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            Router::jsonResponse(['error' => 'Invalid email format'], 400);
+            return;
+        }
+
+        $db = Database::getInstance();
+        $user = null;
+        $userType = null;
+
+        // Look up user across all tables
+        try {
             $owner = $db->fetchOne("SELECT id, name, email FROM owners WHERE email = ?", [$email]);
             if ($owner) { $user = $owner; $userType = 'owner'; }
             if (!$user) {
@@ -199,38 +206,58 @@ class AuthController
                 $caretaker = $db->fetchOne("SELECT id, name, email FROM caretakers WHERE email = ?", [$email]);
                 if ($caretaker) { $user = $caretaker; $userType = 'caretaker'; }
             }
-            if (!$user) {
-                Router::jsonResponse(['error' => 'No account found with that email address. Please check the email or create a new account.', 'recommend_signup' => true], 404);
-            }
-            
-            // Generate cryptographically secure 32-character hex code
-            $code = bin2hex(random_bytes(16));
-            // Use DATE_ADD with MySQL NOW() to stay in sync with DB timezone
+        } catch (\Throwable $e) {
+            error_log('DB lookup error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Database error. Please try again.'], 500);
+            return;
+        }
+
+        if (!$user) {
+            Router::jsonResponse(['error' => 'No account found with that email address.', 'recommend_signup' => true], 404);
+            return;
+        }
+
+        // Generate reset token (6 digits)
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        try {
             $db->update('password_reset_tokens', ['used' => 1], 'email = ? AND used = 0', [$email]);
-            $db->insert('password_reset_tokens', [
-                'owner_id' => $userType === 'owner' ? (int)$user['id'] : null,
-                'tenant_id' => $userType === 'tenant' ? (int)$user['id'] : null,
-                'email' => $email, 'code' => $code,
-                'expires_at' => date('Y-m-d H:i:s', strtotime($dbNow) + 15 * 60),
-                'used' => 0, 'attempts' => 0,
-            ]);
-            
-            $emailSent = false;
-            try {
-                $emailService = new EmailService();
-                $emailSent = $emailService->sendTemplate('Password Reset', 1, $email, $user['name'], [
-                    'code' => $code, 'expires' => '15 minutes', 'name' => $user['name'],
-                ]);
-            } catch (\Throwable $e) { error_log('Failed to send password reset email: ' . $e->getMessage()); }
-            
-            Router::jsonResponse([
-                'message' => $emailSent ? 'A verification code has been sent to your email. Please check your inbox (and spam folder).' : 'Failed to send email. Please try again or contact support.',
-                'email_sent' => $emailSent
+            // Use MySQL NOW() + INTERVAL to avoid PHP/DB timezone mismatch
+            $db->query(
+                "INSERT INTO password_reset_tokens (owner_id, tenant_id, email, code, expires_at, used, attempts) VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0, 0)",
+                [
+                    $userType === 'owner' ? (int)$user['id'] : null,
+                    $userType === 'tenant' ? (int)$user['id'] : null,
+                    $email,
+                    $code
+                ]
+            );
+        } catch (\Throwable $e) {
+            error_log('Token insert error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Failed to create reset token.'], 500);
+            return;
+        }
+
+        // Send email
+        $emailSent = false;
+        try {
+            $emailService = new \App\Services\EmailService();
+            $emailSent = $emailService->sendTemplate('Password Reset', 1, $email, $user['name'], [
+                'code' => $code,
+                'expires' => '15 minutes',
+                'name' => $user['name'],
             ]);
         } catch (\Throwable $e) {
-            error_log('Forgot password error: ' . $e->getMessage());
-            Router::jsonResponse(['error' => 'An error occurred. Please try again.'], 500);
+            error_log('Email send error: ' . $e->getMessage());
         }
+
+        $message = $emailSent
+            ? 'A verification code has been sent to your email.'
+            : 'Failed to send email. Please try again or contact support.';
+
+        Router::jsonResponse([
+            'message' => $message,
+            'email_sent' => $emailSent,
+        ]);
     }
 
     public function verifyResetCode(): void
