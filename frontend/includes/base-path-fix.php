@@ -1,3 +1,4 @@
 <?php
 // Shared base path for all pages
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+// Priority: environment config > computed from script path
+$basePath = rtrim((string) ($_ENV['BASE_PATH'] ?? getenv('BASE_PATH') ?? rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')), '/');

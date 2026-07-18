@@ -4,10 +4,6 @@
  * Handles all /api/* requests
  */
 
-// Error reporting
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-
 // Security headers
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');

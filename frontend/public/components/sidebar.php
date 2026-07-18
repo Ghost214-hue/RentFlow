@@ -1,5 +1,6 @@
 <?php
-$basePath = '/RentaFlow'; // Hardcoded for this deployment
+require_once __DIR__ . '/../../includes/base-path.php';
+$basePath = getBasePath();
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';

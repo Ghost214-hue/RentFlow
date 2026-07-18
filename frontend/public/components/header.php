@@ -1,5 +1,6 @@
 <?php
-$basePath = '/RentaFlow'; // Hardcoded for this deployment
+// Get base path from environment
+$basePath = rtrim((string) ($_ENV['BASE_PATH'] ?? getenv('BASE_PATH') ?? '/RentalFlow'), '/');
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';
@@ -28,7 +29,7 @@ $pageDisplay = ucwords(str_replace('-', ' ', $pageName));
 </header>
 <script>
 function deleteRfTokenCookie() {
-    document.cookie = 'rf_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+    document.cookie = 'rf_token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Strict';
 }
 
 async function logout() {

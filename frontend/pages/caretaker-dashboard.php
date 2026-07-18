@@ -8,7 +8,8 @@ require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
 if (!$user) { header('Location: ../public/signin.php'); exit; }
-$basePath = '/RentaFlow';
+require_once __DIR__ . '/../includes/base-path.php';
+$basePath = getBasePath();
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'caretaker';
 if ($role !== 'caretaker') { header('Location: ../public/signin.php'); exit; }
@@ -113,7 +114,7 @@ if ($role !== 'caretaker') { header('Location: ../public/signin.php'); exit; }
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = '../public/signin.php';
+                window.location.href = 'signin';
             }
             throw new Error(data.error || 'Request failed');
         }

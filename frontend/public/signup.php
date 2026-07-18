@@ -1,5 +1,25 @@
 <?php
 $basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], '', dirname(__DIR__, 2))), '/');
+
+// Determine if we're in production/HTTPS environment
+$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
+$isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+           (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+           (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+
+// Generate CSRF token
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'path' => '/',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
+    session_start();
+}
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -20,15 +40,6 @@ $basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], 
                 <path d="M0 100 C 40 20 60 20 100 100 Z" fill="white" opacity="0.5"/>
             </svg>
         </div>
-        <?php
-    // Generate CSRF token
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    ?>
     <div class="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row">
             <div class="lg:w-5/12 bg-gradient-to-br from-blue-600 to-blue-800 p-8 lg:p-12 flex flex-col justify-between text-white relative">
                 <div class="absolute inset-0 opacity-5">
@@ -130,7 +141,8 @@ $basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], 
             if(!res.ok) throw new Error(result.error || 'Registration failed');
             
             // Store token in cookie only (primary auth method)
-            document.cookie = 'rf_token=' + encodeURIComponent(result.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Lax';
+            const cookieSecure = '<?php echo $isHttps ? '; Secure' : ''; ?>';
+            document.cookie = 'rf_token=' + encodeURIComponent(result.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Strict' + cookieSecure;
             
             toast('Account created! Redirecting...', 'success');
             

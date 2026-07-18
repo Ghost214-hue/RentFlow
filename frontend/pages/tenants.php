@@ -1,6 +1,6 @@
 <?php
-require_once __DIR__ . '/../includes/auth.php';
-$basePath = '/RentaFlow';
+require_once __DIR__ . '/../includes/base-path.php';
+$basePath = getBasePath();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -426,7 +426,7 @@ $basePath = '/RentaFlow';
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = '../public/signin.php';
+                window.location.href = 'signin';
             }
             throw new Error(data.error || 'Request failed');
         }

@@ -3,76 +3,79 @@ DirectoryIndex frontend/public/index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /RentaFlow/
-    
-    # Security Headers
+
+    # Disable directory listing
+    Options -Indexes
+
+    # Protect hidden files
+    <FilesMatch "^\.">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+
+    # Protect sensitive files
+    <FilesMatch "\.(env|log|sql|md)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+
+    # Protect config files
+    <FilesMatch "^(composer\.json|composer\.lock|package\.json)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+
+    # Limit file upload size
+    LimitRequestBody 5242880
+
+    RedirectMatch 404 /\.git
+
+    # --- API routes FIRST ---
+    RewriteRule ^api(/.*)?$ backend/public/index.php [QSA,L]
+
+    # --- Static assets ---
+    RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
+    RewriteRule ^js/(.*)$ frontend/public/js/$1 [QSA,L]
+    RewriteRule ^images/(.*)$ frontend/public/images/$1 [QSA,L]
+    RewriteRule ^favicon\.ico$ frontend/public/favicon.ico [L]
+
+    # --- Auth pages ---
+    RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
+    RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
+    RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
+    RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
+
+    # --- Other PHP pages ---
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L,PT]
+
+    # SPA fallback
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
+</IfModule>
+
+<IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "DENY"
     Header set X-XSS-Protection "1; mode=block"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
     Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; connect-src 'self' https:; frame-ancestors 'none'; style-src-elem 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com;"
-    
-    <IfModule mod_substitute.c>
-        AddOutputFilterByType SUBSTITUTE text/html
-        Substitute "s|<head>|<head><base href=\"/RentaFlow/\">|"
-    </IfModule>
-    
-    # Disable directory listing
-    Options -Indexes
-    
-    # Protect hidden files
-    <FilesMatch "^\.">
-        Order allow,deny
-        Deny from all
-    </FilesMatch>
-    
-    # Protect sensitive files
-    <FilesMatch "\.(env|log|sql|md)$">
-        Order allow,deny
-        Deny from all
-    </FilesMatch>
-    
-    # Protect config files
-    <FilesMatch "^(composer\.json|composer\.lock|package\.json)$">
-        Order allow,deny
-        Deny from all
-    </FilesMatch>
-    
-    # Limit file upload size
-    LimitRequestBody 5242880
+</IfModule>
 
-    # Prevent access to git directory
-    RedirectMatch 404 /\.git
-    
-    # --- MUST BE FIRST: API routes go to backend ---
-    RewriteRule ^api(/.*)?$ backend/public/index.php [QSA,L]
-    
-    # Route /css/* to static files in frontend/public/css/
-    RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
-    
-    # Route /js/* to static files in frontend/src/js/
-    RewriteRule ^js/(.*)$ frontend/src/js/$1 [QSA,L]
-    
-    # Route images and fonts
-    RewriteRule ^images/(.*)$ frontend/public/images/$1 [QSA,L]
-    
-    # Route signin/signup/forgot-password pages
-    RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
-    RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
-    RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
-    RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
-    
-    # Route standalone page files - hide internal paths from browser
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L,PT]
-    
-    # All other routes go to the SPA
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
+# Ensure proper MIME types for static files
+<IfModule mod_mime.c>
+    AddType text/css .css
+    AddType application/javascript .js
+    AddType image/png .png
+    AddType image/jpeg .jpg .jpeg
+    AddType image/gif .gif
+    AddType image/svg+xml .svg
+    AddType image/x-icon .ico
+    AddType font/woff2 .woff2
+    AddType font/woff .woff
 </IfModule>
 
 # PHP Security Settings
@@ -81,7 +84,7 @@ DirectoryIndex frontend/public/index.php
     php_flag display_errors Off
     php_flag display_startup_errors Off
     php_flag log_errors On
-    php_value error_log "/opt/lampp/htdocs/RentaFlow/backend/logs/php_errors.log"
+    php_value error_log "/opt/lampp/htdocs/RentalFlow/backend/logs/php_errors.log"
     php_value max_execution_time 30
     php_value max_input_time 30
     php_value memory_limit 128M

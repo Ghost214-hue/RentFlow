@@ -3,7 +3,25 @@
 /**
  * Health Check Endpoint
  * Access via: https://yourdomain.com/api/health-check
+ * 
+ * SECURITY: This endpoint should be protected in production
+ * Option 1: Restrict by IP in .htaccess
+ * Option 2: Remove/disable in production
  */
+
+// Only allow health check in non-production or from specific IPs
+$appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production';
+$allowedIps = ['127.0.0.1', '::1', 'YOUR_ADMIN_IP_HERE']; // Add your admin IPs
+
+if ($appEnv === 'production') {
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? '';
+    if (!in_array($clientIp, $allowedIps)) {
+        http_response_code(404);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Not found']);
+        exit;
+    }
+}
 
 header('Content-Type: application/json');
 
@@ -16,14 +34,13 @@ $health = [
     'status' => 'healthy',
     'timestamp' => date('c'),
     'version' => '1.0.0',
-    'environment' => $_ENV['APP_ENV'] ?? 'unknown',
-    'uptime' => function_exists('sys_getloadavg') ? sys_getloadavg() : null,
+    'environment' => $appEnv,
     'checks' => []
 ];
 
 $allHealthy = true;
 
-// Check database
+// Check database (basic check only)
 try {
     $db = Database::getInstance();
     $db->fetchOne("SELECT 1");
@@ -35,51 +52,6 @@ try {
     $allHealthy = false;
     $health['checks']['database'] = [
         'status' => 'error',
-        'message' => 'Database connection failed: ' . $e->getMessage(),
-        'timestamp' => date('c')
-    ];
-}
-
-// Check file system permissions
-$uploadDir = __DIR__ . '/uploads';
-if (is_writable($uploadDir)) {
-    $health['checks']['uploads'] = [
-        'status' => 'writable',
-        'path' => $uploadDir,
-        'timestamp' => date('c')
-    ];
-} else {
-    $allHealthy = false;
-    $health['checks']['uploads'] = [
-        'status' => 'error',
-        'message' => 'Upload directory not writable',
-        'path' => $uploadDir,
-        'timestamp' => date('c')
-    ];
-}
-
-// Check logs directory
-$logsDir = __DIR__ . '/../logs';
-if (is_writable($logsDir)) {
-    $health['checks']['logs'] = [
-        'status' => 'writable',
-        'timestamp' => date('c')
-    ];
-} else {
-    $allHealthy = false;
-    $health['checks']['logs'] = [
-        'status' => 'error',
-        'message' => 'Logs directory not writable',
-        'timestamp' => date('c')
-    ];
-}
-
-// Check memory
-if (function_exists('memory_get_usage')) {
-    $health['checks']['memory'] = [
-        'current_mb' => round(memory_get_usage(true) / 1024 / 1024, 2),
-        'peak_mb' => round(memory_get_peak_usage(true) / 1024 / 1024, 2),
-        'limit_mb' => ini_get('memory_limit'),
         'timestamp' => date('c')
     ];
 }
@@ -87,4 +59,4 @@ if (function_exists('memory_get_usage')) {
 $health['status'] = $allHealthy ? 'healthy' : 'degraded';
 
 http_response_code($allHealthy ? 200 : 503);
-echo json_encode($health, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+echo json_encode($health, JSON_UNESCAPED_SLASHES);

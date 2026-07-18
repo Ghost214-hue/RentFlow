@@ -4,11 +4,15 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-$basePath = '/RentaFlow';
+// Dynamic base path - same logic as base-path.js
+// From URL /RentalFlow/dashboard, get base = /RentalFlow
+$requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$basePath = preg_replace('#/[^/]+/?$#', '', $requestUri);
+$basePath = rtrim($basePath, '/');
 
 require_once __DIR__ . '/../includes/auth.php';
 if (($userRole ?? 'owner') === 'tenant') {
-    header('Location: /RentaFlow/tenant-dashboard');
+    header('Location: ' . $basePath . '/tenant-dashboard');
     exit;
 }
 ?>
@@ -71,7 +75,13 @@ if (($userRole ?? 'owner') === 'tenant') {
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (same as auth.php)
+    const cookies = document.cookie.split(';');
+    let token = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { token = decodeURIComponent(v); break; }
+    }
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $userRole ?? 'owner'; ?>';
 
@@ -83,8 +93,9 @@ if (($userRole ?? 'owner') === 'tenant') {
         
         if (!res.ok) {
             if (res.status === 401) {
-                localStorage.removeItem('rf_token');
-                window.location.href = '../public/signin.php';
+                // Clear cookie
+                document.cookie = 'rf_token=; path=/; max-age=0';
+                window.location.href = '<?php echo $basePath; ?>/signin';
             }
             throw new Error(data.error || 'Request failed');
         }

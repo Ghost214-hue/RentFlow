@@ -1,8 +1,5 @@
 <?php
-/**
- * Bot Protection Middleware
- * Detects and blocks suspicious bot activity
- */
+
 namespace App\Middleware;
 
 use App\Core\Database;
@@ -27,8 +24,8 @@ class BotProtectionMiddleware
         // Path traversal
         '\.\.\/',
         '\.\.\\',
-        '/etc/passwd',
-        '/proc\/',
+        '\/etc\/passwd',
+        '\/proc\/',
         // XSS patterns
         '<iframe',
         '<svg\s+on',
@@ -67,7 +64,7 @@ class BotProtectionMiddleware
         
         // Check for suspicious patterns
         foreach (self::$suspiciousPatterns as $pattern) {
-            if (preg_match('/' . $pattern . '/i', $allData)) {
+            if (@preg_match('#' . $pattern . '#i', $allData)) {
                 self::blockIP($ip, 'Suspicious pattern detected: ' . $pattern);
                 Router::jsonResponse(['error' => 'Invalid request detected'], 400);
             }

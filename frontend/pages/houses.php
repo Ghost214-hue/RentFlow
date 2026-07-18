@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 $propertyId = $_GET['property_id'] ?? null;
-$basePath = '/RentaFlow';
+require_once __DIR__ . '/../includes/base-path.php';
+$basePath = getBasePath();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -9,7 +10,7 @@ $basePath = '/RentaFlow';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Houses & Units - RentaFlow</title>
-    <base href="/RentaFlow/">
+    <base href="<?php echo $basePath; ?>/">
     <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -83,7 +84,7 @@ $basePath = '/RentaFlow';
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = '../public/signin.php';
+                window.location.href = 'signin';
             }
             throw new Error(data.error || 'Request failed');
         }
@@ -134,7 +135,7 @@ $basePath = '/RentaFlow';
             console.error('loadHouses error:', e);
             document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;
             if (e.message.includes('401')) {
-                window.location.href = '../public/signin.php';
+                window.location.href = 'signin';
             }
         }
     }

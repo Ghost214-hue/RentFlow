@@ -1,12 +1,18 @@
 <?php
 
+// Determine if we're in production/HTTPS environment
+$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
+$isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+           (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+           (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+
 // Set session cookie path to / so sessions work across all pages in subdirectory
 if (session_status() === PHP_SESSION_NONE) {
     session_set_cookie_params([
         'path' => '/',
-        'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+        'secure' => $isHttps,
         'httponly' => true,
-        'samesite' => 'Lax'
+        'samesite' => 'Strict'
     ]);
     session_start();
 }
@@ -26,9 +32,8 @@ if (!$token && isset($_SESSION['rf_token'])) {
 
 // Redirect to signin if no token found
 if (!$token) {
-    // Calculate base path: find /RentaFlow/ in script name and use everything before it
-    $scriptName = $_SERVER['SCRIPT_NAME'];
-    $basePath = '/RentaFlow'; // Hardcoded for this deployment
+    require_once __DIR__ . '/base-path.php';
+    $basePath = getBasePath();
     header('Location: ' . $basePath . '/signin');
     exit;
 }
@@ -43,10 +48,15 @@ $user = $jwt->decode($token);
 
 // Redirect if token is invalid or expired
 if (!$user) {
-    setcookie('rf_token', '', time() - 42000, '/');
+    require_once __DIR__ . '/base-path.php';
+    
+    // Clear cookie with proper settings
+    $cookieParams = session_get_cookie_params();
+    setcookie('rf_token', '', time() - 42000, $cookieParams['path'], $cookieParams['domain'], $cookieParams['secure'], $cookieParams['httponly']);
     $_SESSION = [];
     session_destroy();
-    $basePath = '/RentaFlow'; // Hardcoded for this deployment
+    
+    $basePath = getBasePath();
     header('Location: ' . $basePath . '/signin');
     exit;
 }

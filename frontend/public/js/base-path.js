@@ -1,4 +1,4 @@
-// RentaFlow base path fix for subdirectory deployments
+// RentalFlow base path fix for subdirectory deployments
 (function () {
   // Detect base path from current URL
   const path = window.location.pathname;

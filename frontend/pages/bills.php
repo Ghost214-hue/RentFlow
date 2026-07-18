@@ -17,7 +17,7 @@ $role = $user['role'] ?? 'owner';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bills - RentaFlow</title>
-    <link rel="stylesheet" href="/RentaFlow/css/output.css">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -79,7 +79,7 @@ $role = $user['role'] ?? 'owner';
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = '../public/signin.php';
+                window.location.href = 'signin';
             }
             throw new Error(data.error || 'Request failed');
         }
@@ -175,7 +175,7 @@ $role = $user['role'] ?? 'owner';
         const title = summary[0]?.property ? `Rent Follow-up Summary - ${summary[0].property}` : 'Rent Follow-up Summary';
         const subtitle = [summary[0]?.unit ? `Unit ${summary[0].unit}` : '', new Date().toLocaleDateString()].filter(Boolean).join('  ·  ');
 
-        const html = `<!DOCTYPE html><html><head><title>${title}</title><link rel="stylesheet" href="/css/output.css"></head><body class="bg-slate-50 p-6">
+        const html = `<!DOCTYPE html><html><head><title>${title}</title><link rel="stylesheet" href="../css/output.css"></head><body class="bg-slate-50 p-6">
           <div class="max-w-4xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>

@@ -1,17 +1,17 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: ../public/signin.php'); exit; }
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
-if (!$user) { header('Location: ../public/signin.php'); exit; }
-$basePath = '/RentaFlow';
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'tenant';
-if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
+// Force no-cache BEFORE any output
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+require_once __DIR__ . '/../includes/base-path.php';
+$basePath = getBasePath();
+
+require_once __DIR__ . '/../includes/auth.php';
+if (($userRole ?? 'tenant') !== 'tenant') {
+    header('Location: ' . $basePath . '/signin');
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -149,7 +149,13 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (same as auth.php)
+    const cookies = document.cookie.split(';');
+    let token = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { token = decodeURIComponent(v); break; }
+    }
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {
@@ -160,8 +166,9 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
         
         if (!res.ok) {
             if (res.status === 401) {
-                localStorage.removeItem('rf_token');
-                window.location.href = '../public/signin.php';
+                // Clear cookie
+                document.cookie = 'rf_token=; path=/; max-age=0';
+                window.location.href = '<?php echo $basePath; ?>/signin';
             }
             throw new Error(data.error || 'Request failed');
         }
@@ -258,7 +265,7 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
             }
         } catch(e) {
             console.error(e);
-            if (e.message.includes('401')) window.location.href = '/signin';
+            if (e.message.includes('401')) window.location.href = 'signin';
             noticesList.innerHTML = '<div class="py-6 text-center text-red-400">Failed to load notices. Please try again later.</div>';
             compDiv.innerHTML = '<div class="py-8 text-center text-red-400">Failed to load complaints. Please try again later.</div>';
         }

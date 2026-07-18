@@ -6,8 +6,8 @@
 $scriptDir = dirname($_SERVER['SCRIPT_NAME']);
 $basePath = rtrim(str_replace('\\', '/', $scriptDir), '/');
 
-// If we're in a subdirectory like /RentaFlow/pages or /RentaFlow/frontend/public,
-// $basePath already contains the correct /RentaFlow prefix
+// If we're in a subdirectory like /RentalFlow/pages or /RentalFlow/frontend/public,
+// $basePath already contains the correct /RentalFlow prefix
 ?>
 <!-- base-path injected by head-inject.php -->
 <base href="<?php echo htmlspecialchars($basePath); ?>/">
