@@ -57,14 +57,20 @@ class BotProtectionMiddleware
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
         $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
         $queryString = $_SERVER['QUERY_STRING'] ?? '';
-        $requestBody = file_get_contents('php://input');
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        $requestBody = '';
+        if (stripos($contentType, 'multipart/form-data') === false) {
+            // Use Router's cached body to avoid exhausting php://input
+            Router::cacheRawBody();
+            $requestBody = '';
+        }
         
         // Combine all data for scanning
         $allData = strtolower($userAgent . ' ' . $queryString . ' ' . $requestBody);
         
         // Check for suspicious patterns
         foreach (self::$suspiciousPatterns as $pattern) {
-            if (@preg_match('#' . $pattern . '#i', $allData)) {
+            if (@preg_match('~' . $pattern . '~i', $allData)) {
                 self::blockIP($ip, 'Suspicious pattern detected: ' . $pattern);
                 Router::jsonResponse(['error' => 'Invalid request detected'], 400);
             }

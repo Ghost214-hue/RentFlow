@@ -24,7 +24,7 @@ class CaretakerController
             $total = (int) ($totalRow['total'] ?? 0);
 
             $caretakers = $db->fetchAll(
-                "SELECT c.id, c.owner_id, c.name, c.email, c.phone, c.avatar, c.assigned_properties, c.created_at, c.updated_at
+                "SELECT c.id, c.owner_id, c.name, c.email, c.phone, c.id_number, c.avatar, c.assigned_properties, c.created_at, c.updated_at
              FROM caretakers c 
              WHERE c.owner_id = ? 
              ORDER BY c.name ASC LIMIT ?, ?",

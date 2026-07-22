@@ -1,13 +1,9 @@
 <?php
-// For SPA fallback (when accessed via rewrite), use REQUEST_URI to get the correct base path
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 
-// If we're in /frontend/public/index.php (SPA fallback), extract base from REQUEST_URI
 if (strpos($basePath, '/frontend/public') !== false) {
-    // e.g. /RentalFlow/dashboard -> basePath = /RentalFlow
-    $basePath = preg_replace('#/[^/]+/?$#', '', $requestUri);
-    $basePath = rtrim($basePath, '/');
+    $basePath = dirname(dirname(dirname($basePath)));
 }
 
 // Extract page name from URL (e.g. /dashboard -> dashboard)

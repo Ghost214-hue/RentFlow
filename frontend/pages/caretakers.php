@@ -58,10 +58,11 @@ require_once __DIR__ . '/../includes/auth.php';
                 </div>
                 <div><label class="block text-sm font-medium text-slate-700 mb-1">Password <span class="text-slate-400 text-xs">optional</span></label><input type="password" id="caretakerPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Leave blank to use ID number"></div>
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Assign Properties</label>
-                    <select id="caretakerProperties" multiple class="w-full h-40 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Assign Property</label>
+                    <select id="caretakerProperties" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all">
+                        <option value="">Select a property...</option>
                     </select>
-                    <p class="text-xs text-slate-400 mt-2">Hold Ctrl/Cmd to select multiple properties.</p>
+                    <p class="text-xs text-slate-400 mt-2">Choose the property this caretaker will manage.</p>
                 </div>
                 <div class="flex justify-end gap-3 pt-4">
                     <button type="button" onclick="closeCaretakerModal()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all">Cancel</button>
@@ -192,9 +193,10 @@ require_once __DIR__ . '/../includes/auth.php';
         } catch(e) { console.error('loadCaretakersPage error:', e); }
     }
 
-    async function loadProperties(selectedIds = []) {
+    async function loadProperties(selectedIds = [], includeAll = false) {
         try {
-            const res = await fetch(`${API}/properties/available`, { headers });
+            const endpoint = includeAll ? `${API}/properties` : `${API}/properties/available`;
+            const res = await fetch(endpoint, { headers });
             const data = await parseJsonResponse(res);
             const select = document.getElementById('caretakerProperties');
             if (!res.ok) throw new Error(data.error || `Failed to load properties (${res.status})`);
@@ -227,14 +229,14 @@ require_once __DIR__ . '/../includes/auth.php';
                 document.getElementById('caretakerPhone').value = caretaker.phone || '';
                 document.getElementById('caretakerId').value = caretaker.id_number || '';
                 const assignedIds = (caretaker.assigned_properties || '').split(',').filter(Boolean);
-                await loadProperties(assignedIds);
+                await loadProperties(assignedIds, true); // includeAll=true so assigned property shows
             } else {
-                await loadProperties();
+                await loadProperties([], true);
             }
         } else {
             title.textContent = 'Add Caretaker';
             submitButton.textContent = 'Save Caretaker';
-            await loadProperties();
+            await loadProperties([], false); // only show unassigned properties
         }
 
         document.getElementById('caretakerModal').classList.remove('hidden');
@@ -247,11 +249,20 @@ require_once __DIR__ . '/../includes/auth.php';
 
     document.getElementById('caretakerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const selectedOptions = Array.from(document.getElementById('caretakerProperties').selectedOptions).map(opt => opt.value);
+        const submitBtn = e.target.querySelector('button[type="submit"]');
         
-        // Validate at least one property is selected
-        if (!selectedOptions || selectedOptions.length === 0) {
-            toast('Please assign at least one property to the caretaker', 'error');
+        // Prevent double submission
+        if (submitBtn.disabled) return;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> ' + (currentCaretakerId ? 'Saving...' : 'Adding...');
+        
+        const selectedProperty = document.getElementById('caretakerProperties').value;
+        
+        // Validate a property is selected
+        if (!selectedProperty) {
+            toast('Please assign a property to the caretaker', 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = currentCaretakerId ? 'Save Changes' : 'Save Caretaker';
             return;
         }
         
@@ -261,6 +272,8 @@ require_once __DIR__ . '/../includes/auth.php';
         
         if (!sanitizedEmail && rawEmail) {
             toast('Invalid email format', 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = currentCaretakerId ? 'Save Changes' : 'Save Caretaker';
             return;
         }
         
@@ -269,7 +282,7 @@ require_once __DIR__ . '/../includes/auth.php';
             email: sanitizedEmail,
             phone: document.getElementById('caretakerPhone').value.trim() || null,
             id_number: document.getElementById('caretakerId').value.trim(),
-            assigned_properties: selectedOptions.join(','),
+            assigned_properties: selectedProperty,
         };
         const passwordValue = document.getElementById('caretakerPassword').value;
         if (!currentCaretakerId) {
@@ -291,6 +304,8 @@ require_once __DIR__ . '/../includes/auth.php';
         } catch(err) {
             console.error('save caretaker error:', err);
             toast(err.message, 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = currentCaretakerId ? 'Save Changes' : 'Save Caretaker';
         }
     });
 

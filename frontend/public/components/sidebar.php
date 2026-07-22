@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../includes/base-path.php';
+require_once __DIR__ . '/../../includes/base-path-fix.php';
 $basePath = getBasePath();
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;

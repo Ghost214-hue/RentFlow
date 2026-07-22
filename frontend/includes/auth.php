@@ -1,5 +1,9 @@
 <?php
 
+// Ensure base path is available for all pages that include auth.php
+require_once __DIR__ . '/base-path-fix.php';
+$basePath = rtrim((string)($basePath ?? ''), '/');
+
 // Determine if we're in production/HTTPS environment
 $isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
 $isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
@@ -32,8 +36,8 @@ if (!$token && isset($_SESSION['rf_token'])) {
 
 // Redirect to signin if no token found
 if (!$token) {
-    require_once __DIR__ . '/base-path.php';
-    $basePath = getBasePath();
+    require_once __DIR__ . '/base-path-fix.php';
+    $basePath = rtrim((string)($basePath ?? ''), '/');
     header('Location: ' . $basePath . '/signin');
     exit;
 }
@@ -48,15 +52,14 @@ $user = $jwt->decode($token);
 
 // Redirect if token is invalid or expired
 if (!$user) {
-    require_once __DIR__ . '/base-path.php';
+    require_once __DIR__ . '/base-path-fix.php';
+    $basePath = rtrim((string)($basePath ?? ''), '/');
     
     // Clear cookie with proper settings
     $cookieParams = session_get_cookie_params();
     setcookie('rf_token', '', time() - 42000, $cookieParams['path'], $cookieParams['domain'], $cookieParams['secure'], $cookieParams['httponly']);
     $_SESSION = [];
     session_destroy();
-    
-    $basePath = getBasePath();
     header('Location: ' . $basePath . '/signin');
     exit;
 }

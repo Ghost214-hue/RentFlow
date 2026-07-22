@@ -198,11 +198,24 @@ class Router
     /**
      * Get JSON request body
      */
+    private static ?string $rawBodyCache = null;
+
     public static function getRequestBody(): array
     {
-        $body = file_get_contents('php://input');
-        $data = json_decode($body, true);
+        if (self::$rawBodyCache === null) {
+            self::$rawBodyCache = file_get_contents('php://input');
+        }
+        $data = json_decode(self::$rawBodyCache, true);
         return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Allow middleware or other handlers to cache the raw body
+     * so it's not consumed twice (since php://input can only be read once).
+     */
+    public static function cacheRawBody(?string $body = null): void
+    {
+        self::$rawBodyCache = $body ?? file_get_contents('php://input');
     }
 
     /**

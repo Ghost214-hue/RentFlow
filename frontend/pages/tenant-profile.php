@@ -8,7 +8,7 @@ require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
 if (!$user) { header('Location: ../public/signin.php'); exit; }
-require_once __DIR__ . '/../includes/base-path.php';
+require_once __DIR__ . '/../includes/base-path-fix.php';
 $basePath = getBasePath();
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'tenant';

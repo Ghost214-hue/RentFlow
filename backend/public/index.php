@@ -87,6 +87,7 @@ $router->delete('/houses/{id}', ['App\Controllers\HouseController', 'destroy'], 
 
 // ==================== TENANT ROUTES ====================
 $router->get('/tenants', ['App\Controllers\TenantController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/tenants/property-contact', ['App\Controllers\TenantController', 'propertyContact'], [function() { AuthMiddleware::authenticate(); }]);
 $router->get('/tenants/{id}', ['App\Controllers\TenantController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/tenants', ['App\Controllers\TenantController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/tenants/{id}', ['App\Controllers\TenantController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
@@ -230,6 +231,12 @@ $router->post('/upload', function() {
         'jpeg' => 'image/jpeg',
         'png'  => 'image/png',
     ];
+    $allowedTypeAliases = [
+        'jpg'  => ['image/jpeg', 'image/pjpeg', 'image/jpg', 'image/x-png'],
+        'jpeg' => ['image/jpeg', 'image/pjpeg'],
+        'png'  => ['image/png', 'image/x-png'],
+        'pdf'  => ['application/pdf', 'application/x-pdf', 'application/octet-stream'],
+    ];
     $maxSize = 10 * 1024 * 1024; // 10MB
 
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
@@ -239,8 +246,17 @@ $router->post('/upload', function() {
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     $detectedType = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']) ?: '';
 
-    if (!isset($allowedTypes[$ext]) || $allowedTypes[$ext] !== $detectedType) {
-        Router::jsonResponse(['error' => 'Invalid file type. Allowed: PDF, JPG, PNG'], 400);
+    if (!isset($allowedTypes[$ext])) {
+        Router::jsonResponse(['error' => 'Invalid file type extension. Allowed: PDF, JPG, PNG'], 400);
+    }
+    if ($ext === 'pdf') {
+        if (!in_array($detectedType, ['application/pdf','application/x-pdf','application/octet-stream'], true)) {
+            Router::jsonResponse(['error' => 'Invalid file type. Allowed: PDF, JPG, PNG'], 400);
+        }
+    } else {
+        if (!in_array($detectedType, ['image/jpeg','image/pjpeg','image/png','image/x-png','image/jpg'], true) && stripos($detectedType, 'image/') !== 0) {
+            Router::jsonResponse(['error' => 'Invalid file type. Allowed: PDF, JPG, PNG'], 400);
+        }
     }
     
     if ($file['size'] > $maxSize) {

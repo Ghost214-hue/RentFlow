@@ -4,7 +4,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-require_once __DIR__ . '/../includes/base-path.php';
+require_once __DIR__ . '/../includes/base-path-fix.php';
 $basePath = getBasePath();
 
 require_once __DIR__ . '/../includes/auth.php';
@@ -97,6 +97,22 @@ if (($userRole ?? 'tenant') !== 'tenant') {
                             <button type="submit" class="flex-1 py-2 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-medium hover:from-red-600 hover:to-red-700 transition-all text-sm">Submit Request</button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- Emergency Contacts Section -->
+            <div class="mb-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-50 to-rose-100 flex items-center justify-center"><i class="fas fa-phone-alt text-rose-600"></i></div>
+                        <div>
+                            <h3 class="font-semibold text-slate-900">Emergency Contacts</h3>
+                            <p class="text-xs text-slate-500">Property management contacts for your unit</p>
+                        </div>
+                    </div>
+                    <div id="contactsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="py-4 text-center text-slate-400 col-span-full"><i class="fas fa-spinner fa-spin mr-2"></i>Loading contacts...</div>
+                    </div>
                 </div>
             </div>
 
@@ -344,7 +360,70 @@ if (($userRole ?? 'tenant') !== 'tenant') {
         }
     }
 
+    async function loadEmergencyContacts() {
+        const container = document.getElementById('contactsContainer');
+        try {
+            const data = await apiRequest(`${API}/tenants/property-contact`);
+            const contacts = data.contacts;
+            
+            if (!contacts || (!contacts.owner && !contacts.caretaker)) {
+                container.innerHTML = '<div class="py-8 text-center text-slate-400 col-span-full"><i class="fas fa-info-circle mr-2"></i>Contact information not available for your property yet.</div>';
+                return;
+            }
+            
+            let cards = '';
+            
+            if (contacts.owner) {
+                cards += `
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl p-4 border border-blue-100/80">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center text-sm font-bold">${escapeHtml(initials(contacts.owner.name))}</div>
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Property Owner</p>
+                                <p class="text-xs text-slate-500">${escapeHtml(contacts.owner.name)}</p>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5 text-xs">
+                            ${contacts.owner.phone ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-phone w-4 text-blue-500"></i><a href="tel:${escapeHtml(contacts.owner.phone)}" class="hover:text-blue-600">${escapeHtml(contacts.owner.phone)}</a></p>` : ''}
+                            ${contacts.owner.email ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-envelope w-4 text-blue-500"></i><a href="mailto:${escapeHtml(contacts.owner.email)}" class="hover:text-blue-600 truncate">${escapeHtml(contacts.owner.email)}</a></p>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (contacts.caretaker) {
+                cards += `
+                    <div class="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl p-4 border border-emerald-100/80">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center text-sm font-bold">${escapeHtml(initials(contacts.caretaker.name))}</div>
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Caretaker</p>
+                                <p class="text-xs text-slate-500">${escapeHtml(contacts.caretaker.name)}</p>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5 text-xs">
+                            ${contacts.caretaker.phone ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-phone w-4 text-emerald-500"></i><a href="tel:${escapeHtml(contacts.caretaker.phone)}" class="hover:text-emerald-600">${escapeHtml(contacts.caretaker.phone)}</a></p>` : ''}
+                            ${contacts.caretaker.email ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-envelope w-4 text-emerald-500"></i><a href="mailto:${escapeHtml(contacts.caretaker.email)}" class="hover:text-emerald-600 truncate">${escapeHtml(contacts.caretaker.email)}</a></p>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = cards || '<div class="py-8 text-center text-slate-400 col-span-full">No contacts available</div>';
+        } catch(e) {
+            console.error('loadEmergencyContacts error:', e);
+            container.innerHTML = '<div class="py-8 text-center text-red-400 col-span-full">Failed to load contacts</div>';
+        }
+    }
+
+    function initials(name, fallback = '??') {
+        const text = String(name || '').trim();
+        if (!text) return fallback;
+        return text.split(/\s+/).map(s => s[0]).join('').substring(0, 2).toUpperCase();
+    }
+
     loadTenantDashboard();
+    loadEmergencyContacts();
     </script>
 </body>
 </html>

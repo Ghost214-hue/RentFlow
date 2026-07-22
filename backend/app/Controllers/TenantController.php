@@ -112,6 +112,7 @@ class TenantController
 
         $tenant['payments'] = $payments;
         $tenant['complaints'] = $complaints;
+        $tenant['documents'] = json_decode($tenant['documents'] ?? '[]', true) ?: [];
         Router::jsonResponse(['tenant' => $tenant]);
     }
 
@@ -184,7 +185,6 @@ class TenantController
                 'next_of_kin_name'     => $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null,
                 'next_of_kin_phone'    => $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null,
                 'next_of_kin_email'    => $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null,
-                'emergency_contact'    => $data['emergency_contact'] ?? null,
                 'lease_start'          => $data['lease_start'] ?? null,
                 'lease_end'            => $data['lease_end'] ?? null,
                 'deposit'              => $data['deposit'] ?? 0,
@@ -255,8 +255,8 @@ class TenantController
                 error_log('Failed to send tenant welcome email: ' . $e->getMessage());
             }
         } catch (\Throwable $e) {
-            if ($db->inTransaction()) $db->rollback();
-            Router::jsonResponse(['error' => $e->getMessage()], 400);
+            try { $db->rollback(); } catch (\Throwable $t) { /* no active transaction */ }
+            Router::jsonResponse(['error' => 'Failed to register tenant'], 400);
         }
 
         $emailMsg = $emailSent ? '& welcome email sent' : '& but welcome email could not be sent';
@@ -307,7 +307,7 @@ class TenantController
          // Define allowed fields based on role
          if ($role === 'owner') {
              // Owners can update all fields
-             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email', 'emergency_contact',
+             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
                       'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
          } else {
              // Tenants can only update phone and email
@@ -717,6 +717,64 @@ class TenantController
             if ($db->inTransaction()) $db->rollback();
             Router::jsonResponse(['error' => $e->getMessage()], 400);
         }
+    }
+
+    /**
+     * GET /api/tenants/property-contact - Owner & caretaker emergency contact for tenant's property
+     */
+    public function propertyContact(array $params = []): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $db = Database::getInstance();
+
+        if ($role !== 'tenant') {
+            Router::jsonResponse(['error' => 'Only tenants can access this'], 403);
+        }
+
+        $tenantId = Router::getAuthTenantId();
+        if (!$tenantId) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        $tenant = $db->fetchOne(
+            "SELECT property_id FROM tenants WHERE id = ? AND owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+
+        if (!$tenant || !$tenant['property_id']) {
+            Router::jsonResponse(['contacts' => null], 200);
+        }
+
+        $propertyId = (int) $tenant['property_id'];
+
+        // Get owner contact info
+        $owner = $db->fetchOne(
+            "SELECT name, email, phone FROM owners WHERE id = ?",
+            [$ownerId]
+        );
+
+        // Get caretaker assigned to this property
+        $caretaker = $db->fetchOne(
+            "SELECT name, email, phone FROM caretakers 
+             WHERE owner_id = ? AND assigned_properties LIKE ?",
+            [$ownerId, '%' . $propertyId . '%']
+        );
+
+        Router::jsonResponse([
+            'contacts' => [
+                'owner' => $owner ? [
+                    'name'  => $owner['name'],
+                    'email' => $owner['email'],
+                    'phone' => $owner['phone'] ?? '',
+                ] : null,
+                'caretaker' => $caretaker ? [
+                    'name'  => $caretaker['name'],
+                    'email' => $caretaker['email'],
+                    'phone' => $caretaker['phone'] ?? '',
+                ] : null,
+            ]
+        ]);
     }
 
     /**

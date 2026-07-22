@@ -1,6 +1,16 @@
 <?php
-require_once __DIR__ . '/../includes/base-path.php';
-$basePath = getBasePath();
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = $basePath ?? rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+
+// Ensure auth context exists before view logic
+if (!isset($user, $role, $token)) {
+    if (file_exists(__DIR__ . '/../includes/auth.php')) {
+        require_once __DIR__ . '/../includes/auth.php';
+    }
+    $user = $_SESSION['rf_user'] ?? $user ?? null;
+    $role = $user['role'] ?? $role ?? 'owner';
+    $token = $token ?? ($_COOKIE['rf_token'] ?? ($_SESSION['rf_token'] ?? ''));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -8,7 +18,7 @@ $basePath = getBasePath();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tenants - RentaFlow</title>
-    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -47,42 +57,37 @@ $basePath = getBasePath();
             <!-- Header -->
             <div class="flex items-center justify-between mb-6">
                 <div>
-                    <h3 class="text-xl font-bold text-slate-900" id="modalTitle">Add Tenant</h3>
-                    <p class="text-sm text-slate-500 mt-0.5">Step <span id="stepNum">1</span> of 6</p>
+                <h3 class="text-xl font-bold text-slate-900" id="modalTitle">Add Tenant</h3>
+                <p class="text-sm text-slate-500 mt-0.5">Step <span id="stepNum">1</span> of 5</p>
                 </div>
                 <button onclick="closeTenantModal()" class="text-slate-400 hover:text-slate-600 transition-colors"><i class="fas fa-times text-xl"></i></button>
             </div>
 
             <!-- Progress Indicator -->
             <div class="progress-container flex items-center mb-8 px-2">
-                <div class="progress-step active text-center" data-step="1">
+                <div class="progress-step active text-center cursor-pointer" data-step="1" onclick="goToStep(1)">
                     <div class="step-circle mx-auto">1</div>
                     <p class="text-xs font-medium mt-1.5 text-blue-600">Personal</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="2">
+                <div class="progress-step text-center cursor-pointer" data-step="2" onclick="goToStep(2)">
                     <div class="step-circle mx-auto">2</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">ID</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="3">
+                <div class="progress-step text-center cursor-pointer" data-step="3" onclick="goToStep(3)">
                     <div class="step-circle mx-auto">3</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Next of Kin</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="4">
+                <div class="progress-step text-center cursor-pointer" data-step="4" onclick="goToStep(4)">
                     <div class="step-circle mx-auto">4</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Lease</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="5">
+                <div class="progress-step text-center cursor-pointer" data-step="5" onclick="goToStep(5)">
                     <div class="step-circle mx-auto">5</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Finance</p>
-                </div>
-                <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="6">
-                    <div class="step-circle mx-auto">6</div>
-                    <p class="text-xs font-medium mt-1.5 text-slate-400">Docs</p>
                 </div>
             </div>
 
@@ -125,12 +130,12 @@ $basePath = getBasePath();
                     </div>
                 </div>
 
-                <!-- STEP 2: Identification -->
+                <!-- STEP 2: Identification & Documents -->
                 <div class="step-card hidden" id="step2">
                     <div class="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl p-5 border border-emerald-100/80 shadow-sm">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center text-lg"><i class="fas fa-id-card"></i></div>
-                            <div><h4 class="font-bold text-slate-900">Identification</h4><p class="text-xs text-slate-500">Government-issued ID and emergency contact</p></div>
+                            <div><h4 class="font-bold text-slate-900">Identification</h4><p class="text-xs text-slate-500">ID details and supporting documents</p></div>
                         </div>
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -151,11 +156,24 @@ $basePath = getBasePath();
                                     </div>
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1.5">Emergency Contact</label>
-                                <div class="relative">
-                                    <i class="fas fa-phone-alt absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                                    <input type="text" id="tenantEmergency" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all" placeholder="Name and phone number of emergency contact">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">ID Document</label>
+                                    <div class="upload-zone rounded-xl p-4 text-center cursor-pointer" onclick="document.getElementById('idFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-xl text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Click to upload ID scan</p>
+                                        <input type="file" id="idFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleIdUpload(this.files)">
+                                    </div>
+                                    <div id="idFileStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">KRA Pin Document</label>
+                                    <div class="upload-zone rounded-xl p-4 text-center cursor-pointer" onclick="document.getElementById('kraFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-xl text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Click to upload KRA pin</p>
+                                        <input type="file" id="kraFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleKraUpload(this.files)">
+                                    </div>
+                                    <div id="kraFileStatus" class="text-xs text-slate-500 mt-1"></div>
                                 </div>
                             </div>
                         </div>
@@ -195,6 +213,26 @@ $basePath = getBasePath();
                                         <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                                         <input type="email" id="nextOfKinEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 outline-none transition-all" placeholder="nextofkin@example.com">
                                     </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Next of Kin ID Document</label>
+                                    <div class="upload-zone rounded-xl p-3 text-center cursor-pointer" onclick="document.getElementById('kinIdFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-lg text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Upload ID</p>
+                                        <input type="file" id="kinIdFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleKinIdUpload(this.files)">
+                                    </div>
+                                    <div id="kinIdFileStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Next of Kin KRA Pin</label>
+                                    <div class="upload-zone rounded-xl p-3 text-center cursor-pointer" onclick="document.getElementById('kinKraFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-lg text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Upload KRA Pin</p>
+                                        <input type="file" id="kinKraFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleKinKraUpload(this.files)">
+                                    </div>
+                                    <div id="kinKraFileStatus" class="text-xs text-slate-500 mt-1"></div>
                                 </div>
                             </div>
                         </div>
@@ -296,52 +334,11 @@ $basePath = getBasePath();
                             </div>
                         </div>
                         <div class="flex justify-between mt-6 pt-4 border-t border-purple-100/70">
-                            <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
-                            <button type="button" onclick="nextStep()" class="px-6 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg shadow-purple-500/30 hover:shadow-purple-500/40 transition-all inline-flex items-center gap-2">Next <i class="fas fa-arrow-right text-sm"></i></button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- STEP 6: Documents & Review -->
-                <div class="step-card hidden" id="step6">
-                    <div class="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-xl p-5 border border-rose-100/80 shadow-sm">
-                        <div class="flex items-center gap-3 mb-5">
-                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 text-white flex items-center justify-center text-lg"><i class="fas fa-upload"></i></div>
-                            <div><h4 class="font-bold text-slate-900">Documents & Review</h4><p class="text-xs text-slate-500">Upload documents and confirm details</p></div>
-                        </div>
-                        <!-- Document Upload -->
-                        <div class="upload-zone rounded-xl p-6 text-center cursor-pointer mb-4" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-                            <div class="flex flex-col items-center gap-2">
-                                <div class="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center"><i class="fas fa-cloud-upload-alt text-2xl text-blue-400"></i></div>
-                                <p class="text-sm font-medium text-slate-700">Drop files here or click to upload</p>
-                                <p class="text-xs text-slate-400">ID, passport, lease agreement, receipts (PDF, JPG, PNG - Max 10MB)</p>
+                            <button type="button" id="deleteTenantBtn" onclick="deleteTenant()" class="hidden px-5 py-2.5 bg-red-600 text-white border border-red-700 rounded-xl font-medium hover:bg-red-700 transition-all inline-flex items-center gap-2"><i class="fas fa-trash text-sm"></i> Delete Tenant</button>
+                            <div class="flex gap-3 ml-auto">
+                                <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
+                                <button type="button" onclick="submitTenant()" class="px-8 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all inline-flex items-center gap-2" id="submitBtn"><i class="fas fa-check-circle text-sm"></i> <span id="submitBtnText">Register Tenant</span></button>
                             </div>
-                            <input type="file" id="fileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" multiple onchange="handleFileUpload(this.files)">
-                        </div>
-                        <div id="uploadedFiles" class="space-y-2 mb-4"></div>
-
-                        <!-- Summary Review -->
-                        <div class="bg-white/70 rounded-xl p-4 border border-rose-100/60">
-                            <h5 class="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2"><i class="fas fa-clipboard-list text-rose-500"></i>Summary</h5>
-                            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" id="summaryDetails">
-                                <div class="text-slate-500">Name:</div><div class="font-medium text-slate-900" id="sumName">-</div>
-                                <div class="text-slate-500">Email:</div><div class="font-medium text-slate-900" id="sumEmail">-</div>
-                                <div class="text-slate-500">Phone:</div><div class="font-medium text-slate-900" id="sumPhone">-</div>
-                                <div class="text-slate-500">ID:</div><div class="font-medium text-slate-900" id="sumId">-</div>
-                                <div class="text-slate-500">Unit:</div><div class="font-medium text-slate-900" id="sumUnit">-</div>
-                                <div class="text-slate-500">Next of Kin:</div><div class="font-medium text-slate-900" id="sumNextOfKin">-</div>
-                                <div class="text-slate-500">Kin Phone:</div><div class="font-medium text-slate-900" id="sumNextOfKinPhone">-</div>
-                                <div class="text-slate-500">Rent:</div><div class="font-medium text-slate-900" id="sumRent">KES 0</div>
-                                <div class="text-slate-500">Deposit:</div><div class="font-medium text-slate-900" id="sumDeposit">KES 0</div>
-                                <div class="text-slate-500">Lease:</div><div class="font-medium text-slate-900" id="sumLease">-</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex justify-between mt-4">
-                        <button type="button" id="deleteTenantBtn" onclick="deleteTenant()" class="hidden px-5 py-2.5 bg-red-600 text-white border border-red-700 rounded-xl font-medium hover:bg-red-700 transition-all inline-flex items-center gap-2"><i class="fas fa-trash text-sm"></i> Delete Tenant</button>
-                        <div class="flex gap-3 ml-auto">
-                            <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
-                            <button type="button" onclick="submitTenant()" class="px-8 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all inline-flex items-center gap-2" id="submitBtn"><i class="fas fa-check-circle text-sm"></i> <span id="submitBtnText">Register Tenant</span></button>
                         </div>
                     </div>
                 </div>
@@ -405,14 +402,14 @@ $basePath = getBasePath();
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
 
     <script>
-    // Calculate base path - navigate up from /frontend/pages/ to project root
-    let BASE = window.location.pathname;
-    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
-    if (frontendPagesIndex !== -1) {
-        BASE = BASE.substring(0, frontendPagesIndex);
-    } else {
-        BASE = BASE.replace(/\/[^\/]*$/, '');
-    }
+    // Use the server-rendered base path when available. Fallback to JS computation only if unavailable.
+    const RENDERED_BASE = <?= json_encode((string)($basePath ?? '')); ?>;
+    const BASE = RENDERED_BASE || (() => {
+        let base = window.location.pathname;
+        const idx = base.indexOf('/frontend/pages/');
+        if (idx !== -1) return base.substring(0, idx);
+        return base.replace(/\/[^\/]*$/, '');
+    })();
     const API = BASE + '/api';
     const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
@@ -421,22 +418,29 @@ $basePath = getBasePath();
         const res = await fetch(url, { ...options, headers });
         const text = await res.text();
         let data;
-        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        try { data = JSON.parse(text); } catch(e) { data = {}; }
         
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
                 window.location.href = 'signin';
             }
-            throw new Error(data.error || 'Request failed');
+            const errMsg = (data && data.error) ? data.error : text || 'Request failed';
+            throw new Error(errMsg);
         }
         return data;
     }
     let tenantsCache = [];
     let uploadedDocs = [];
     let currentStep = 1;
-    const totalSteps = 6;
+    const totalSteps = 5;
     let editingTenantId = null;
+
+    // tenant/kin document uploads
+    let tenantIdDoc = null;
+    let tenantKraDoc = null;
+    let kinIdDoc = null;
+    let kinKraDoc = null;
 
     // ==================== HELPERS ====================
     function escapeHtml(value) {
@@ -485,22 +489,28 @@ $basePath = getBasePath();
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
+    function goToStep(step) {
+        if (step < 1 || step > totalSteps) return;
+        if (step > currentStep && !validateStep(currentStep)) return;
+        showStep(step);
+    }
+
     function updateProgress(step) {
         for (let i = 1; i <= totalSteps; i++) {
             const el = document.querySelector(`.progress-step[data-step="${i}"]`);
             const circle = el.querySelector('.step-circle');
             const label = el.querySelector('p');
             if (i < step) {
-                el.className = 'progress-step completed text-center';
+                el.className = 'progress-step completed text-center cursor-pointer';
                 circle.innerHTML = '<i class="fas fa-check text-xs"></i>';
                 label.className = 'text-xs font-medium mt-1.5 text-emerald-600';
             } else if (i === step) {
-                el.className = 'progress-step active text-center';
+                el.className = 'progress-step active text-center cursor-pointer';
                 circle.textContent = i;
                 const colors = ['text-blue-600','text-emerald-600','text-amber-600','text-purple-600','text-rose-600'];
                 label.className = `text-xs font-medium mt-1.5 ${colors[i-1]}`;
             } else {
-                el.className = 'progress-step text-center';
+                el.className = 'progress-step text-center cursor-pointer';
                 circle.textContent = i;
                 label.className = 'text-xs font-medium mt-1.5 text-slate-400';
             }
@@ -555,8 +565,10 @@ $basePath = getBasePath();
 
     function nextStep() {
         if (!validateStep(currentStep)) return;
-        // Update summary when leaving step 5 (Finance)
-        if (currentStep === 5) updateSummary();
+        if (currentStep === 5) {
+            // Final step: submit via button, do not advance
+            return;
+        }
         showStep(currentStep + 1);
     }
 
@@ -692,97 +704,89 @@ $basePath = getBasePath();
         if (rent) document.getElementById('tenantRent').value = rent;
     });
 
-    // ==================== FILE UPLOAD ====================
-    async function handleFileUpload(files) {
-        for (const file of files) {
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            // Show uploading indicator
-            const container = document.getElementById('uploadedFiles');
-            const uploadId = 'upload-' + Date.now();
-            container.innerHTML += `<div id="${uploadId}" class="flex items-center gap-2 text-sm text-slate-500"><i class="fas fa-spinner fa-spin text-blue-400"></i> Uploading ${escapeHtml(file.name)}...</div>`;
-            
-            try {
-                const data = await apiRequest(`${API}/upload`, {
-                    method: 'POST',
-                    body: formData
-                });
-                document.getElementById(uploadId)?.remove();
-                uploadedDocs.push(data.file);
-                renderUploadedFiles();
-                toast(`${file.name} uploaded successfully`, 'success');
-            } catch(err) {
-                document.getElementById(uploadId)?.remove();
-                toast(err.message, 'error');
-            }
+    // ==================== FILE UPLOAD HELPERS ====================
+    async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const url = `${API}/upload`;
+        const authHeader = headers.Authorization ? { Authorization: headers.Authorization } : {};
+        const res = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: authHeader
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { data = {}; }
+        if (!res.ok) {
+            const errMsg = (data && data.error) ? data.error : text || 'Request failed';
+            throw new Error(errMsg);
+        }
+        return data;
+    }
+
+    async function handleIdUpload(files) {
+        const status = document.getElementById('idFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            tenantIdDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + tenantIdDoc.name;
+            toast('ID document uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
         }
     }
 
-    // Drag and drop support
-    const uploadZone = document.getElementById('uploadZone');
-    uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-    uploadZone.addEventListener('dragleave', () => { uploadZone.classList.remove('dragover'); });
-    uploadZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length) handleFileUpload(e.dataTransfer.files);
-    });
+    async function handleKraUpload(files) {
+        const status = document.getElementById('kraFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            tenantKraDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + tenantKraDoc.name;
+            toast('KRA document uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
+    async function handleKinIdUpload(files) {
+        const status = document.getElementById('kinIdFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            kinIdDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + kinIdDoc.name;
+            toast('Next of kin ID uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
+    async function handleKinKraUpload(files) {
+        const status = document.getElementById('kinKraFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            kinKraDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + kinKraDoc.name;
+            toast('Next of kin KRA uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
 
     function renderUploadedFiles() {
-        const container = document.getElementById('uploadedFiles');
-        // Clear current files display
-        container.innerHTML = '';
-        
-        if (uploadedDocs.length === 0) {
-            return;
-        }
-        
-        container.innerHTML = uploadedDocs.map((f, i) => `
-            <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-blue-100 shadow-sm">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <i class="fas ${f.type && f.type.includes('pdf') ? 'fa-file-pdf text-red-400' : 'fa-file-image text-blue-400'} text-lg"></i>
-                    <div class="min-w-0">
-                        <p class="text-sm font-medium text-slate-700 truncate">${escapeHtml(f.name)}</p>
-                        <p class="text-xs text-slate-400">${f.size ? (f.size/1024).toFixed(1) + ' KB' : ''}</p>
-                    </div>
-                </div>
-                <button type="button" onclick="removeFile(${i})" class="ml-2 p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"><i class="fas fa-times-circle"></i></button>
-            </div>
-        `).join('');
+        // No-op: docs tab removed; individual file statuses are shown per input
     }
 
     function removeFile(index) {
-        uploadedDocs.splice(index, 1);
-        renderUploadedFiles();
-        toast('File removed', 'info');
+        // No-op: docs tab removed
     }
 
-    // ==================== SUMMARY ====================
-    function updateSummary() {
-        document.getElementById('sumName').textContent = document.getElementById('tenantName').value || '-';
-        document.getElementById('sumEmail').textContent = document.getElementById('tenantEmail').value || '-';
-        document.getElementById('sumPhone').textContent = document.getElementById('tenantPhone').value || '-';
-        const idType = document.getElementById('tenantIdType').value;
-        const idNum = document.getElementById('tenantIdNumber').value;
-        document.getElementById('sumId').textContent = idNum ? `${idType}: ${idNum}` : '-';
-        
-        const houseSelect = document.getElementById('tenantHouse');
-        const selectedHouse = houseSelect.options[houseSelect.selectedIndex];
-        document.getElementById('sumUnit').textContent = selectedHouse && selectedHouse.value ? selectedHouse.text.split(' (KES')[0] : '-';
-        
-        document.getElementById('sumNextOfKin').textContent = document.getElementById('nextOfKinName').value || '-';
-        document.getElementById('sumNextOfKinPhone').textContent = document.getElementById('nextOfKinPhone').value || '-';
-        
-        const rent = parseFloat(document.getElementById('tenantRent').value) || 0;
-        const deposit = parseFloat(document.getElementById('tenantDeposit').value) || 0;
-        document.getElementById('sumRent').textContent = 'KES ' + rent.toLocaleString();
-        document.getElementById('sumDeposit').textContent = deposit ? 'KES ' + deposit.toLocaleString() : 'KES 0';
-        
-        const start = document.getElementById('tenantLeaseStart').value;
-        const end = document.getElementById('tenantLeaseEnd').value;
-        document.getElementById('sumLease').textContent = start ? (end ? `${start} to ${end}` : `${start} - Open`) : 'Not set';
-    }
+    // Summary UI removed; keeping function as harmless no-op in case it's referenced elsewhere
+    function updateSummary() {}
 
     // ==================== MODAL CONTROL ====================
     function openTenantModal() {
@@ -797,9 +801,16 @@ $basePath = getBasePath();
         // Reset form
         document.getElementById('tenantForm').reset();
         uploadedDocs = [];
-        renderUploadedFiles();
+        tenantIdDoc = null;
+        tenantKraDoc = null;
+        kinIdDoc = null;
+        kinKraDoc = null;
         document.getElementById('housePreview').classList.add('hidden');
         document.getElementById('tenantHouse').innerHTML = '<option value="">Select house...</option>';
+        document.getElementById('idFileStatus').textContent = '';
+        document.getElementById('kraFileStatus').textContent = '';
+        document.getElementById('kinIdFileStatus').textContent = '';
+        document.getElementById('kinKraFileStatus').textContent = '';
     }
     
     function closeTenantModal() {
@@ -829,7 +840,6 @@ $basePath = getBasePath();
         document.getElementById('tenantPhone').value = tenant.phone || '';
         document.getElementById('tenantIdType').value = tenant.id_type || 'National ID';
         document.getElementById('tenantIdNumber').value = tenant.id_number || '';
-        document.getElementById('tenantEmergency').value = tenant.emergency_contact || '';
         document.getElementById('nextOfKinName').value = tenant.next_of_kin_name || '';
         document.getElementById('nextOfKinPhone').value = tenant.next_of_kin_phone || '';
         document.getElementById('nextOfKinEmail').value = tenant.next_of_kin_email || '';
@@ -839,19 +849,25 @@ $basePath = getBasePath();
         document.getElementById('tenantDeposit').value = tenant.deposit || 0;
         document.getElementById('tenantBalance').value = tenant.balance || 0;
         
-        // Load documents if any
+        // Reset document uploads
+        tenantIdDoc = null;
+        tenantKraDoc = null;
+        kinIdDoc = null;
+        kinKraDoc = null;
+        uploadedDocs = [];
         if (tenant.documents) {
             try {
-                uploadedDocs = JSON.parse(tenant.documents);
-                renderUploadedFiles();
+                const docs = JSON.parse(tenant.documents);
+                if (Array.isArray(docs)) uploadedDocs = docs;
             } catch(e) {
                 uploadedDocs = [];
-                renderUploadedFiles();
             }
-        } else {
-            uploadedDocs = [];
-            renderUploadedFiles();
         }
+        renderUploadedFiles();
+        document.getElementById('idFileStatus').textContent = '';
+        document.getElementById('kraFileStatus').textContent = '';
+        document.getElementById('kinIdFileStatus').textContent = '';
+        document.getElementById('kinKraFileStatus').textContent = '';
         
         // Load properties first, then set house after a short delay
         document.getElementById('tenantModal').classList.remove('hidden');
@@ -894,7 +910,13 @@ $basePath = getBasePath();
             return;
         }
         
-        const data = {
+            const docs = [...uploadedDocs];
+            if (tenantIdDoc) docs.push(tenantIdDoc);
+            if (tenantKraDoc) docs.push(tenantKraDoc);
+            if (kinIdDoc) docs.push(kinIdDoc);
+            if (kinKraDoc) docs.push(kinKraDoc);
+
+            const data = {
             name: document.getElementById('tenantName').value.trim(),
             email: sanitizedEmail,
             phone: document.getElementById('tenantPhone').value.trim(),
@@ -903,7 +925,6 @@ $basePath = getBasePath();
             next_of_kin_name: document.getElementById('nextOfKinName').value.trim() || null,
             next_of_kin_phone: document.getElementById('nextOfKinPhone').value.trim() || null,
             next_of_kin_email: sanitizedKinEmail,
-            emergency_contact: document.getElementById('tenantEmergency').value.trim() || null,
             property_id: parseInt(document.getElementById('tenantProperty').value) || null,
             house_id: parseInt(houseSelect.value) || null,
             lease_start: document.getElementById('tenantLeaseStart').value || null,
@@ -911,7 +932,7 @@ $basePath = getBasePath();
             rent: parseFloat(document.getElementById('tenantRent').value) || 0,
             deposit: parseFloat(document.getElementById('tenantDeposit').value) || 0,
             balance: parseFloat(document.getElementById('tenantBalance').value) || 0,
-            documents: uploadedDocs.length ? JSON.stringify(uploadedDocs) : null,
+            documents: docs.length ? JSON.stringify(docs) : null,
         };
 
         // Final validation
