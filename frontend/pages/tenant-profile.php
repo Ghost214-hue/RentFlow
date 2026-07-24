@@ -12,7 +12,22 @@ require_once __DIR__ . '/../includes/base-path-fix.php';
 $basePath = getBasePath();
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'tenant';
-if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
+
+// Allow tenant (self), owner, or caretaker to access this page
+// If owner/caretaker, require tenant_id query param
+$viewTenantId = null;
+if ($role === 'tenant') {
+    // Tenant viewing their own profile
+} elseif ($role === 'owner' || $role === 'caretaker') {
+    $viewTenantId = isset($_GET['tenant_id']) ? (int) $_GET['tenant_id'] : null;
+    if (!$viewTenantId) {
+        header('Location: ' . $basePath . '/tenants');
+        exit;
+    }
+} else {
+    header('Location: ../public/signin.php');
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -20,7 +35,7 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Profile - RentaFlow</title>
-    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -35,7 +50,7 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
                 <!-- Profile Card -->
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6 mb-6">
                     <div class="flex items-center gap-4 mb-6">
-                        <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-2xl font-bold" id="userInitials">??</div>
+                        <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-2xl font-bold overflow-hidden border-2 border-white shadow-sm" id="userInitials">??</div>
                         <div>
                             <p class="font-medium text-slate-900 text-lg" id="userName">-</p>
                             <p class="text-sm text-slate-500" id="userEmail">-</p>
@@ -52,6 +67,24 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
                                 <input type="email" id="userEmailInput" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="your@email.com">
+                            </div>
+                        </div>
+
+                        <!-- Profile Picture Upload -->
+                        <div class="mt-4 pt-4 border-t border-slate-100" id="profilePicUploadSection">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Profile Picture</label>
+                            <div class="flex items-center gap-4">
+                                <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-slate-400 flex items-center justify-center text-2xl font-bold overflow-hidden border-2 border-dashed border-slate-200" id="profilePicPreview">
+                                    <span id="profilePicInitials">?</span>
+                                </div>
+                                <div class="flex-1">
+                                    <input type="file" id="profilePicInput" class="hidden" accept=".jpg,.jpeg,.png" onchange="handleProfilePicUpload(this.files)">
+                                    <button type="button" onclick="document.getElementById('profilePicInput').click()" class="px-4 py-2 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all inline-flex items-center gap-2">
+                                        <i class="fas fa-camera"></i>Choose Photo
+                                    </button>
+                                    <p class="text-xs text-slate-400 mt-1">JPG or PNG, max 2MB</p>
+                                    <div id="profilePicStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -128,7 +161,6 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
     if (frontendPagesIndex !== -1) {
         BASE = BASE.substring(0, frontendPagesIndex);
     } else {
-        // Fallback: remove last path segment
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
@@ -144,7 +176,7 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = 'signin';
+                window.location.href = `${BASE}/signin`;
             }
             throw new Error(data.error || 'Request failed');
         }
@@ -163,20 +195,104 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
 
     function initials(n) { return n.split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase(); }
 
+    async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const authHeader = headers.Authorization ? { Authorization: headers.Authorization } : {};
+        const res = await fetch(`${API}/upload`, {
+            method: 'POST',
+            body: formData,
+            headers: authHeader
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { data = {}; }
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+        return data;
+    }
+
+    async function handleProfilePicUpload(files) {
+        const status = document.getElementById('profilePicStatus');
+        const preview = document.getElementById('profilePicPreview');
+        const initialsEl = document.getElementById('profilePicInitials');
+        if (!files || !files[0]) return;
+
+        try {
+            status.textContent = 'Uploading...';
+            const result = await uploadFile(files[0]);
+            const fileData = result.file;
+            
+            // Update preview
+            preview.innerHTML = `<img src="${fileData.url}" class="w-full h-full object-cover" alt="Profile">`;
+            preview.classList.remove('bg-gradient-to-br', 'from-blue-50', 'to-blue-100', 'text-slate-400');
+            preview.classList.add('border-2', 'border-blue-200');
+            initialsEl.textContent = '';
+
+            // Store for saving
+            window.tempProfilePic = fileData;
+            status.textContent = 'Selected: ' + fileData.name;
+            toast('Profile picture ready to save', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
+    function setProfilePicture(url) {
+        // Update the main avatar in the profile header
+        const avatar = document.getElementById('userInitials');
+        const preview = document.getElementById('profilePicPreview');
+        const initialsEl = document.getElementById('profilePicInitials');
+
+        if (!url) {
+            // No picture: show initials in both avatar and preview
+            const fallbackText = '??';
+            avatar.textContent = fallbackText;
+            avatar.className = 'w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-2xl font-bold overflow-hidden border-2 border-white shadow-sm';
+
+            if (preview && initialsEl) {
+                preview.innerHTML = `<span id="profilePicInitials">${fallbackText}</span>`;
+                preview.className = 'w-20 h-20 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-slate-400 flex items-center justify-center text-2xl font-bold overflow-hidden border-2 border-dashed border-slate-200';
+                initialsEl.textContent = fallbackText;
+            }
+            return;
+        }
+
+        // Picture exists: show image in both avatar and preview
+        avatar.innerHTML = `<img src="${url}" class="w-full h-full object-cover" alt="Profile">`;
+        avatar.className = 'w-20 h-20 rounded-full overflow-hidden border-2 border-white shadow-sm';
+
+        if (preview) {
+            preview.innerHTML = `<img src="${url}" class="w-full h-full object-cover" alt="Profile">`;
+            preview.className = 'w-20 h-20 rounded-full overflow-hidden border-2 border-blue-200';
+            if (initialsEl) initialsEl.textContent = '';
+        }
+    }
+
     async function loadProfile() {
         try {
-            // Get profile from JWT
             const profileData = await apiRequest(`${API}/auth/me`);
             if (profileData.user) {
-                document.getElementById('userInitials').textContent = initials(profileData.user.name);
                 document.getElementById('userName').textContent = profileData.user.name;
                 document.getElementById('userEmail').value = profileData.user.email || '';
+                
+                // Set initials
+                const name = profileData.user.name || 'User';
+                const initialsText = initials(name);
+                document.getElementById('userInitials').textContent = initialsText;
+                document.getElementById('profilePicInitials').textContent = initialsText;
             }
 
-            // Get tenant info
+            // Determine which tenant to load: for owner/caretaker use viewTenantId, else self
+            <?php if ($viewTenantId): ?>
+            const tenantData = await apiRequest(`${API}/tenants/<?php echo (int) $viewTenantId; ?>`);
+            const me = tenantData.tenant || tenantData;
+            <?php else: ?>
             const tenantData = await apiRequest(`${API}/tenants`);
-            if (tenantData.tenants && tenantData.tenants.length > 0) {
-                const me = tenantData.tenants[0];
+            const me = (tenantData.tenants && tenantData.tenants.length > 0) ? tenantData.tenants[0] : null;
+            <?php endif; ?>
+
+            if (me) {
                 document.getElementById('userPhone').value = me.phone || '';
                 document.getElementById('userUnit').value = me.house_unit || '-';
                 document.getElementById('leaseProperty').value = me.property_name || '-';
@@ -187,10 +303,17 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
                 document.getElementById('kinName').value = me.next_of_kin_name || '-';
                 document.getElementById('kinPhone').value = me.next_of_kin_phone || '-';
                 document.getElementById('kinEmail').value = me.next_of_kin_email || '-';
+
+                // Sync profile picture between header avatar and upload preview
+                if (me.profile_picture) {
+                    setProfilePicture(me.profile_picture);
+                } else {
+                    setProfilePicture(null);
+                }
             }
         } catch(e) {
             console.error(e);
-            if (e.message.includes('401')) window.location.href = 'signin';
+            if (e.message.includes('401')) window.location.href = `${BASE}/signin`;
         }
     }
 
@@ -203,7 +326,6 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
             return;
         }
 
-        // Validate and sanitize email if provided
         let sanitizedEmail = null;
         if (email) {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -215,26 +337,39 @@ if ($role !== 'tenant') { header('Location: ../public/signin.php'); exit; }
         }
 
         try {
-            // Get tenant ID first
+            // Determine tenant ID
+            <?php if ($viewTenantId): ?>
+            const tenantId = <?php echo (int) $viewTenantId; ?>;
+            const updateData = {
+                phone: phone,
+                email: sanitizedEmail
+            };
+            <?php else: ?>
             const tenantData = await apiRequest(`${API}/tenants`);
-            
             if (!tenantData.tenants || tenantData.tenants.length === 0) {
                 toast('Tenant record not found', 'error');
                 return;
             }
-
             const tenantId = tenantData.tenants[0].id;
-            
-            // Update tenant phone and email
+            const updateData = {
+                phone: phone,
+                email: sanitizedEmail
+            };
+            <?php endif; ?>
+
+            // Include profile picture if uploaded
+            if (window.tempProfilePic && window.tempProfilePic.url) {
+                updateData.profile_picture = window.tempProfilePic.url;
+            }
+
             const result = await apiRequest(`${API}/tenants/${tenantId}`, {
                 method: 'PUT',
-                body: JSON.stringify({
-                    phone: phone,
-                    email: sanitizedEmail
-                })
+                body: JSON.stringify(updateData)
             });
             
             toast('Profile updated successfully!', 'success');
+            window.tempProfilePic = null;
+            document.getElementById('profilePicStatus').textContent = '';
             loadProfile(); // Reload to show updated data
         } catch(e) {
             console.error(e);

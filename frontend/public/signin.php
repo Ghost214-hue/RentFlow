@@ -1,11 +1,6 @@
 <?php
-// Dynamic base path - detects if app is in subdirectory
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
-// From /RentalFlow/frontend/public/signin.php, we need /RentalFlow as the base
-// Remove both "frontend/public" segments to get the application root
-if (strpos($basePath, '/frontend/public') !== false) {
-    $basePath = dirname(dirname($basePath));
-}
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 $csrfToken = '';
 // For internal navigation, use absolute paths with base
 $signinPath = $basePath . '/signin';
@@ -116,7 +111,7 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = 'api';
+    const API = '/api';
     const CSRF_TOKEN = '<?php echo htmlspecialchars($csrfToken); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');

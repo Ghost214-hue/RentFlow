@@ -1,18 +1,21 @@
 <?php
-// Inject cache-busting headers and dynamic base path into HTML <head>
-// Usage: include this file in every page's <head> section
+// Inject the HTML <base> tag so root-relative asset URLs resolve correctly
+// even when the app lives in a subfolder (e.g. /RentalFlow).
 
-// Compute base path (go up from pages/ or public/ directories to site root)
-$scriptDir = dirname($_SERVER['SCRIPT_NAME']);
-$basePath = rtrim(str_replace('\\', '/', $scriptDir), '/');
-
-// If we're in a subdirectory like /RentalFlow/pages or /RentalFlow/frontend/public,
-// $basePath already contains the correct /RentalFlow prefix
+// Prefer the shared base-path helper if available.
+$basePath = '/';
+if (file_exists(__DIR__ . '/base-path-fix.php')) {
+    require_once __DIR__ . '/base-path-fix.php';
+    if (function_exists('getBasePath')) {
+        $basePath = getBasePath();
+    }
+}
+if (!isset($basePath) || $basePath === '' || $basePath === '\\') {
+    $basePath = '/';
+}
+$basePath = rtrim(str_replace('\\', '/', (string)$basePath), '/');
+if ($basePath === '') {
+    $basePath = '/';
+}
 ?>
-<!-- base-path injected by head-inject.php -->
 <base href="<?php echo htmlspecialchars($basePath); ?>/">
-</parameter>
-<parameter>false</parameter>
-<parameter>false</parameter>
-<parameter>false</parameter>
-</write_to_file>

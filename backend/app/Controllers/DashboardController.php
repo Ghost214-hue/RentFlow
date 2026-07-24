@@ -112,6 +112,21 @@ class DashboardController
             $propertyFilter ? array_merge([$ownerId], $propertyParams) : [$ownerId]
         );
 
+        // Maintenance stats
+        $maintenanceWhere = "WHERE m.owner_id = ?";
+        $maintenanceParams = [$ownerId];
+        if ($propertyFilter) {
+            $maintenanceWhere .= " AND (m.property_id IN (" . implode(',', array_fill(0, count($propertyParams), '?')) . ") OR m.property_id IS NULL)";
+            $maintenanceParams = array_merge($maintenanceParams, $propertyParams);
+        }
+        $maintenanceStats = $db->fetchOne(
+            "SELECT COUNT(*) as total, SUM(CASE WHEN m.status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN m.status = 'in-progress' THEN 1 ELSE 0 END) as in_progress,
+                    SUM(m.cost) as total_cost
+             FROM maintenance_records m $maintenanceWhere",
+            $maintenanceParams
+        );
+
         Router::jsonResponse([
             'properties' => [
                 'total'       => (int) ($props['total'] ?? 0),
@@ -128,6 +143,12 @@ class DashboardController
             'tenants'      => (int) ($tenants['total'] ?? 0),
             'recentPayments' => $recentPayments,
             'activeComplaints' => $activeComplaints,
+            'maintenance' => [
+                'total'      => (int) ($maintenanceStats['total'] ?? 0),
+                'pending'    => (int) ($maintenanceStats['pending'] ?? 0),
+                'in_progress' => (int) ($maintenanceStats['in_progress'] ?? 0),
+                'total_cost' => (float) ($maintenanceStats['total_cost'] ?? 0),
+            ],
         ]);
     }
 }

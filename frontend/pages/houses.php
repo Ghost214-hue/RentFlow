@@ -119,8 +119,15 @@ $basePath = getBasePath();
                         <td class="px-6 py-4 text-sm text-slate-500">${h.type}</td>
                         <td class="px-6 py-4">${h.tenant_name ? `<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${h.tenant_name.split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm text-slate-700">${h.tenant_name}</span></div>` : '<span class="text-sm text-slate-400">-</span>'}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">KES ${(h.rent||0).toLocaleString()}</td>
-                        <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${h.status==='occupied'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500'}">${h.status}</span></td>
-                        <td class="px-6 py-4"><?php if ($role === 'owner'): ?><button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><i class="fas fa-edit"></i></button><?php endif; ?></td>
+                        <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${h.status==='occupied'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}">${h.status}</span></td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-1">
+                                <a href="<?= $basePath; ?>/house-details?id=${h.id}" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View house details"><i class="fas fa-eye"></i></a>
+                                <?php if ($role === 'owner'): ?>
+                                <button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Edit house"><i class="fas fa-edit"></i></button>
+                                <?php endif; ?>
+                            </div>
+                        </td>
                     </tr>
                 `).join('');
             } else {

@@ -40,8 +40,9 @@ spl_autoload_register(function ($class) {
     }
 });
 
-// Load environment
-App\Core\Env::load(__DIR__ . '/../../.env');
+// Load environment (.env.production first, then .env)
+$envPath = file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env';
+App\Core\Env::load($envPath);
 
 use App\Core\Router;
 use App\Core\Database;
@@ -82,6 +83,7 @@ $router->delete('/properties/{id}', ['App\Controllers\PropertyController', 'dest
 $router->get('/houses', ['App\Controllers\HouseController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
 $router->get('/houses/available', ['App\Controllers\HouseController', 'available'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/houses', ['App\Controllers\HouseController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/houses/{id}', ['App\Controllers\HouseController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/houses/{id}', ['App\Controllers\HouseController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/houses/{id}', ['App\Controllers\HouseController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
 
@@ -93,13 +95,15 @@ $router->post('/tenants', ['App\Controllers\TenantController', 'store'], [functi
 $router->put('/tenants/{id}', ['App\Controllers\TenantController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/tenants/{id}/vacate', ['App\Controllers\TenantController', 'vacate'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/tenants/{id}/terminate', ['App\Controllers\TenantController', 'terminate'], [function() { AuthMiddleware::authenticate(); }]);
-$router->post('/tenants/request-termination', ['App\Controllers\TenantController', 'requestTermination'], [function() { AuthMiddleware::authenticate(); }]);
-$router->get('/tenancy-terminations', ['App\Controllers\TenantController', 'listTerminations'], [function() { AuthMiddleware::authenticate(); }]);
+ $router->post('/tenants/request-termination', ['App\Controllers\TenantController', 'requestTermination'], [function() { AuthMiddleware::authenticate(); }]);
+ $router->post('/tenants/consent-data-protection', ['App\Controllers\TenantController', 'consentDataProtection'], [function() { AuthMiddleware::authenticate(); }]);
+ $router->get('/tenancy-terminations', ['App\Controllers\TenantController', 'listTerminations'], [function() { AuthMiddleware::authenticate(); }]);
 $router->delete('/tenants/{id}', ['App\Controllers\TenantController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== PAYMENT ROUTES ====================
 $router->get('/payments', ['App\Controllers\PaymentController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/payments', ['App\Controllers\PaymentController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/payments/tenant-finance/{id}', ['App\Controllers\PaymentController', 'tenantFinance'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/payments/{id}/confirm', ['App\Controllers\PaymentController', 'confirm'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== BILL ROUTES ====================
@@ -113,6 +117,8 @@ $router->get('/complaints', ['App\Controllers\ComplaintController', 'index'], [f
 $router->get('/complaints/{id}', ['App\Controllers\ComplaintController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
 $router->post('/complaints', ['App\Controllers\ComplaintController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
 $router->put('/complaints/{id}', ['App\Controllers\ComplaintController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/complaints/{id}/approve', ['App\Controllers\ComplaintController', 'approve'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/complaints/{id}/reject', ['App\Controllers\ComplaintController', 'reject'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== COMMUNICATION ROUTES ====================
 $router->get('/communications', ['App\Controllers\CommunicationController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
@@ -210,8 +216,29 @@ $router->get('/bills/{id}/pdf', function(array $params) {
     </body></html>';
 });
 
+// ==================== MAINTENANCE ROUTES ====================
+$router->get('/maintenance', ['App\Controllers\MaintenanceController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/maintenance/stats', ['App\Controllers\MaintenanceController', 'stats'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/maintenance/{id}', ['App\Controllers\MaintenanceController', 'show'], [function() { AuthMiddleware::authenticate(); }]);
+$router->post('/maintenance', ['App\Controllers\MaintenanceController', 'store'], [function() { AuthMiddleware::authenticate(); }]);
+$router->put('/maintenance/{id}', ['App\Controllers\MaintenanceController', 'update'], [function() { AuthMiddleware::authenticate(); }]);
+$router->delete('/maintenance/{id}', ['App\Controllers\MaintenanceController', 'destroy'], [function() { AuthMiddleware::authenticate(); }]);
+
 // ==================== REPORT ROUTES ====================
 $router->get('/reports', ['App\Controllers\ReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+
+// Report module routes
+$router->get('/reports/tenancy-vacancy', ['App\Controllers\TenancyVacancyReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/reports/tenancy-vacancy/summary', ['App\Controllers\TenancyVacancyReportController', 'summary'], [function() { AuthMiddleware::authenticate(); }]);
+
+$router->get('/reports/financial', ['App\Controllers\FinancialReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/reports/financial/summary', ['App\Controllers\FinancialReportController', 'summary'], [function() { AuthMiddleware::authenticate(); }]);
+
+$router->get('/reports/bills', ['App\Controllers\BillsReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/reports/bills/summary', ['App\Controllers\BillsReportController', 'summary'], [function() { AuthMiddleware::authenticate(); }]);
+
+$router->get('/reports/complaints', ['App\Controllers\ComplaintsReportController', 'index'], [function() { AuthMiddleware::authenticate(); }]);
+$router->get('/reports/complaints/summary', ['App\Controllers\ComplaintsReportController', 'summary'], [function() { AuthMiddleware::authenticate(); }]);
 
 // ==================== UPLOAD ROUTES ====================
 $router->post('/upload', function() {
@@ -278,11 +305,15 @@ $router->post('/upload', function() {
     // Generate file hash for integrity verification
     $fileHash = hash_file('sha256', $uploadDir . $filename);
     
+    // Build public URL for the uploaded file, always include base path for subdirectory installs
+    $basePath = rtrim((string) ($_ENV['BASE_PATH'] ?? getenv('BASE_PATH') ?? ''), '/');
+    $publicUrl = ($basePath === '' ? '' : $basePath) . '/uploads/' . $filename;
+
     Router::jsonResponse([
         'message' => 'File uploaded',
         'file' => [
             'name' => basename($file['name']),
-            'url' => '/uploads/' . $filename,
+            'url' => $publicUrl,
             'size' => $file['size'],
             'type' => $detectedType,
             'hash' => $fileHash,

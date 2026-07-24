@@ -12,6 +12,8 @@ if (($userRole ?? 'tenant') !== 'tenant') {
     header('Location: ' . $basePath . '/signin');
     exit;
 }
+
+$hasConsent = !empty($user['data_protection_consent_at']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -25,6 +27,69 @@ if (($userRole ?? 'tenant') !== 'tenant') {
     <script src="<?php echo $basePath; ?>/js/base-path.js?v=2"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
+
+<!-- Data Protection Consent Modal -->
+<?php if (!$hasConsent): ?>
+<div id="consentModal" class="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-8">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-shield-alt text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-900 mb-2">Data Protection Consent</h2>
+            <p class="text-sm text-slate-500">We value your privacy and are committed to protecting your personal data</p>
+        </div>
+        
+        <div class="space-y-3 mb-6">
+            <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Why We Collect Your Data</h3>
+            <p class="text-sm text-slate-600 leading-relaxed">To provide you with the best rental experience, we collect and process the following personal information:</p>
+            <ul class="space-y-2 text-sm text-slate-600 ml-4">
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Identity & Contact:</strong> Name, phone number, email, and ID details for account verification and communication</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Payment Processing:</strong> Payment history, balances, and billing information for rent and service charges</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Property Management:</strong> Unit assignments, lease terms, maintenance requests, and service improvements to manage your tenancy</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Documents:</strong> Signed lease agreements, ID copies, proof of income, references, and supporting paperwork to verify eligibility, comply with legal requirements, prevent fraud, and improve service delivery based on your tenancy history</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Communication:</strong> Sending important notices, reminders, and updates about your tenancy</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Service Improvement:</strong> Analyzing trends and feedback to enhance property management services, response times, and overall tenant satisfaction</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
+            <p class="text-xs text-slate-600 leading-relaxed">
+                <i class="fas fa-lock text-blue-600 mr-1"></i>
+                <strong>Your Data is Safe:</strong> We use industry-standard security measures to protect your information. Your data will never be shared with third parties without your explicit consent, except where required by law.
+            </p>
+        </div>
+
+                <div class="flex gap-3">
+            <button onclick="declineConsent()" class="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-all">
+                Cancel
+            </button>
+            <button onclick="acceptConsent()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg">
+                I Agree
+            </button>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
     <div class="flex-1 flex flex-col min-h-screen">
         <?php include __DIR__ . '/../public/components/header.php'; ?>
@@ -422,8 +487,39 @@ if (($userRole ?? 'tenant') !== 'tenant') {
         return text.split(/\s+/).map(s => s[0]).join('').substring(0, 2).toUpperCase();
     }
 
+    async function acceptConsent() {
+        try {
+            await apiRequest(`${API}/tenants/consent-data-protection`, {
+                method: 'POST'
+            });
+            
+            // Persist consent locally so it never reappears this session
+            try { localStorage.setItem('rf_consent', '1'); } catch (e) {}
+            
+            toast('Thank you for accepting. Welcome to your dashboard!', 'success');
+            setTimeout(() => location.reload(), 600);
+        } catch (e) {
+            console.error(e);
+            toast('Failed to record consent. Please try again.', 'error');
+        }
+    }
+
+    function declineConsent() {
+        // Clear auth cookie and redirect to login
+        document.cookie = 'rf_token=; path=/; max-age=0';
+        window.location.href = '<?php echo $basePath; ?>/signin';
+    }
+
     loadTenantDashboard();
     loadEmergencyContacts();
+
+    // If consent was previously accepted in this browser, hide the modal immediately
+    try {
+        if (localStorage.getItem('rf_consent') === '1') {
+            const modal = document.getElementById('consentModal');
+            if (modal) modal.style.display = 'none';
+        }
+    } catch (e) {}
     </script>
 </body>
 </html>

@@ -168,6 +168,7 @@ class PaymentController
         
         // Send payment confirmation email to tenant and next of kin when owner records
         $emailSent = false;
+        $nokEmailSent = false;
         if (!$isTenantSelfPay) {
             try {
                 $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
@@ -194,15 +195,45 @@ class PaymentController
                         ? (getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost') . "/api/bills/{$bill['id']}/invoice?token={$invoiceToken}"
                         : null;
                     
+                    // Include arrears/rent info in payment data for email
+                    $house = $db->fetchOne("SELECT rent FROM houses WHERE id = ?", [$tenant['house_id']]);
+                    $payment['monthly_rent'] = $house ? $house['rent'] : 0;
+                    $payment['balance_after'] = $newBalance ?? 0;
+                    
                     $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+                    
+                    // Send notification to next of kin if they have an email
+                    if (!empty($tenant['next_of_kin_email'])) {
+                        try {
+                            $emailService->sendTemplate(
+                                'Payment Receipt - ' . $tenant['name'],
+                                $ownerId,
+                                $tenant['next_of_kin_email'],
+                                $tenant['next_of_kin_name'] ?? 'Next of Kin',
+                                [
+                                    'tenant_name' => $tenant['name'],
+                                    'amount' => number_format((float)$payment['amount'], 2),
+                                    'balance' => number_format($newBalance ?? 0, 2),
+                                    'property' => '',
+                                    'unit' => '',
+                                    'receipt' => $payment['receipt'],
+                                    'date' => $payment['date'],
+                                ]
+                            );
+                            $nokEmailSent = true;
+                        } catch (\Exception $nokErr) {
+                            error_log('Failed to send next of kin payment email: ' . $nokErr->getMessage());
+                        }
+                    }
                 }
             } catch (\Exception $e) {
                 error_log('Failed to send payment confirmation email: ' . $e->getMessage());
             }
         }
         
-        $emailMsg = $emailSent ? '& confirmation email sent' : ($isTenantSelfPay ? '' : '& notification saved');
-        Router::jsonResponse(['message' => "Payment recorded{$emailMsg}", 'payment' => $payment, 'email_sent' => $emailSent], 201);
+        $emailMsg = $emailSent ? ' & confirmation email sent' : '';
+        $nokMsg = $nokEmailSent ? ' & next of kin notified' : '';
+        Router::jsonResponse(['message' => "Payment recorded{$emailMsg}{$nokMsg}", 'payment' => $payment, 'email_sent' => $emailSent, 'nok_email_sent' => $nokEmailSent], 201);
     }
 
     public function show(array $params = []): void
@@ -227,8 +258,46 @@ class PaymentController
     }
 
     /**
-     * PUT /api/payments/{id}/confirm - Tenant confirms they received/reviewed a payment record
+     * GET /payments/tenant-finance/{id} - Return tenant financial info for payment form
      */
+    public function tenantFinance(array $params): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $tenantId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        $tenant = $db->fetchOne(
+            "SELECT t.id, t.name, t.balance, h.rent, h.unit, p.name as property_name
+             FROM tenants t
+             LEFT JOIN houses h ON t.house_id = h.id
+             LEFT JOIN properties p ON t.property_id = p.id
+             WHERE t.id = ? AND t.owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+
+        if (!$tenant) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        // Calculate arrears (positive balance = owed)
+        $balance = (float) ($tenant['balance'] ?? 0);
+        $rent = (float) ($tenant['rent'] ?? 0);
+        $arrears = max(0, $balance);
+        $overpaid = $balance < 0 ? abs($balance) : 0;
+
+        Router::jsonResponse([
+            'tenant' => $tenant,
+            'monthly_rent' => $rent,
+            'balance' => $balance,
+            'arrears' => $arrears,
+            'overpaid' => $overpaid,
+            'suggested_payment' => $balance > 0 ? $balance : $rent,
+        ]);
+    }
+
+    /**
+     * PUT /api/payments/{id}/confirm - Tenant confirms they received/reviewed a payment record
+      */
     public function confirm(array $params): void
     {
         $ownerId = Router::getAuthUserId();

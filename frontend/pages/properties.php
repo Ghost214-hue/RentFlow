@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 require_once __DIR__ . '/../includes/auth.php';
 $currentRole = $role ?? 'owner';
 $token = $token ?? '';
@@ -9,7 +11,7 @@ $token = $token ?? '';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Properties | RentaFlow Kenya</title>
-    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
       .pay-group { display: none; }

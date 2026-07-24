@@ -6,13 +6,16 @@
 
 // Attempt to load .env if JWT_SECRET is not already present.
 if (empty(getenv('JWT_SECRET')) && empty($_ENV['JWT_SECRET'])) {
-    $envPath = __DIR__ . '/../.env';
-    if (file_exists($envPath)) {
-        if (!class_exists('\App\Core\Env')) {
-            require_once __DIR__ . '/../app/Core/Env.php';
-        }
-        if (class_exists('\App\Core\Env')) {
-            \App\Core\Env::load($envPath);
+    $envFiles = [__DIR__ . '/../../.env.production', __DIR__ . '/../../.env'];
+    foreach ($envFiles as $envPath) {
+        if (file_exists($envPath)) {
+            if (!class_exists('\App\Core\Env')) {
+                require_once __DIR__ . '/../app/Core/Env.php';
+            }
+            if (class_exists('\App\Core\Env')) {
+                \App\Core\Env::load($envPath);
+            }
+            break;
         }
     }
 }

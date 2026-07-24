@@ -1,18 +1,12 @@
 <?php
-// Force no-cache BEFORE any output
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
-
-// Dynamic base path - same logic as base-path.js
-// From URL /RentalFlow/dashboard, get base = /RentalFlow
-$requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$basePath = preg_replace('#/[^/]+/?$#', '', $requestUri);
-$basePath = rtrim($basePath, '/');
-
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 if (($userRole ?? 'owner') === 'tenant') {
-    header('Location: ' . $basePath . '/tenant-dashboard');
+    header('Location: ' . htmlspecialchars($basePath) . '/tenant-dashboard');
     exit;
 }
 ?>
@@ -173,6 +167,7 @@ if (($userRole ?? 'owner') === 'tenant') {
         const vacant = totalUnits - occupied;
         const occupancyRate = totalUnits ? Math.round((occupied / totalUnits) * 100) : 0;
 
+        const maint = dashData.maintenance || {};
         document.getElementById('statsGrid').innerHTML = `
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                 <div class="flex items-center justify-between mb-3">
@@ -205,6 +200,14 @@ if (($userRole ?? 'owner') === 'tenant') {
                 </div>
                 <p class="text-2xl font-bold text-slate-900">${fmtCurrency(dashData.outstanding||0)}</p>
                 <p class="text-sm text-slate-500">Outstanding Rent</p>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-emerald-100/50 p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center"><i class="fas fa-tools text-emerald-600"></i></div>
+                    <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">${(maint.pending||0) + (maint.in_progress||0)} active</span>
+                </div>
+                <p class="text-2xl font-bold text-slate-900">${maint.total || 0}</p>
+                <p class="text-sm text-slate-500">Maintenance (${fmtCurrency(maint.total_cost||0)})</p>
             </div>`;
 
         document.getElementById('chartsRow').style.display = 'grid';

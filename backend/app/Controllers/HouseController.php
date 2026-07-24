@@ -178,8 +178,85 @@ class HouseController
     }
 
     /**
-     * DELETE /api/houses/{id}
+     * GET /api/houses/{id}
      */
+    public function show(array $params): void
+    {
+        Router::requireOwnerOrCaretaker();
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $houseId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        $house = $db->fetchOne(
+            "SELECT h.*, p.name as property_name
+             FROM houses h
+             LEFT JOIN properties p ON h.property_id = p.id
+             WHERE h.id = ? AND h.owner_id = ?",
+            [$houseId, $ownerId]
+        );
+
+        if (!$house) {
+            Router::jsonResponse(['error' => 'House not found'], 404);
+        }
+
+        // Current tenant
+        $currentTenant = null;
+        if (!empty($house['tenant_id'])) {
+            $currentTenant = $db->fetchOne(
+                "SELECT id, name, email, phone, lease_start, lease_end, status
+                 FROM tenants
+                 WHERE id = ? AND owner_id = ?",
+                [$house['tenant_id'], $ownerId]
+            );
+        }
+
+        // Past tenants who lived in this house
+        $pastTenants = $db->fetchAll(
+            "SELECT t.name, t.email, t.phone, t.lease_start, t.lease_end, t.status, p.name as property_name, h.unit
+             FROM tenants t
+             LEFT JOIN houses h ON t.house_id = h.id
+             LEFT JOIN properties p ON t.property_id = p.id
+             WHERE t.owner_id = ? AND t.house_id = ?
+             ORDER BY t.lease_start DESC",
+            [$ownerId, $houseId]
+        );
+
+        // Revenue from payments for this house
+        $revenue = $db->fetchAll(
+            "SELECT amount, date, method, status FROM payments WHERE house_id = ? AND owner_id = ? ORDER BY date DESC",
+            [$houseId, $ownerId]
+        );
+
+        // All maintenance records for this house (even if tenant has vacated)
+        $maintenance = $db->fetchAll(
+            "SELECT m.*, t.name as tenant_name
+             FROM maintenance_records m
+             LEFT JOIN tenants t ON m.tenant_id = t.id
+             WHERE m.house_id = ? AND m.owner_id = ?
+             ORDER BY m.created_at DESC",
+            [$houseId, $ownerId]
+        );
+
+        // Total maintenance cost for this house
+        $damageCost = $db->fetchOne(
+            "SELECT SUM(cost) as total FROM maintenance_records WHERE house_id = ? AND owner_id = ? AND category = 'Damage'",
+            [$houseId, $ownerId]
+        );
+
+        Router::jsonResponse([
+            'house' => $house,
+            'current_tenant' => $currentTenant,
+            'past_tenants' => $pastTenants,
+            'payments' => $revenue,
+            'maintenance' => $maintenance,
+            'damage_cost' => (float)($damageCost['total'] ?? 0),
+        ]);
+    }
+
+    /**
+     * DELETE /api/houses/{id}
+      */
     public function destroy(array $params): void
     {
         Router::requireOwner();

@@ -5,9 +5,11 @@
  * DELETE THIS FILE AFTER RUNNING MIGRATIONS!
  */
 
-// Security: Only allow localhost access (change to your IP if needed)
+// Security: Allow localhost browser access OR CLI execution
+$isCli = PHP_SAPI === 'cli';
 $allowedIps = ['127.0.0.1', '::1', 'YOUR_IP_ADDRESS'];
-if (!in_array($_SERVER['REMOTE_ADDR'], $allowedIps)) {
+$remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+if (!$isCli && !in_array($remoteAddr, $allowedIps)) {
     die('Access denied. This script can only be run from the server.');
 }
 
@@ -16,20 +18,27 @@ require_once __DIR__ . '/app/Core/Env.php';
 App\Core\Env::load(__DIR__ . '/../.env');
 
 // Verify database credentials
-if (empty($_ENV['DB_PASS']) || $_ENV['DB_PASS'] === 'CHANGE_THIS_TO_YOUR_DATABASE_PASSWORD') {
+$appEnv = $_ENV['APP_ENV'] ?? 'production';
+if (($appEnv !== 'local' && $appEnv !== 'development') && (empty($_ENV['DB_PASS']) || $_ENV['DB_PASS'] === 'CHANGE_THIS_TO_YOUR_DATABASE_PASSWORD')) {
     die('ERROR: Please update DB_PASS in .env file with your actual database password before running migrations.');
 }
 
-echo '<!DOCTYPE html><html><head><title>Database Migration</title>';
-echo '<style>body{font-family:monospace;padding:20px;background:#1e1e1e;color:#d4d4d4;}';
-echo '.success{color:#4ec9b0;}.error{color:#f48771;}.info{color:#9cdcfe;}</style>';
-echo '</head><body>';
-echo '<h1>RentaFlow Database Migration</h1>';
-echo '<pre>';
+if ($isCli) {
+    echo "=== RentaFlow Database Migration ===\n\n";
+} else {
+    echo '<!DOCTYPE html><html><head><title>Database Migration</title>';
+    echo '<style>body{font-family:monospace;padding:20px;background:#1e1e1e;color:#d4d4d4;}';
+    echo '.success{color:#4ec9b0;}.error{color:#f48771;}.info{color:#9cdcfe;}</style>';
+    echo '</head><body>';
+    echo '<h1>RentaFlow Database Migration</h1>';
+    echo '<pre>';
+}
 
 try {
+    // Force TCP connection to avoid XAMPP socket path issues
+    $_ENV['DB_HOST'] = '127.0.0.1';
     require_once __DIR__ . '/app/Core/Database.php';
-    $db = Database::getInstance();
+    $db = \App\Core\Database::getInstance();
     $conn = $db->getConnection();
     
     echo '<span class="info">✓ Database connection successful</span><br><br>';
@@ -92,6 +101,11 @@ try {
     echo $e->getTraceAsString();
 }
 
-echo '</pre>';
-echo '</body></html>';
+if ($isCli) {
+    echo "\n=== MIGRATION COMPLETE ===\n";
+    echo "IMPORTANT: DELETE THIS FILE (run_migration.php) NOW FOR SECURITY!\n";
+} else {
+    echo '</pre>';
+    echo '</body></html>';
+}
 ?>

@@ -488,7 +488,7 @@ class EmailService
         
         $templateName = $replyText ? 'Complaint Reply' : 'Complaint Update';
         
-        return $this->queueTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
+        return $this->sendTemplate($templateName, $ownerId, $tenant['email'], $tenant['name'], $variables);
     }
     
     /**

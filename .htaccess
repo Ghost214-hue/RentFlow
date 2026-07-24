@@ -39,6 +39,9 @@ DirectoryIndex frontend/public/index.php
     RewriteRule ^(?:[^/]+/)?images/(.*)$ frontend/public/images/$1 [QSA,L]
     RewriteRule ^(?:[^/]+/)?favicon\.ico$ frontend/public/favicon.ico [L]
 
+    # --- Uploaded files ---
+    RewriteRule ^(?:[^/]+/)?uploads/(.*)$ backend/public/uploads/$1 [QSA,L]
+
     # --- Auth pages ---
     RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
     RewriteRule ^signup$ frontend/public/signup.php [QSA,L]

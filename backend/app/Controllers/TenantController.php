@@ -110,8 +110,22 @@ class TenantController
             [$tenantId, $ownerId]
         );
 
+        // Get maintenance records (damages, repairs) for this tenant - persisted even after vacate
+        $maintenance = $db->fetchAll(
+            "SELECT * FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+            [$tenantId, $ownerId]
+        );
+
+        // Calculate total damage cost
+        $damageTotal = $db->fetchOne(
+            "SELECT SUM(cost) as total FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? AND category = 'Damage'",
+            [$tenantId, $ownerId]
+        );
+
         $tenant['payments'] = $payments;
         $tenant['complaints'] = $complaints;
+        $tenant['maintenance'] = $maintenance;
+        $tenant['damage_total'] = (float)($damageTotal['total'] ?? 0);
         $tenant['documents'] = json_decode($tenant['documents'] ?? '[]', true) ?: [];
         Router::jsonResponse(['tenant' => $tenant]);
     }
@@ -182,6 +196,8 @@ class TenantController
                 'phone'                => $data['phone'],
                 'id_number'            => $data['id_number'] !== '' ? $data['id_number'] : null,
                 'id_type'              => $data['id_type'] ?? 'National ID',
+                'id_kra_pin'           => $data['id_kra_pin'] ?? null,
+                'profile_picture'      => $data['profile_picture'] ?? null,
                 'next_of_kin_name'     => $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null,
                 'next_of_kin_phone'    => $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null,
                 'next_of_kin_email'    => $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null,
@@ -307,7 +323,7 @@ class TenantController
          // Define allowed fields based on role
          if ($role === 'owner') {
              // Owners can update all fields
-             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
+             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'id_kra_pin', 'profile_picture', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
                       'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
          } else {
              // Tenants can only update phone and email
@@ -486,6 +502,34 @@ class TenantController
         try {
             $db->beginTransaction();
 
+            // Process damages if provided - create maintenance records
+            $damages = $data['damages'] ?? [];
+            $damageTotal = 0;
+            if (is_array($damages) && !empty($damages)) {
+                foreach ($damages as $damage) {
+                    if (empty($damage['title'])) continue;
+                    $damageCost = !empty($damage['cost']) ? (float)$damage['cost'] : 0;
+                    $damageTotal += $damageCost;
+                    $db->insert('maintenance_records', [
+                        'owner_id'       => $ownerId,
+                        'property_id'    => $tenant['property_id'],
+                        'house_id'       => $tenant['house_id'],
+                        'tenant_id'      => $tenantId,
+                        'title'          => $damage['title'],
+                        'description'    => $damage['description'] ?? '',
+                        'category'       => 'Damage',
+                        'priority'       => $damage['priority'] ?? 'medium',
+                        'status'         => 'completed',
+                        'cost'           => $damageCost,
+                        'vendor_name'    => $damage['vendor_name'] ?? '',
+                        'notes'          => 'Recorded during tenancy termination',
+                        'completed_date' => date('Y-m-d'),
+                        'recipient_type' => 'individual',
+                        'recipient_ids'  => json_encode([$tenantId]),
+                    ]);
+                }
+            }
+
             // Release the house if occupied
             if (!empty($tenant['house_id'])) {
                 $db->update('houses', [
@@ -494,12 +538,17 @@ class TenantController
                 ], 'id = ? AND owner_id = ?', [$tenant['house_id'], $ownerId]);
             }
 
-            // Update tenant record
+            // Update tenant record - clear sensitive/personal data but keep house/property for history
+            // Preserve house_id and property_id so past tenants can be tracked per house
             $db->update('tenants', [
-                'house_id' => null,
-                'property_id' => null,
                 'lease_end' => $effectiveDate,
                 'status' => 'terminated',
+                'documents' => null,
+                'profile_picture' => null,
+                'password' => null,
+                'next_of_kin_name' => null,
+                'next_of_kin_phone' => null,
+                'next_of_kin_email' => null,
             ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
 
             // Update property occupied count
@@ -651,10 +700,9 @@ class TenantController
                 'tenant_id' => null,
             ], 'id = ? AND owner_id = ?', [$tenant['house_id'], $ownerId]);
 
-            // Clear tenant house and property references and mark as terminated
+            // Mark tenant as terminated and set lease end date
+            // Preserve house_id and property_id so past tenants remain traceable per unit
             $db->update('tenants', [
-                'house_id' => null,
-                'property_id' => null,
                 'lease_end' => $effectiveDate,
                 'status' => 'terminated',
             ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
@@ -778,10 +826,39 @@ class TenantController
     }
 
     /**
-     * DELETE /api/tenants/{id}
-     */
-    public function destroy(array $params): void
-    {
+      * POST /api/tenants/consent-data-protection
+      * Record tenant consent to data collection/protection
+      */
+     public function consentDataProtection(): void
+     {
+         $ownerId = Router::getAuthUserId();
+         $role = Router::getAuthRole();
+         $db = Database::getInstance();
+
+         if ($role !== 'tenant') {
+             Router::jsonResponse(['error' => 'Only tenants can do this'], 403);
+         }
+
+         $tenantId = Router::getAuthTenantId();
+         if (!$tenantId) {
+             Router::jsonResponse(['error' => 'Tenant not found'], 404);
+         }
+
+         $db->update(
+             'tenants',
+             ['data_protection_consent_at' => date('Y-m-d H:i:s')],
+             'id = ? AND owner_id = ?',
+             [$tenantId, $ownerId]
+         );
+
+         Router::jsonResponse(['message' => 'Consent recorded']);
+     }
+
+     /**
+      * DELETE /api/tenants/{id}
+      */
+     public function destroy(array $params): void
+     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $tenantId = (int) ($params['id'] ?? 0);

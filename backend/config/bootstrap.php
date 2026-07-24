@@ -1,12 +1,15 @@
 <?php
 
-/**
- * Application Configuration Loader
- * This file loads environment-specific configurations
- * 
- * Usage in bootstrap file:
- * require_once __DIR__ . '/config/bootstrap.php';
- */
+
+// Load environment variables FIRST using custom Env loader (supports all value types)
+require_once __DIR__ . '/../app/Core/Env.php';
+$envFiles = [dirname(__DIR__, 2) . '/.env.production', dirname(__DIR__, 2) . '/.env'];
+foreach ($envFiles as $envPath) {
+    if (file_exists($envPath)) {
+        \App\Core\Env::load($envPath);
+        break;
+    }
+}
 
 // Detect environment
 $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'development';
@@ -47,12 +50,6 @@ spl_autoload_register(function ($class) {
     $file = $baseDir . str_replace('\\', '/', substr($class, $len)) . '.php';
     if (file_exists($file)) require $file;
 });
-
-// Load environment variables using custom Env loader (supports all value types)
-if (file_exists(BASE_PATH . '/.env')) {
-    require_once __DIR__ . '/../app/Core/Env.php';
-    \App\Core\Env::load(BASE_PATH . '/.env');
-}
 
 // Application meta
 const APP_NAME = 'RentaFlow';

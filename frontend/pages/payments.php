@@ -1,3 +1,4 @@
+:
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
@@ -10,6 +11,8 @@ $user = $jwt->decode($token);
 if (!$user) { header('Location: ../public/signin.php'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -17,7 +20,7 @@ $role = $user['role'] ?? 'owner';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payments - RentaFlow</title>
-    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -53,6 +56,25 @@ $role = $user['role'] ?? 'owner';
             <div class="flex items-center justify-between mb-4"><h3 class="text-lg font-bold text-slate-900">Record Payment</h3><button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button></div>
             <form id="paymentForm" class="space-y-4">
                 <div><label class="block text-sm font-medium text-slate-700 mb-1">Tenant</label><select id="payTenant" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option value="">Select tenant...</option></select></div>
+                <!-- Tenant Financial Info (auto-fetched) -->
+                <div id="tenantFinanceInfo" class="hidden bg-blue-50/50 rounded-xl p-4 border border-blue-100/70 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-500">Monthly Rent</span>
+                        <span class="text-sm font-semibold text-slate-900" id="infoMonthlyRent">KES 0</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-500">Current Arrears</span>
+                        <span class="text-sm font-semibold text-red-600" id="infoArrears">KES 0</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-500">Overpaid</span>
+                        <span class="text-sm font-semibold text-emerald-600" id="infoOverpaid">KES 0</span>
+                    </div>
+                    <div class="flex items-center justify-between pt-1 border-t border-blue-100/70">
+                        <span class="text-xs font-medium text-slate-500">Suggested Payment</span>
+                        <span class="text-sm font-bold text-blue-600" id="infoSuggested">KES 0</span>
+                    </div>
+                </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select id="payType" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option>Rent</option><option>Water</option><option>Electricity</option></select></div>
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Amount (KES)</label><input type="number" id="payAmount" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="0.00" required></div>
@@ -171,8 +193,36 @@ $role = $user['role'] ?? 'owner';
         }
     }
 
-    function openModal() { document.getElementById('modal').classList.remove('hidden'); }
+    function openModal() { 
+        document.getElementById('modal').classList.remove('hidden'); 
+        document.getElementById('tenantFinanceInfo').classList.add('hidden');
+        document.getElementById('payAmount').value = '';
+        document.getElementById('payMethod').value = 'M-Pesa';
+        document.getElementById('payType').value = 'Rent';
+        document.getElementById('payTenant').value = '';
+    }
     function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+    // When tenant changes, fetch their financial info
+    document.getElementById('payTenant').addEventListener('change', async function() {
+        const tenantId = this.value;
+        const infoBox = document.getElementById('tenantFinanceInfo');
+        if (!tenantId) {
+            infoBox.classList.add('hidden');
+            return;
+        }
+        try {
+            const data = await apiRequest(`${API}/payments/tenant-finance/${tenantId}`);
+            document.getElementById('infoMonthlyRent').textContent = 'KES ' + (data.monthly_rent || 0).toLocaleString();
+            document.getElementById('infoArrears').textContent = 'KES ' + (data.arrears || 0).toLocaleString();
+            document.getElementById('infoOverpaid').textContent = 'KES ' + (data.overpaid || 0).toLocaleString();
+            document.getElementById('infoSuggested').textContent = 'KES ' + (data.suggested_payment || 0).toLocaleString();
+            infoBox.classList.remove('hidden');
+        } catch(e) {
+            console.error('Failed to load tenant finance info:', e);
+            infoBox.classList.add('hidden');
+        }
+    });
 
     document.getElementById('paymentForm').addEventListener('submit', async (e) => {
         e.preventDefault();

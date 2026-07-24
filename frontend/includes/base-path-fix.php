@@ -3,8 +3,12 @@
 // Priority: environment config > computed from actual script location
 
 // Load .env from project root if not already loaded
-if (!isset($_ENV['BASE_PATH']) && !getenv('BASE_PATH') && file_exists(__DIR__ . '/../../.env')) {
-    foreach (file(__DIR__ . '/../../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+// Prioritize .env.production first, then .env
+$envFiles = [__DIR__ . '/../../.env.production', __DIR__ . '/../../.env'];
+if (!isset($_ENV['BASE_PATH']) && !getenv('BASE_PATH')) {
+    foreach ($envFiles as $envPath) {
+        if (file_exists($envPath)) {
+            foreach (file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         $line = trim($line);
         if ($line === '' || str_starts_with($line, '#')) continue;
         $parts = explode('=', $line, 2);
@@ -15,28 +19,29 @@ if (!isset($_ENV['BASE_PATH']) && !getenv('BASE_PATH') && file_exists(__DIR__ . 
             (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
             $value = substr($value, 1, -1);
         }
-        if (!isset($_ENV[$key])) $_ENV[$key] = $value;
-        if (!getenv($key)) putenv("{$key}={$value}");
+                if (!isset($_ENV[$key])) $_ENV[$key] = $value;
+                if (!getenv($key)) putenv("{$key}={$value}");
+            }
+            break;
+        }
     }
 }
 
 $override = ($_ENV['BASE_PATH'] ?? getenv('BASE_PATH'));
 if ($override !== null && $override !== '') {
     $basePath = rtrim((string) $override, '/');
-    if ($basePath === '') $basePath = '/';
 } else {
     $script = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
     if (strpos($script, '/frontend/pages') !== false || strpos($script, '/frontend/public') !== false) {
-        // /RentalFlow/frontend/public -> go up 3 levels to /RentalFlow
-        // /RentalFlow/frontend/pages -> go up 2 levels to /RentalFlow
-        $levels = strpos($script, '/frontend/public') !== false ? 3 : 2;
+        // From /RentalFlow/frontend/public go up 2 levels to /RentalFlow
+        $levels = 2;
         $base = $script;
         for ($i = 0; $i < $levels; $i++) {
             $base = dirname($base);
         }
-        $basePath = $base === '' || $base === '/' ? '/' : $base;
+        $basePath = ($base === '' || $base === '/') ? '' : $base;
     } else {
-        $basePath = $script === '' ? '/' : $script;
+        $basePath = $script === '' ? '' : $script;
     }
 }
 

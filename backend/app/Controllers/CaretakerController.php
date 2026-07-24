@@ -134,8 +134,8 @@ class CaretakerController
             'assigned_properties'  => $propertyIds ? implode(',', $propertyIds) : null,
         ]);
         
-        // Fetch created caretaker
-        $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+        // Fetch created caretaker (include id_number for welcome email)
+        $caretaker = $db->fetchOne("SELECT id, name, email, phone, id_number, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
         
         // Send welcome email to caretaker (non-blocking, fire-and-forget)
         $emailSent = false;
@@ -168,7 +168,7 @@ class CaretakerController
         }
 
         $updateData = [];
-        foreach (['name', 'email', 'phone', 'assigned_properties'] as $field) {
+        foreach (['name', 'email', 'phone', 'id_number', 'assigned_properties'] as $field) {
             if (isset($data[$field])) {
                 $updateData[$field] = $data[$field];
             }
@@ -212,7 +212,7 @@ class CaretakerController
             $db->update('caretakers', $updateData, 'id = ?', [$caretakerId]);
         }
 
-        $caretaker = $db->fetchOne("SELECT id, name, email, phone, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
+        $caretaker = $db->fetchOne("SELECT id, name, email, phone, id_number, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
         Router::jsonResponse(['message' => 'Caretaker updated', 'caretaker' => $caretaker]);
     }
 

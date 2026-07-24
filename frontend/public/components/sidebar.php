@@ -14,6 +14,7 @@ $ownerNav = [
     [$basePath . '/caretakers','fa-user-shield','Caretakers',''],
     [$basePath . '/payments','fa-money-bill-wave','Payments',''],
     [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
+    [$basePath . '/maintenance','fa-tools','Maintenance',''],
     [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
     [$basePath . '/documents','fa-file-alt','Rules',''],
     [$basePath . '/reports','fa-chart-pie','Reports',''],
@@ -26,6 +27,7 @@ $caretakerNav = [
     [$basePath . '/tenants','fa-users','Tenants',''],
     [$basePath . '/payments','fa-money-bill-wave','Payments',''],
     [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
+    [$basePath . '/maintenance','fa-tools','Maintenance',''],
     [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
     [$basePath . '/documents','fa-file-alt','Rules',''],
 ];

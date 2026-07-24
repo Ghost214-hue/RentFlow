@@ -8,6 +8,8 @@ use App\Core\Database;
 use App\Core\Router;
 use App\Middleware\AuthMiddleware;
 use App\Core\Pagination;
+use App\Services\EmailService;
+use App\Core\JWT;
 
 class BillController
 {
@@ -26,7 +28,7 @@ class BillController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON b.tenant_id = t.id
+             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
              WHERE b.owner_id = ? AND b.month = ?";
         $queryParams = [$ownerId, $month];
 
@@ -96,9 +98,20 @@ class BillController
         $data = Router::getRequestBody();
         $db = Database::getInstance();
 
-        $month = $data['month'] ?? date('Y-m');
+        $currentMonth = date('Y-m');
+        $month = $data['month'] ?? $currentMonth;
         $dueDate = $data['due_date'] ?? date('Y-m-05');
         $propertyId = isset($data['property_id']) ? (int) $data['property_id'] : 0;
+
+        // Lock generation to current month only (no past or future months)
+        if ($month !== $currentMonth) {
+            Router::jsonResponse(['error' => 'Bills can only be generated for the current month (' . $currentMonth . '). Please use the current month.'], 400);
+        }
+
+        // Only allow generation on or after the 25th of the month
+        if ((int)date('d') < 25) {
+            Router::jsonResponse(['error' => 'Bill generation is only allowed on or after the 25th of the month. Please wait until the 25th.'], 400);
+        }
 
         // Build query based on role
         $sql = "SELECT h.id, h.rent, h.water_meter, h.elec_meter, h.unit, p.name as property_name, t.id as tenant_id, t.name as tenant_name, t.balance
@@ -191,11 +204,79 @@ class BillController
             }
         }
 
+        // Send bill notification emails to each tenant
+        $emailSent = 0;
+        $emailFailed = 0;
+        $emailService = new EmailService();
+        
+        foreach ($houses as $house) {
+            if (!empty($house['tenant_name']) && !empty($house['tenant_id'])) {
+                $tenant = $db->fetchOne(
+                    "SELECT id, name, email, next_of_kin_email, next_of_kin_name, house_id, property_id FROM tenants WHERE id = ? AND owner_id = ?",
+                    [$house['tenant_id'], $ownerId]
+                );
+                
+                if ($tenant && !empty($tenant['email'])) {
+                    // Calculate total bill amount for this tenant
+                    $tenantBills = $db->fetchAll(
+                        "SELECT type, total FROM bills WHERE house_id = ? AND month = ? AND owner_id = ?",
+                        [$house['id'], $month, $ownerId]
+                    );
+                    
+                    $totalBill = array_sum(array_column($tenantBills, 'total'));
+                    
+                    // Generate invoice token
+                    $jwt = new JWT();
+                    $invoiceToken = $jwt->encode([
+                        'owner_id' => $ownerId,
+                        'actor_id' => $tenant['id'],
+                        'role' => 'tenant',
+                        'tenant_id' => $tenant['id']
+                    ]);
+                    
+                    $appUrl = getenv('APP_URL') ?: ($_ENV['APP_URL'] ?? 'http://localhost/RentalFlow');
+                    $invoiceUrl = $appUrl . "/api/bills/{$tenantBills[0]['id']}/invoice?token={$invoiceToken}";
+                    
+                    $variables = [
+                        'tenant' => $tenant['name'],
+                        'amount' => number_format($totalBill, 2),
+                        'month' => date('F Y', strtotime($month . '-01')),
+                        'property' => $house['property_name'] ?? '',
+                        'house' => $house['unit'] ?? '',
+                        'balance' => number_format($totalBill, 2),
+                        'date' => date('Y-m-d'),
+                        'invoice_url' => $invoiceUrl,
+                    ];
+                    
+                    try {
+                        $sent = $emailService->sendTemplate('Billing Notification', $ownerId, $tenant['email'], $tenant['name'], $variables);
+                        if ($sent) $emailSent++; else $emailFailed++;
+                    } catch (\Exception $e) {
+                        error_log('Failed to send bill email to ' . $tenant['email'] . ': ' . $e->getMessage());
+                        $emailFailed++;
+                    }
+                    
+                    // Also send to next of kin
+                    if (!empty($tenant['next_of_kin_email'])) {
+                        try {
+                            $nokVariables = array_merge($variables, ['recipient_name' => $tenant['next_of_kin_name'] ?? 'Next of Kin']);
+                            $nokSent = $emailService->sendTemplate('Billing Notification', $ownerId, $tenant['next_of_kin_email'], $tenant['next_of_kin_name'] ?? 'Next of Kin', $nokVariables);
+                            if ($nokSent) $emailSent++;
+                        } catch (\Exception $e) {
+                            error_log('Failed to send bill email to next of kin: ' . $e->getMessage());
+                        }
+                    }
+                }
+            }
+        }
+
         Router::jsonResponse([
-            'message' => "Generated {$generated} bills for {$month}",
+            'message' => "Generated {$generated} bills for {$month}. Emails sent to {$emailSent} recipients.",
             'count'   => $generated,
             'month'   => $month,
             'summary' => $summary,
+            'emails_sent' => $emailSent,
+            'emails_failed' => $emailFailed,
         ]);
     }
 

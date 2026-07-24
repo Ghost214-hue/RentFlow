@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-$basePath = rtrim((string)($basePath ?? ''), '/');
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 $tenantId = (int) ($_GET['id'] ?? 0);
 if ($tenantId <= 0) {
     header('Location: ' . $basePath . '/tenants');
@@ -13,8 +14,8 @@ if ($tenantId <= 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tenant Details - RentaFlow</title>
-    <base href="<?php echo $basePath; ?>/">
-    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
+    <base href="<?php echo htmlspecialchars($basePath); ?>/">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -48,7 +49,7 @@ if ($tenantId <= 0) {
                     <!-- Profile Overview -->
                     <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
                         <div class="flex items-center gap-4 mb-6">
-                            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-2xl font-bold" id="detailInitials">??</div>
+                            <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-2xl font-bold overflow-hidden" id="detailInitials">??</div>
                             <div>
                                 <p class="font-medium text-slate-900 text-xl" id="detailName">-</p>
                                 <p class="text-sm text-slate-500" id="detailEmail">-</p>
@@ -163,6 +164,14 @@ if ($tenantId <= 0) {
                         </div>
                     </div>
 
+                    <!-- Maintenance & Damages -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
+                        <h3 class="font-semibold text-slate-900 mb-4"><i class="fas fa-tools mr-2 text-amber-600"></i>Maintenance & Damages <span id="damageTotalBadge" class="hidden ml-2 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700"></span></h3>
+                        <div class="space-y-3" id="maintenanceList">
+                            <div class="py-4 text-center text-slate-400">Loading maintenance records...</div>
+                        </div>
+                    </div>
+
                     <!-- Documents -->
                     <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
                         <h3 class="font-semibold text-slate-900 mb-4"><i class="fas fa-folder-open mr-2 text-emerald-600"></i>Documents</h3>
@@ -179,7 +188,17 @@ if ($tenantId <= 0) {
 
     <script>
     const API = '<?php echo $basePath; ?>/api';
+    const BASE_PATH = '<?php echo $basePath; ?>';
     const tenantId = <?php echo $tenantId; ?>;
+
+    function normalizeUrl(url) {
+        if (!url) return '#';
+        if (url.startsWith('http://') || url.startsWith('https://')) return url;
+        const base = String(BASE_PATH || '').trim();
+        const path = String(url).trim();
+        if (path.startsWith('/')) return base + path;
+        return base + '/' + path;
+    }
     const token = localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
@@ -228,7 +247,12 @@ if ($tenantId <= 0) {
             }
 
             // Populate overview
-            document.getElementById('detailInitials').textContent = initials(tenant.name);
+            const initialsEl = document.getElementById('detailInitials');
+            if (tenant.profile_picture) {
+                initialsEl.innerHTML = `<img src="${normalizeUrl(tenant.profile_picture)}" class="w-full h-full object-cover" alt="Profile">`;
+            } else {
+                initialsEl.textContent = initials(tenant.name);
+            }
             document.getElementById('detailName').textContent = tenant.name || '-';
             document.getElementById('detailEmail').textContent = tenant.email || '-';
             document.getElementById('detailPhone').textContent = tenant.phone || '-';
@@ -252,14 +276,16 @@ if ($tenantId <= 0) {
             
             const idDocEl = document.getElementById('detailIdDoc');
             if (idDoc) {
-                idDocEl.innerHTML = `<a href="${idDoc.url}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-external-link-alt mr-1"></i>${escapeHtml(idDoc.name)}</a>`;
+                const idDocUrl = normalizeUrl(idDoc.url);
+                idDocEl.innerHTML = `<a href="${idDocUrl}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-external-link-alt mr-1"></i>${escapeHtml(idDoc.name)}</a>`;
             } else {
                 idDocEl.textContent = 'No ID document uploaded';
             }
 
             const kraDocEl = document.getElementById('detailKraDoc');
             if (kraDoc) {
-                kraDocEl.innerHTML = `<a href="${kraDoc.url}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-external-link-alt mr-1"></i>${escapeHtml(kraDoc.name)}</a>`;
+                const kraDocUrl = normalizeUrl(kraDoc.url);
+                kraDocEl.innerHTML = `<a href="${kraDocUrl}" target="_blank" class="text-blue-600 hover:underline"><i class="fas fa-external-link-alt mr-1"></i>${escapeHtml(kraDoc.name)}</a>`;
             } else {
                 kraDocEl.textContent = 'No KRA document uploaded';
             }
@@ -307,11 +333,49 @@ if ($tenantId <= 0) {
                 complaintsList.innerHTML = '<div class="py-4 text-center text-slate-400">No complaints recorded</div>';
             }
 
+            // Maintenance & Damages
+            const maintenance = tenant.maintenance || [];
+            const maintenanceList = document.getElementById('maintenanceList');
+            const damageTotal = tenant.damage_total || 0;
+            if (maintenance.length) {
+                maintenanceList.innerHTML = maintenance.map(m => {
+                    const statusClass = m.status==='completed'?'bg-emerald-100 text-emerald-700':m.status==='in-progress'?'bg-blue-100 text-blue-700':'bg-amber-100 text-amber-700';
+                    const costDisplay = parseFloat(m.cost||0) > 0 ? 'KES ' + parseFloat(m.cost).toLocaleString('en-KE',{minimumFractionDigits:2}) : '<span class="text-slate-400">No cost</span>';
+                    return `
+                    <div class="flex items-start gap-3 p-3 rounded-xl bg-amber-50/50 border border-amber-100/50">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0"><i class="fas fa-tools text-xs"></i></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-0.5">
+                                <p class="text-sm font-medium text-slate-900 truncate">${escapeHtml(m.title || 'Maintenance')}</p>
+                                <span class="text-xs text-slate-400">${formatDate(m.created_at)}</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mb-1">${escapeHtml(m.description || '')} ${m.category ? '• ' + escapeHtml(m.category) : ''}</p>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded text-xs font-medium ${statusClass}">${escapeHtml(m.status || 'pending')}</span>
+                                <span class="text-xs font-semibold text-slate-700">${costDisplay}</span>
+                                ${m.vendor_name ? '<span class="text-xs text-slate-400"><i class="fas fa-user-cog mr-1"></i>' + escapeHtml(m.vendor_name) + '</span>' : ''}
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } else {
+                maintenanceList.innerHTML = '<div class="py-4 text-center text-slate-400">No maintenance records recorded</div>';
+            }
+            
+            // Show damage total badge if applicable
+            if (damageTotal > 0) {
+                const badge = document.getElementById('damageTotalBadge');
+                badge.textContent = 'KES ' + damageTotal.toLocaleString('en-KE', {minimumFractionDigits: 2});
+                badge.classList.remove('hidden');
+            }
+
             // Documents
             const tenantDocs = tenant.documents || [];
             const docsList = document.getElementById('documentsList');
             if (tenantDocs.length) {
-                docsList.innerHTML = tenantDocs.map(d => `
+                docsList.innerHTML = tenantDocs.map(d => {
+                    const docUrl = normalizeUrl(d.url);
+                    return `
                     <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><i class="fas fa-file-alt"></i></div>
@@ -320,9 +384,10 @@ if ($tenantId <= 0) {
                                 <p class="text-xs text-slate-400">${escapeHtml(d.type || 'File')}</p>
                             </div>
                         </div>
-                        <a href="${d.url}" target="_blank" class="px-4 py-2 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">View</a>
+                        <a href="${docUrl}" target="_blank" class="px-4 py-2 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">Open</a>
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             } else {
                 docsList.innerHTML = '<div class="py-4 text-center text-slate-400">No documents uploaded</div>';
             }

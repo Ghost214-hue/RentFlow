@@ -29,7 +29,7 @@ if (!isset($user, $role, $token)) {
         <main class="flex-1 overflow-y-auto p-4 lg:p-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div><h1 class="text-2xl font-bold text-slate-900">Tenants</h1><p class="text-slate-500 mt-1">Manage your tenants</p></div>
-                <?php if ($role === 'owner'): ?>
+                <?php if ($role === 'owner' || $role === 'caretaker'): ?>
                 <button onclick="openTenantModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>Add Tenant</button>
                 <?php endif; ?>
             </div>
@@ -100,6 +100,18 @@ if (!isset($user, $role, $token)) {
                             <div><h4 class="font-bold text-slate-900">Personal Information</h4><p class="text-xs text-slate-500">Basic contact details of the tenant</p></div>
                         </div>
                         <div class="space-y-4">
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-slate-400 flex items-center justify-center text-2xl font-bold overflow-hidden" id="profilePreview"><span id="profileInitials">?</span></div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Profile Picture</label>
+                                    <div class="upload-zone rounded-xl p-3 text-center cursor-pointer" onclick="document.getElementById('profilePicInput').click()">
+                                        <i class="fas fa-camera text-lg text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Click to upload photo</p>
+                                        <input type="file" id="profilePicInput" class="hidden" accept=".jpg,.jpeg,.png" onchange="handleProfilePicUpload(this.files)">
+                                    </div>
+                                    <div id="profilePicStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
+                            </div>
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1.5">Full Name <span class="text-red-400">*</span></label>
                                 <div class="relative">
@@ -155,6 +167,14 @@ if (!isset($user, $role, $token)) {
                                         <input type="text" id="tenantIdNumber" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all" placeholder="ID/Passport number" required>
                                     </div>
                                 </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1.5">KRA PIN</label>
+                                <div class="relative">
+                                    <i class="fas fa-hashtag absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                    <input type="text" id="tenantKraPin" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all" placeholder="e.g. A123456789B">
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1">Enter the tenant's KRA PIN manually. You can also upload the KRA document below.</p>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
@@ -348,7 +368,7 @@ if (!isset($user, $role, $token)) {
 
     <!-- TERMINATE TENANCY MODAL -->
     <div id="terminateModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeTerminateModal()">
-        <div class="rf-modal-panel p-5 sm:p-6 lg:p-8" onclick="event.stopPropagation()">
+        <div class="rf-modal-panel p-5 sm:p-6 lg:p-8 max-w-2xl" onclick="event.stopPropagation()">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-lg font-bold text-slate-900">Terminate Tenancy</h3>
                 <button onclick="closeTerminateModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
@@ -357,12 +377,26 @@ if (!isset($user, $role, $token)) {
                 <input type="hidden" id="terminateTenantId">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-1.5">Reason for Termination</label>
-                    <textarea id="terminateReason" rows="3" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm" placeholder="Optional reason"></textarea>
+                    <textarea id="terminateReason" rows="2" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm" placeholder="Optional reason"></textarea>
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-1.5">Effective Date</label>
                     <input type="date" id="terminateDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm">
                 </div>
+
+                <!-- Damages Section -->
+                <div class="border-t border-red-100 pt-4 mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-sm font-semibold text-slate-700"><i class="fas fa-tools mr-1 text-amber-600"></i>Damages & Costs</h4>
+                        <button type="button" onclick="addDamageRow()" class="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all"><i class="fas fa-plus mr-1"></i>Add Damage</button>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-2">Record any damages found during inspection and their repair costs.</p>
+                    <div id="damagesContainer">
+                        <!-- Damage rows will be added here -->
+                    </div>
+                    <div id="damagesTotal" class="hidden text-sm font-semibold text-slate-700 mt-2 pt-2 border-t border-slate-100">Total Damage Cost: KES <span id="damageCostTotal">0.00</span></div>
+                </div>
+
                 <p class="text-xs text-red-500 mb-4">This will make the house vacant immediately. This action cannot be undone.</p>
                 <div class="flex gap-3">
                     <button type="button" onclick="closeTerminateModal()" class="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
@@ -436,11 +470,12 @@ if (!isset($user, $role, $token)) {
     const totalSteps = 5;
     let editingTenantId = null;
 
-    // tenant/kin document uploads
+    // tenant/kin/profile document uploads
     let tenantIdDoc = null;
     let tenantKraDoc = null;
     let kinIdDoc = null;
     let kinKraDoc = null;
+    let profilePicDoc = null;
 
     // ==================== HELPERS ====================
     function escapeHtml(value) {
@@ -588,7 +623,7 @@ if (!isset($user, $role, $token)) {
             if (data.tenants && data.tenants.length) {
                 tbody.innerHTML = data.tenants.map(t => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
-                        <td class="px-6 py-4"><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${escapeHtml(initials(t.name))}</div><div><p class="text-sm font-medium text-slate-900">${escapeHtml(t.name || 'N/A')}</p><p class="text-xs text-slate-400">${escapeHtml(t.email || '')}</p></div></div></td>
+                        <td class="px-6 py-4"><a href="<?php echo $basePath; ?>/tenant-details?id=${Number(t.id)||0}" class="flex items-center gap-2 text-inherit hover:text-inherit"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold overflow-hidden">${t.profile_picture ? '<img src="' + escapeHtml(t.profile_picture) + '" class="w-full h-full object-cover" alt="">' : escapeHtml(initials(t.name))}</div><div><p class="text-sm font-medium text-slate-900">${escapeHtml(t.name || 'N/A')}</p><p class="text-xs text-slate-400">${escapeHtml(t.email || '')}</p></div></a></td>
                         <td class="px-6 py-4 text-sm text-slate-600">${escapeHtml(t.property_name || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">${escapeHtml(t.house_unit || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(t.phone || 'N/A')}</td>
@@ -596,9 +631,10 @@ if (!isset($user, $role, $token)) {
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(formatDate(t.lease_end))}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center gap-2">
-                                <button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View tenant details"><i class="fas fa-eye"></i></button>
+                                <a href="<?php echo $basePath; ?>/tenant-details?id=${Number(t.id)||0}" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors inline-flex items-center justify-center" aria-label="View tenant details"><i class="fas fa-eye"></i></a>
+                                <button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Edit tenant"><i class="fas fa-pen"></i></button>
                                 ${t.status === 'pending_termination' ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Pending</span>` : ''}
-                                <?php if ($role === 'owner' || $role === 'caretaker'): ?>
+                                <?php if ($role === 'owner'): ?>
                                 ${t.status !== 'terminated' && t.status !== 'pending_termination' ? `<button onclick="openTerminateModal(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-red-600 transition-colors" aria-label="Terminate tenancy"><i class="fas fa-door-open"></i></button>` : ''}
                                 ${t.status === 'pending_termination' ? `<button onclick="openApproveTerminationModal(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Approve termination"><i class="fas fa-check"></i></button>` : ''}
                                 <?php endif; ?>
@@ -777,6 +813,22 @@ if (!isset($user, $role, $token)) {
         }
     }
 
+    async function handleProfilePicUpload(files) {
+        const status = document.getElementById('profilePicStatus');
+        const preview = document.getElementById('profilePreview');
+        try {
+            status.textContent = 'Uploading...';
+            profilePicDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + profilePicDoc.name;
+            preview.innerHTML = `<img src="${profilePicDoc.url}" class="w-full h-full object-cover" alt="Profile">`;
+            preview.classList.add('bg-white');
+            toast('Profile picture uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
     function renderUploadedFiles() {
         // No-op: docs tab removed; individual file statuses are shown per input
     }
@@ -922,6 +974,8 @@ if (!isset($user, $role, $token)) {
             phone: document.getElementById('tenantPhone').value.trim(),
             id_type: document.getElementById('tenantIdType').value,
             id_number: document.getElementById('tenantIdNumber').value.trim(),
+            id_kra_pin: document.getElementById('tenantKraPin').value.trim() || null,
+            profile_picture: profilePicDoc ? profilePicDoc.url : null,
             next_of_kin_name: document.getElementById('nextOfKinName').value.trim() || null,
             next_of_kin_phone: document.getElementById('nextOfKinPhone').value.trim() || null,
             next_of_kin_email: sanitizedKinEmail,
@@ -992,8 +1046,58 @@ if (!isset($user, $role, $token)) {
         }
     }
 
+    // ==================== DAMAGE ROW HELPERS ====================
+    let damageRowCount = 0;
+
+    function addDamageRow() {
+        damageRowCount++;
+        const container = document.getElementById('damagesContainer');
+        const div = document.createElement('div');
+        div.className = 'damage-row grid grid-cols-1 sm:grid-cols-5 gap-2 p-3 rounded-lg border border-amber-100 bg-amber-50/30 mb-2';
+        div.id = 'damageRow_' + damageRowCount;
+        div.innerHTML = `
+            <div class="sm:col-span-2"><input type="text" class="damage-title w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Damage title*"></div>
+            <div class="sm:col-span-1"><input type="text" class="damage-desc w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Description"></div>
+            <div class="sm:col-span-1"><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">KES</span><input type="number" class="damage-cost w-full pl-10 pr-2 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Cost" min="0" step="0.01" oninput="updateDamageTotal()"></div></div>
+            <div class="sm:col-span-1 flex items-center gap-1"><input type="text" class="damage-vendor w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Vendor"><button type="button" onclick="this.closest('.damage-row').remove(); updateDamageTotal();" class="text-red-400 hover:text-red-600 p-1"><i class="fas fa-times"></i></button></div>
+        `;
+        container.appendChild(div);
+        document.getElementById('damagesTotal').classList.remove('hidden');
+        updateDamageTotal();
+    }
+
+    function updateDamageTotal() {
+        let total = 0;
+        document.querySelectorAll('.damage-cost').forEach(input => {
+            total += parseFloat(input.value) || 0;
+        });
+        document.getElementById('damageCostTotal').textContent = total.toLocaleString('en-KE', {minimumFractionDigits: 2});
+    }
+
+    function getDamagesData() {
+        const damages = [];
+        document.querySelectorAll('.damage-row').forEach(row => {
+            const title = row.querySelector('.damage-title')?.value?.trim();
+            if (title) {
+                damages.push({
+                    title: title,
+                    description: row.querySelector('.damage-desc')?.value?.trim() || '',
+                    cost: parseFloat(row.querySelector('.damage-cost')?.value) || 0,
+                    vendor_name: row.querySelector('.damage-vendor')?.value?.trim() || '',
+                    priority: 'medium'
+                });
+            }
+        });
+        return damages;
+    }
+
     // ==================== TERMINATION HANDLERS ====================
     function openTerminateModal(tenantId) {
+        // Clear damage rows
+        document.getElementById('damagesContainer').innerHTML = '';
+        document.getElementById('damagesTotal').classList.add('hidden');
+        damageRowCount = 0;
+        
         document.getElementById('terminateTenantId').value = tenantId;
         const d = new Date();
         d.setDate(d.getDate() + 1); // Default tomorrow
@@ -1011,6 +1115,7 @@ if (!isset($user, $role, $token)) {
         const tenantId = document.getElementById('terminateTenantId').value;
         const reason = document.getElementById('terminateReason').value.trim();
         const effectiveDate = document.getElementById('terminateDate').value;
+        const damages = getDamagesData();
         const btn = event.target.querySelector('button[type="submit"]');
         btn.disabled = true;
         btn.textContent = 'Terminating...';
@@ -1018,7 +1123,7 @@ if (!isset($user, $role, $token)) {
         try {
             const result = await apiRequest(`${API}/tenants/${tenantId}/terminate`, {
                 method: 'POST',
-                body: JSON.stringify({ reason, effective_date: effectiveDate })
+                body: JSON.stringify({ reason, effective_date: effectiveDate, damages })
             });
             toast('Tenancy terminated successfully. House is now vacant.', 'success');
             closeTerminateModal();

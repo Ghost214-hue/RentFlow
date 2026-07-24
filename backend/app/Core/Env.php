@@ -13,9 +13,15 @@ class Env
      */
     public static function load(?string $path = null): void
     {
-        if (!empty(self::$loaded)) return;
+        if ($path === null && !empty(self::$loaded)) {
+            return;
+        }
 
-        $path = $path ?? __DIR__ . '/../../../.env';
+        if ($path === null) {
+            $base = dirname(__DIR__, 3);
+            $path = file_exists($base . '/.env.production') ? $base . '/.env.production' : $base . '/.env';
+        }
+
         if (!file_exists($path)) return;
 
         $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
