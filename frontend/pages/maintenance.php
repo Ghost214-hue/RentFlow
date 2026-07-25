@@ -145,7 +145,7 @@ $role = $user['role'] ?? 'owner';
         let data;
         try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
         if (!res.ok) {
-            if (res.status === 401) { localStorage.removeItem('rf_token'); window.location.href = 'signin'; }
+            if (res.status === 401) { localStorage.removeItem('rf_token'); window.location.href = BASE + '/signin'; }
             throw new Error(data.error || 'Request failed');
         }
         return data;

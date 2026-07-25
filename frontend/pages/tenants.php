@@ -121,10 +121,10 @@ if (!isset($user, $role, $token)) {
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Email Address <span class="text-red-400">*</span></label>
                                     <div class="relative">
                                         <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                                        <input type="email" id="tenantEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="tenant@example.com">
+                                        <input type="email" id="tenantEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="tenant@example.com" required>
                                     </div>
                                 </div>
                                 <div>
@@ -457,7 +457,7 @@ if (!isset($user, $role, $token)) {
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = 'signin';
+                window.location.href = BASE + '/signin';
             }
             const errMsg = (data && data.error) ? data.error : text || 'Request failed';
             throw new Error(errMsg);

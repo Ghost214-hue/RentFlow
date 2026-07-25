@@ -84,7 +84,7 @@ $basePath = getBasePath();
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = 'signin';
+                window.location.href = BASE + '/signin';
             }
             throw new Error(data.error || 'Request failed');
         }
@@ -142,7 +142,7 @@ $basePath = getBasePath();
             console.error('loadHouses error:', e);
             document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;
             if (e.message.includes('401')) {
-                window.location.href = 'signin';
+                window.location.href = BASE + '/signin';
             }
         }
     }

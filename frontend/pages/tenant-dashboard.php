@@ -346,7 +346,7 @@ $hasConsent = !empty($user['data_protection_consent_at']);
             }
         } catch(e) {
             console.error(e);
-            if (e.message.includes('401')) window.location.href = 'signin';
+            if (e.message.includes('401')) window.location.href = BASE + '/signin';
             noticesList.innerHTML = '<div class="py-6 text-center text-red-400">Failed to load notices. Please try again later.</div>';
             compDiv.innerHTML = '<div class="py-8 text-center text-red-400">Failed to load complaints. Please try again later.</div>';
         }

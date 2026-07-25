@@ -72,62 +72,87 @@ class TenantController
     
     public function show(array $params): void
     {
-        $ownerId = Router::getAuthUserId();
-        $role = Router::getAuthRole();
-        $tenantId = (int) ($params['id'] ?? 0);
-        $db = Database::getInstance();
+        try {
+            $ownerId = Router::getAuthUserId();
+            $role = Router::getAuthRole();
+            $tenantId = (int) ($params['id'] ?? 0);
+            $db = Database::getInstance();
 
-        $sql = "SELECT t.*, p.name as property_name, h.unit as house_unit
-             FROM tenants t
-             LEFT JOIN properties p ON t.property_id = p.id
-             LEFT JOIN houses h ON t.house_id = h.id
-             WHERE t.id = ? AND t.owner_id = ?";
-        $queryParams = [$tenantId, $ownerId];
-        if ($role === 'tenant') {
-            $sql .= " AND t.id = ?";
-            $queryParams[] = Router::getAuthTenantId();
-        } elseif ($role === 'caretaker') {
-            $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) Router::jsonResponse(['error' => 'Tenant not found'], 404);
-            $sql .= " AND t.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
-            $queryParams = array_merge($queryParams, $propertyIds);
+            $sql = "SELECT t.*, p.name as property_name, h.unit as house_unit
+                 FROM tenants t
+                 LEFT JOIN properties p ON t.property_id = p.id
+                 LEFT JOIN houses h ON t.house_id = h.id
+                 WHERE t.id = ? AND t.owner_id = ?";
+            $queryParams = [$tenantId, $ownerId];
+            if ($role === 'tenant') {
+                $sql .= " AND t.id = ?";
+                $queryParams[] = Router::getAuthTenantId();
+            } elseif ($role === 'caretaker') {
+                $propertyIds = Router::getCaretakerPropertyIds($db);
+                if (!$propertyIds) Router::jsonResponse(['error' => 'Tenant not found'], 404);
+                $sql .= " AND t.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+                $queryParams = array_merge($queryParams, $propertyIds);
+            }
+            $tenant = $db->fetchOne($sql, $queryParams);
+
+            if (!$tenant) {
+                Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            }
+
+            // Get payment history
+            $payments = [];
+            try {
+                $payments = $db->fetchAll(
+                    "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant payments: ' . $e->getMessage());
+            }
+
+            // Get complaints
+            $complaints = [];
+            try {
+                $complaints = $db->fetchAll(
+                    "SELECT * FROM complaints WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant complaints: ' . $e->getMessage());
+            }
+
+            // Get maintenance records (damages, repairs) for this tenant
+            $maintenance = [];
+            try {
+                $maintenance = $db->fetchAll(
+                    "SELECT * FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant maintenance: ' . $e->getMessage());
+            }
+
+            // Calculate total damage cost
+            $damageTotal = ['total' => 0];
+            try {
+                $damageTotal = $db->fetchOne(
+                    "SELECT SUM(cost) as total FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? AND category = 'Damage'",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant damage total: ' . $e->getMessage());
+            }
+
+            $tenant['payments'] = $payments;
+            $tenant['complaints'] = $complaints;
+            $tenant['maintenance'] = $maintenance;
+            $tenant['damage_total'] = (float)($damageTotal['total'] ?? 0);
+            $tenant['documents'] = json_decode($tenant['documents'] ?? '[]', true) ?: [];
+            Router::jsonResponse(['tenant' => $tenant]);
+        } catch (\Throwable $e) {
+            error_log('Tenant show error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to load tenant details', 'detail' => $e->getMessage()], 500);
         }
-        $tenant = $db->fetchOne($sql, $queryParams);
-
-        if (!$tenant) {
-            Router::jsonResponse(['error' => 'Tenant not found'], 404);
-        }
-
-        // Get payment history
-        $payments = $db->fetchAll(
-            "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
-            [$tenantId, $ownerId]
-        );
-
-        // Get complaints
-        $complaints = $db->fetchAll(
-            "SELECT * FROM complaints WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
-            [$tenantId, $ownerId]
-        );
-
-        // Get maintenance records (damages, repairs) for this tenant - persisted even after vacate
-        $maintenance = $db->fetchAll(
-            "SELECT * FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
-            [$tenantId, $ownerId]
-        );
-
-        // Calculate total damage cost
-        $damageTotal = $db->fetchOne(
-            "SELECT SUM(cost) as total FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? AND category = 'Damage'",
-            [$tenantId, $ownerId]
-        );
-
-        $tenant['payments'] = $payments;
-        $tenant['complaints'] = $complaints;
-        $tenant['maintenance'] = $maintenance;
-        $tenant['damage_total'] = (float)($damageTotal['total'] ?? 0);
-        $tenant['documents'] = json_decode($tenant['documents'] ?? '[]', true) ?: [];
-        Router::jsonResponse(['tenant' => $tenant]);
     }
 
     /**
@@ -272,7 +297,8 @@ class TenantController
             }
         } catch (\Throwable $e) {
             try { $db->rollback(); } catch (\Throwable $t) { /* no active transaction */ }
-            Router::jsonResponse(['error' => 'Failed to register tenant'], 400);
+            error_log('Tenant registration error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to register tenant', 'detail' => $e->getMessage()], 400);
         }
 
         $emailMsg = $emailSent ? '& welcome email sent' : '& but welcome email could not be sent';
@@ -284,71 +310,81 @@ class TenantController
       */
      public function update(array $params): void
      {
-         $role = Router::getAuthRole();
-         $actorId = Router::getAuthUserId();
-         $tenantId = (int) ($params['id'] ?? 0);
-         $data = Router::getRequestBody();
-         $db = Database::getInstance();
+         try {
+             $role = Router::getAuthRole();
+             $actorId = Router::getAuthUserId();
+             $tenantId = (int) ($params['id'] ?? 0);
+             $data = Router::getRequestBody();
+             $db = Database::getInstance();
  
-         // Verify tenant exists and get owner_id
-         $existing = $db->fetchOne(
-             "SELECT id, owner_id FROM tenants WHERE id = ?",
-             [$tenantId]
-         );
-         
-         if (!$existing) {
-             Router::jsonResponse(['error' => 'Tenant not found'], 404);
-         }
-         
-         $ownerId = $existing['owner_id'];
-         
-         // Check authorization: owner can update any of their tenants, tenant can update themselves
-         if ($role === 'owner') {
-             // Owner is updating - verify tenant belongs to them
-             if ($existing['owner_id'] != $actorId) {
+             // Verify tenant exists and get owner_id
+             $existing = $db->fetchOne(
+                 "SELECT id, owner_id FROM tenants WHERE id = ?",
+                 [$tenantId]
+             );
+             
+             if (!$existing) {
+                 Router::jsonResponse(['error' => 'Tenant not found'], 404);
+             }
+             
+             $ownerId = $existing['owner_id'];
+             
+             // Check authorization: owner can update any of their tenants, tenant can update themselves
+             if ($role === 'owner') {
+                 // Owner is updating - verify tenant belongs to them
+                 if ($existing['owner_id'] != $actorId) {
+                     Router::jsonResponse(['error' => 'Not authorized'], 403);
+                 }
+             } elseif ($role === 'tenant') {
+                 // Tenant is updating - verify it's their own record
+                 $authTenantId = Router::getAuthTenantId();
+                 if ($tenantId !== $authTenantId) {
+                     Router::jsonResponse(['error' => 'Only owners can perform this action'], 403);
+                 }
+             } else {
                  Router::jsonResponse(['error' => 'Not authorized'], 403);
              }
-         } elseif ($role === 'tenant') {
-             // Tenant is updating - verify it's their own record
-             $authTenantId = Router::getAuthTenantId();
-             if ($tenantId !== $authTenantId) {
-                 Router::jsonResponse(['error' => 'Only owners can perform this action'], 403);
+ 
+             $updateData = [];
+             
+             // Define allowed fields based on role
+             if ($role === 'owner') {
+                 // Owners can update all fields
+                 $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'id_kra_pin', 'profile_picture', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
+                          'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
+             } else {
+                 // Tenants can only update phone and email
+                 $allowed = ['phone', 'email'];
              }
-         } else {
-             Router::jsonResponse(['error' => 'Not authorized'], 403);
-         }
- 
-         $updateData = [];
-         
-         // Define allowed fields based on role
-         if ($role === 'owner') {
-             // Owners can update all fields
-             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'id_kra_pin', 'profile_picture', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
-                      'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
-         } else {
-             // Tenants can only update phone and email
-             $allowed = ['phone', 'email'];
-         }
-         
-         foreach ($allowed as $field) {
-             if (isset($data[$field])) {
-                 $updateData[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
+             
+             foreach ($allowed as $field) {
+                 if (isset($data[$field])) {
+                     $updateData[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
+                 }
              }
-         }
  
-         if (isset($updateData['name']) && $updateData['name'] === '') {
-             Router::jsonResponse(['error' => 'Tenant name is required'], 400);
-         }
-         if (!empty($updateData['email']) && !filter_var($updateData['email'], FILTER_VALIDATE_EMAIL)) {
-             Router::jsonResponse(['error' => 'Invalid email format'], 400);
-         }
+             if (isset($updateData['name']) && $updateData['name'] === '') {
+                 Router::jsonResponse(['error' => 'Tenant name is required'], 400);
+             }
+             if (!empty($updateData['email']) && !filter_var($updateData['email'], FILTER_VALIDATE_EMAIL)) {
+                 Router::jsonResponse(['error' => 'Invalid email format'], 400);
+             }
+  
+             if (!empty($updateData)) {
+                // Only update columns that actually exist in the tenants table
+                $existingColumns = array_column($db->fetchAll("SHOW COLUMNS FROM tenants WHERE Field IN (" . implode(',', array_fill(0, count($updateData), '?')) . ")", array_keys($updateData)), 'Field');
+                $safeUpdate = array_intersect_key($updateData, array_flip($existingColumns));
+                if (!empty($safeUpdate)) {
+                    $db->update('tenants', $safeUpdate, 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+                }
+            }
  
-         if (!empty($updateData)) {
-             $db->update('tenants', $updateData, 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+             $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ? AND owner_id = ?", [$tenantId, $ownerId]);
+             Router::jsonResponse(['message' => 'Tenant updated', 'tenant' => $tenant]);
+         } catch (\Throwable $e) {
+             error_log('Tenant update error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+             Router::jsonResponse(['error' => 'Failed to update tenant', 'detail' => $e->getMessage()], 500);
          }
- 
-         $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ? AND owner_id = ?", [$tenantId, $ownerId]);
-         Router::jsonResponse(['message' => 'Tenant updated', 'tenant' => $tenant]);
      }
 
     /**

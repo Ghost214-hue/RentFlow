@@ -134,7 +134,7 @@ require_once __DIR__ . '/../includes/auth.php';
             
             if (!res.ok) {
                 if (res.status === 401) {
-                    window.location.href = 'signin';
+                    window.location.href = BASE + '/signin';
                     return;
                 }
                 throw new Error(data.error || `Failed to load caretakers (${res.status})`);

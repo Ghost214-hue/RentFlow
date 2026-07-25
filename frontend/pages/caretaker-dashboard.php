@@ -114,7 +114,7 @@ if ($role !== 'caretaker') { header('Location: ../public/signin.php'); exit; }
         if (!res.ok) {
             if (res.status === 401) {
                 localStorage.removeItem('rf_token');
-                window.location.href = 'signin';
+                window.location.href = BASE + '/signin';
             }
             throw new Error(data.error || 'Request failed');
         }

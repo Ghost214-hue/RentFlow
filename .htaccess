@@ -30,7 +30,10 @@ DirectoryIndex frontend/public/index.php
 
     RedirectMatch 404 /\.git
 
-    # --- API routes FIRST ---
+    # Serve uploads directly from backend/public/uploads/ (before API/SPA rules)
+    RewriteRule ^uploads/(.*)$ backend/public/uploads/$1 [QSA,L]
+
+    # --- API routes ---
     RewriteRule ^api(/.*)?$ backend/public/index.php [QSA,L]
 
     # --- Static assets ---
@@ -38,9 +41,6 @@ DirectoryIndex frontend/public/index.php
     RewriteRule ^(?:[^/]+/)?js/(.*)$ frontend/public/js/$1 [QSA,L]
     RewriteRule ^(?:[^/]+/)?images/(.*)$ frontend/public/images/$1 [QSA,L]
     RewriteRule ^(?:[^/]+/)?favicon\.ico$ frontend/public/favicon.ico [L]
-
-    # --- Uploaded files ---
-    RewriteRule ^(?:[^/]+/)?uploads/(.*)$ backend/public/uploads/$1 [QSA,L]
 
     # --- Auth pages ---
     RewriteRule ^signin$ frontend/public/signin.php [QSA,L]

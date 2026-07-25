@@ -108,7 +108,7 @@ require_once __DIR__ . '/../includes/auth.php';
             }
         } catch(e) {
             console.error('Failed to load documents:', e);
-            if (e.message.includes('401')) window.location.href = 'signin';
+            if (e.message.includes('401')) window.location.href = BASE + '/signin';
         }
     }
 

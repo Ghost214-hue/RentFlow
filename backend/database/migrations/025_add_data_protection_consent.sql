@@ -16,5 +16,3 @@ SET @sql = IF(@idx_exists = 0,
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
-
-SELECT 'Data protection consent column added successfully' AS status;
