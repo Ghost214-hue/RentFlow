@@ -17,7 +17,7 @@ use App\Core\Database;
 use App\Services\EmailService;
 use App\Services\NotificationRecipientService;
 
-Env::load(__DIR__ . '/../../.env');
+Env::load();
 
 $db = Database::getInstance();
 $emailService = new EmailService();
@@ -34,6 +34,7 @@ try {
 $totalSent = 0;
 $totalOverdue = 0;
 $totalAdvance7 = 0;
+$totalAdvance5 = 0;
 $totalAdvance3 = 0;
 $totalAdvance2 = 0;
 $totalAdvance1 = 0;
@@ -45,7 +46,7 @@ echo "Date: " . date('Y-m-d') . "\n\n";
 // ============================================
 // HELPER FUNCTION: Send reminders for a set of bills
 // ============================================
-function sendReminders($db, $emailService, $recipientService, $bills, $reminderType, &$totalSent, &$totalCount, $errors) {
+function sendReminders($db, $emailService, $recipientService, $bills, $reminderType, &$totalSent, &$totalCount, &$errors) {
     if (empty($bills)) {
         echo "    No bills found for this reminder type.\n";
         return;
@@ -53,15 +54,15 @@ function sendReminders($db, $emailService, $recipientService, $bills, $reminderT
     
     echo "    Found " . count($bills) . " bill(s)\n";
     
-    // Ensure template exists
-    $templateRow = $emailService->getTemplate('Rent Reminder', 1);
-    if (!$templateRow) {
-        echo "    ERROR: Template 'Rent Reminder' not found.\n";
-        return;
-    }
-    $templateBody = (string)($templateRow['body'] ?? '');
-
     foreach ($bills as $row) {
+        $ownerId = (int) $row['owner_id'];
+        $templateRow = $emailService->getTemplate('Rent Reminder', $ownerId);
+        if (!$templateRow) {
+            echo "    ERROR: Template 'Rent Reminder' not found for owner {$ownerId}.\n";
+            $errors[] = "Template missing for owner {$ownerId}";
+            continue;
+        }
+        $templateBody = (string)($templateRow['body'] ?? '');
         $tenantName = $row['tenant_name'];
         $tenantEmail = $row['tenant_email'];
         $amount = number_format((float)$row['bill_amount'], 2);
@@ -129,6 +130,12 @@ function sendReminders($db, $emailService, $recipientService, $bills, $reminderT
                 $introMessage = "Dear {$tenantName},\n\nThis is a reminder that your rent payment of KES {$amount} for {$month} is due on {$dueDate} (in 3 days). Please ensure your payment is made before the due date.\n\n";
                 $daysBeforeDue = 3;
                 break;
+
+            case '5days':
+                $subjectPrefix = 'Due in 5 Days - ';
+                $introMessage = "Dear {$tenantName},\n\nThis is a friendly reminder that your rent payment of KES {$amount} for {$month} is due on {$dueDate} (in 5 days). Please plan your payment accordingly.\n\n";
+                $daysBeforeDue = 5;
+                break;
                 
             case '2days':
                 $subjectPrefix = 'Due in 2 Days - ';
@@ -146,7 +153,7 @@ function sendReminders($db, $emailService, $recipientService, $bills, $reminderT
         $body = $introMessage . $body;
 
         // Get all recipients (tenant + next of kin)
-        $recipients = $recipientService->getRecipients((int)$row['tenant_id'], 1);
+        $recipients = $recipientService->getRecipients((int)$row['tenant_id'], $ownerId);
         
         if (empty($recipients)) {
             echo "    ! {$tenantName} - No valid recipients found\n";
@@ -206,7 +213,7 @@ function sendReminders($db, $emailService, $recipientService, $bills, $reminderT
         if ($billSent) {
             try {
                 $db->insert('rent_reminders', [
-                    'owner_id' => 1,
+                    'owner_id' => $ownerId,
                     'tenant_id' => $row['tenant_id'],
                     'house_id' => $row['house_id'],
                     'bill_id' => $row['bill_id'],
@@ -229,14 +236,14 @@ function sendReminders($db, $emailService, $recipientService, $bills, $reminderT
 echo "[1] Checking for Overdue Bills...\n";
 
 $overdueBills = $db->fetchAll("
-    SELECT b.id AS bill_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
+    SELECT b.id AS bill_id, b.owner_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
            h.unit AS house_number, h.rent, h.property_id,
            t.id AS tenant_id, t.name AS tenant_name, t.email AS tenant_email,
            p.payment_method_type, p.paybill_number, p.paybill_account,
            p.till_number, p.bank_name, p.bank_account, p.bank_branch, p.mobile_money_number
     FROM bills b
     JOIN houses h ON h.id = b.house_id
-    JOIN tenants t ON t.id = h.tenant_id
+    JOIN tenants t ON t.id = COALESCE(b.tenant_id, h.tenant_id)
     JOIN properties p ON p.id = h.property_id
     WHERE b.status != 'paid'
       AND b.due_date < CURDATE()
@@ -254,95 +261,140 @@ sendReminders($db, $emailService, $recipientService, $overdueBills, 'overdue', $
 echo "\n[2] Checking for Bills Due in 7 Days...\n";
 
 $advance7Bills = $db->fetchAll("
-    SELECT b.id AS bill_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
+    SELECT b.id AS bill_id, b.owner_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
            h.unit AS house_number, h.rent, h.property_id,
            t.id AS tenant_id, t.name AS tenant_name, t.email AS tenant_email,
            p.payment_method_type, p.paybill_number, p.paybill_account,
            p.till_number, p.bank_name, p.bank_account, p.bank_branch, p.mobile_money_number
     FROM bills b
     JOIN houses h ON h.id = b.house_id
-    JOIN tenants t ON t.id = h.tenant_id
+    JOIN tenants t ON t.id = COALESCE(b.tenant_id, h.tenant_id)
     JOIN properties p ON p.id = h.property_id
     WHERE b.status != 'paid'
       AND b.due_date = DATE_ADD(CURDATE(), INTERVAL 7 DAY)
       AND h.status = 'occupied'
       AND t.email IS NOT NULL
       AND TRIM(t.email) != ''
+      AND NOT EXISTS (
+          SELECT 1 FROM rent_reminders rr
+          WHERE rr.bill_id = b.id AND rr.days_before_due = 7 AND DATE(rr.sent_at) = CURDATE()
+      )
     ORDER BY t.email, b.due_date ASC
 ");
 
 sendReminders($db, $emailService, $recipientService, $advance7Bills, '7days', $totalSent, $totalAdvance7, $errors);
 
 // ============================================
-// PART 3: 3 DAYS BEFORE DUE DATE
+// PART 3: 5 DAYS BEFORE DUE DATE
 // ============================================
-echo "\n[3] Checking for Bills Due in 3 Days...\n";
+echo "\n[3] Checking for Bills Due in 5 Days...\n";
 
-$advance3Bills = $db->fetchAll("
-    SELECT b.id AS bill_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
+$advance5Bills = $db->fetchAll("
+    SELECT b.id AS bill_id, b.owner_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
            h.unit AS house_number, h.rent, h.property_id,
            t.id AS tenant_id, t.name AS tenant_name, t.email AS tenant_email,
            p.payment_method_type, p.paybill_number, p.paybill_account,
            p.till_number, p.bank_name, p.bank_account, p.bank_branch, p.mobile_money_number
     FROM bills b
     JOIN houses h ON h.id = b.house_id
-    JOIN tenants t ON t.id = h.tenant_id
+    JOIN tenants t ON t.id = COALESCE(b.tenant_id, h.tenant_id)
+    JOIN properties p ON p.id = h.property_id
+    WHERE b.status != 'paid'
+      AND b.due_date = DATE_ADD(CURDATE(), INTERVAL 5 DAY)
+      AND h.status = 'occupied'
+      AND t.email IS NOT NULL
+      AND TRIM(t.email) != ''
+      AND NOT EXISTS (
+          SELECT 1 FROM rent_reminders rr
+          WHERE rr.bill_id = b.id AND rr.days_before_due = 5 AND DATE(rr.sent_at) = CURDATE()
+      )
+    ORDER BY t.email, b.due_date ASC
+");
+
+sendReminders($db, $emailService, $recipientService, $advance5Bills, '5days', $totalSent, $totalAdvance5, $errors);
+
+// ============================================
+// PART 4: 3 DAYS BEFORE DUE DATE
+// ============================================
+echo "\n[4] Checking for Bills Due in 3 Days...\n";
+
+$advance3Bills = $db->fetchAll("
+    SELECT b.id AS bill_id, b.owner_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
+           h.unit AS house_number, h.rent, h.property_id,
+           t.id AS tenant_id, t.name AS tenant_name, t.email AS tenant_email,
+           p.payment_method_type, p.paybill_number, p.paybill_account,
+           p.till_number, p.bank_name, p.bank_account, p.bank_branch, p.mobile_money_number
+    FROM bills b
+    JOIN houses h ON h.id = b.house_id
+    JOIN tenants t ON t.id = COALESCE(b.tenant_id, h.tenant_id)
     JOIN properties p ON p.id = h.property_id
     WHERE b.status != 'paid'
       AND b.due_date = DATE_ADD(CURDATE(), INTERVAL 3 DAY)
       AND h.status = 'occupied'
       AND t.email IS NOT NULL
       AND TRIM(t.email) != ''
+      AND NOT EXISTS (
+          SELECT 1 FROM rent_reminders rr
+          WHERE rr.bill_id = b.id AND rr.days_before_due = 3 AND DATE(rr.sent_at) = CURDATE()
+      )
     ORDER BY t.email, b.due_date ASC
 ");
 
 sendReminders($db, $emailService, $recipientService, $advance3Bills, '3days', $totalSent, $totalAdvance3, $errors);
 
 // ============================================
-// PART 4: 2 DAYS BEFORE DUE DATE
+// PART 5: 2 DAYS BEFORE DUE DATE
 // ============================================
-echo "\n[4] Checking for Bills Due in 2 Days...\n";
+echo "\n[5] Checking for Bills Due in 2 Days...\n";
 
 $advance2Bills = $db->fetchAll("
-    SELECT b.id AS bill_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
+    SELECT b.id AS bill_id, b.owner_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
            h.unit AS house_number, h.rent, h.property_id,
            t.id AS tenant_id, t.name AS tenant_name, t.email AS tenant_email,
            p.payment_method_type, p.paybill_number, p.paybill_account,
            p.till_number, p.bank_name, p.bank_account, p.bank_branch, p.mobile_money_number
     FROM bills b
     JOIN houses h ON h.id = b.house_id
-    JOIN tenants t ON t.id = h.tenant_id
+    JOIN tenants t ON t.id = COALESCE(b.tenant_id, h.tenant_id)
     JOIN properties p ON p.id = h.property_id
     WHERE b.status != 'paid'
       AND b.due_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)
       AND h.status = 'occupied'
       AND t.email IS NOT NULL
       AND TRIM(t.email) != ''
+      AND NOT EXISTS (
+          SELECT 1 FROM rent_reminders rr
+          WHERE rr.bill_id = b.id AND rr.days_before_due = 2 AND DATE(rr.sent_at) = CURDATE()
+      )
     ORDER BY t.email, b.due_date ASC
 ");
 
 sendReminders($db, $emailService, $recipientService, $advance2Bills, '2days', $totalSent, $totalAdvance2, $errors);
 
 // ============================================
-// PART 5: 1 DAY BEFORE DUE DATE
+// PART 6: 1 DAY BEFORE DUE DATE
 // ============================================
-echo "\n[5] Checking for Bills Due Tomorrow...\n";
+echo "\n[6] Checking for Bills Due Tomorrow...\n";
 
 $advance1Bills = $db->fetchAll("
-    SELECT b.id AS bill_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
+    SELECT b.id AS bill_id, b.owner_id, b.house_id, b.total AS bill_amount, b.due_date, b.month,
            h.unit AS house_number, h.rent, h.property_id,
            t.id AS tenant_id, t.name AS tenant_name, t.email AS tenant_email,
            p.payment_method_type, p.paybill_number, p.paybill_account,
            p.till_number, p.bank_name, p.bank_account, p.bank_branch, p.mobile_money_number
     FROM bills b
     JOIN houses h ON h.id = b.house_id
-    JOIN tenants t ON t.id = h.tenant_id
+    JOIN tenants t ON t.id = COALESCE(b.tenant_id, h.tenant_id)
     JOIN properties p ON p.id = h.property_id
     WHERE b.status != 'paid'
       AND b.due_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
       AND h.status = 'occupied'
       AND t.email IS NOT NULL
       AND TRIM(t.email) != ''
+      AND NOT EXISTS (
+          SELECT 1 FROM rent_reminders rr
+          WHERE rr.bill_id = b.id AND rr.days_before_due = 1 AND DATE(rr.sent_at) = CURDATE()
+      )
     ORDER BY t.email, b.due_date ASC
 ");
 
@@ -358,7 +410,7 @@ $logDir = dirname($logFile);
 if (!is_dir($logDir)) mkdir($logDir, 0755, true);
 
 $logMessage = "[" . date('Y-m-d H:i:s') . "] ";
-$logMessage .= "Reminders sent: {$totalSent} (Overdue: {$totalOverdue}, 7d: {$totalAdvance7}, 3d: {$totalAdvance3}, 2d: {$totalAdvance2}, 1d: {$totalAdvance1})";
+$logMessage .= "Reminders sent: {$totalSent} (Overdue: {$totalOverdue}, 7d: {$totalAdvance7}, 5d: {$totalAdvance5}, 3d: {$totalAdvance3}, 2d: {$totalAdvance2}, 1d: {$totalAdvance1})";
 if (!empty($errors)) $logMessage .= " | Errors: " . count($errors);
 file_put_contents($logFile, $logMessage . "\n", FILE_APPEND);
 
@@ -366,6 +418,7 @@ echo "\n=== Summary ===\n";
 echo "Total reminders sent: {$totalSent}\n";
 echo "  - Overdue reminders: {$totalOverdue}\n";
 echo "  - Advance reminders (7 days): {$totalAdvance7}\n";
+echo "  - Advance reminders (5 days): {$totalAdvance5}\n";
 echo "  - Advance reminders (3 days): {$totalAdvance3}\n";
 echo "  - Advance reminders (2 days): {$totalAdvance2}\n";
 echo "  - Advance reminders (1 day): {$totalAdvance1}\n";

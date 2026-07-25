@@ -70,6 +70,14 @@ class EmailQueueService
 
         $batchSize = max(1, min($batchSize, (int) $this->getSetting('batch_size', '10')));
 
+        // Recover emails left in processing by a killed cron process.
+        $this->db->query(
+            "UPDATE email_queue
+             SET status = 'pending', error_message = 'Recovered from stale processing state'
+             WHERE status = 'processing'
+             AND updated_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)"
+        );
+
         // Get pending emails ordered by priority and creation time
         $emails = $this->db->fetchAll(
             "SELECT * FROM email_queue 
@@ -113,7 +121,8 @@ class EmailQueueService
                 $newStatus = ($email['attempts'] + 1) >= $email['max_attempts'] ? 'failed' : 'pending';
                 $this->db->update('email_queue', [
                     'status' => $newStatus,
-                    'error_message' => 'SMTP delivery failed'
+                    'error_message' => 'SMTP delivery failed',
+                    'updated_at' => date('Y-m-d H:i:s')
                 ], 'id = ?', [$email['id']]);
                 $failed++;
             }
@@ -140,7 +149,6 @@ class EmailQueueService
             "UPDATE email_queue 
              SET status = 'pending', attempts = 0, error_message = NULL 
              WHERE status = 'failed' 
-             AND attempts < max_attempts
              AND (scheduled_at IS NULL OR scheduled_at <= NOW())
              LIMIT ?",
             [$batchSize]

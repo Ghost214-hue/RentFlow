@@ -23,6 +23,12 @@ if (strpos($hostEnv, ':') !== false) {
     $portEnv = (int) $portEnv;
 }
 
+// With mysqli, "localhost" prefers a Unix socket. Cron often runs without the
+// same socket path as Apache/PHP-FPM, so localhost:3306 should mean TCP.
+if ($hostEnv === 'localhost' && (int) $portEnv > 0) {
+    $hostEnv = '127.0.0.1';
+}
+
 return [
     'host'     => $hostEnv,
     'port'     => $portEnv,

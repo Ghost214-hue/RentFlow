@@ -1,11 +1,5 @@
 <?php
-/**
- * Email Queue Processor Cron
- * Processes pending emails from the queue
- * 
- * Run this via cron every minute:
- * * * * * php /path/to/rentaflow/backend/cron/email_queue.php
- */
+
 
 // Autoload
 spl_autoload_register(function ($class) {
@@ -21,7 +15,7 @@ require_once __DIR__ . '/../app/Core/Env.php';
 use App\Core\Env;
 use App\Services\EmailQueueService;
 
-Env::load(__DIR__ . '/../.env');
+Env::load();
 
 $checkMode = in_array('--check', $argv ?? [], true);
 if ($checkMode) {
@@ -47,6 +41,9 @@ if ($checkMode) {
 
 // Prevent concurrent processing
 $lockFile = __DIR__ . '/../logs/email_queue.lock';
+if (!is_dir(dirname($lockFile))) {
+    mkdir(dirname($lockFile), 0755, true);
+}
 if (file_exists($lockFile)) {
     $lockTime = filemtime($lockFile);
     if (time() - $lockTime < 120) { // 2 minute timeout
