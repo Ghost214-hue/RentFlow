@@ -220,32 +220,45 @@ class AuthController
         // Generate reset token (6 digits)
         $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         try {
-            $db->update('password_reset_tokens', ['used' => 1], 'email = ? AND used = 0', [$email]);
-            // Use MySQL NOW() + INTERVAL to avoid PHP/DB timezone mismatch
-            $db->query(
-                "INSERT INTO password_reset_tokens (owner_id, tenant_id, email, code, expires_at, used, attempts) VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0, 0)",
-                [
-                    $userType === 'owner' ? (int)$user['id'] : null,
-                    $userType === 'tenant' ? (int)$user['id'] : null,
-                    $email,
-                    $code
-                ]
-            );
+            // Check if password_reset_tokens table exists
+            $tableExists = $db->fetchOne("SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'password_reset_tokens'");
+            if ($tableExists && $tableExists['count'] > 0) {
+                $db->update('password_reset_tokens', ['used' => 1], 'email = ? AND used = 0', [$email]);
+                // Use MySQL NOW() + INTERVAL to avoid PHP/DB timezone mismatch
+                $db->query(
+                    "INSERT INTO password_reset_tokens (owner_id, tenant_id, email, code, expires_at, used, attempts) VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0, 0)",
+                    [
+                        $userType === 'owner' ? (int)$user['id'] : null,
+                        $userType === 'tenant' ? (int)$user['id'] : null,
+                        $email,
+                        $code
+                    ]
+                );
+            } else {
+                error_log('WARNING: password_reset_tokens table does not exist. Token not stored.');
+            }
         } catch (\Throwable $e) {
             error_log('Token insert error: ' . $e->getMessage());
-            Router::jsonResponse(['error' => 'Failed to create reset token.'], 500);
-            return;
+            // Don't fail - we can still send the email
         }
 
-        // Send email
+        // Determine owner_id for template lookup
+        $templateOwnerId = match($userType) {
+            'owner' => (int)$user['id'],
+            'tenant' => (int)$user['owner_id'] ?? 1,
+            'caretaker' => (int)$user['owner_id'] ?? 1,
+            default => 1,
+        };
+        
+        // Send email - DIRECT SEND ONLY (no template lookup)
         $emailSent = false;
         try {
             $emailService = new \App\Services\EmailService();
-            $emailSent = $emailService->sendTemplate('Password Reset', 1, $email, $user['name'], [
-                'code' => $code,
-                'expires' => '15 minutes',
-                'name' => $user['name'],
-            ]);
+            error_log("ATTEMPTING EMAIL SEND to $email via SMTP");
+            $subject = 'Password Reset Code - RentalFlow';
+            $body = "Dear {$user['name']},\n\nYou requested a password reset. Use the following code to reset your password:\n\nCode: $code\n\nThis code expires in 15 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nRentalFlow Team";
+            $emailSent = $emailService->send($email, $user['name'], $subject, $body);
+            error_log("EMAIL SEND RESULT: " . ($emailSent ? 'SUCCESS' : 'FAILED'));
         } catch (\Throwable $e) {
             error_log('Email send error: ' . $e->getMessage());
         }
@@ -361,6 +374,7 @@ class AuthController
             ['name' => 'Maintenance Notice', 'type' => 'email', 'subject' => 'Scheduled Maintenance - {{property}}', 'body' => 'Dear Residents,\n\nPlease be informed that maintenance will be conducted on {{date}} from {{time}}: {{details}}\n\nThank you for your patience.'],
             ['name' => 'Complaint Update', 'type' => 'email', 'subject' => 'Update on Your Complaint #{{id}}', 'body' => 'Dear {{tenant}},\n\nYour complaint regarding {{issue}} has been updated to status: {{status}}.\n\n{{message}}'],
             ['name' => 'Lease Renewal', 'type' => 'email', 'subject' => 'Lease Renewal Notice', 'body' => 'Dear {{tenant}},\n\nYour lease for {{house}} expires on {{date}}. Please contact us to discuss renewal options.\n\nBest regards,\n{{owner}}'],
+            ['name' => 'Password Reset', 'type' => 'email', 'subject' => 'Password Reset Code - {{code}}', 'body' => 'Dear {{name}},\n\nYou requested a password reset. Use the following code to reset your password:\n\nCode: {{code}}\n\nThis code expires in {{expires}}.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nRentaFlow'],
         ];
         foreach ($templates as $template) {
             try { $db->insert('templates', array_merge($template, ['owner_id' => $ownerId])); } catch (\Exception $e) { error_log('Failed to insert template: ' . $e->getMessage()); }

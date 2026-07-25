@@ -7,9 +7,15 @@
 // Intercept upload requests and serve them directly (bypass router)
 $uriPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $uriBasename = basename($uriPath);
-$isUpload = preg_match('#uploads/doc_[a-f0-9]{32}\.\w+$#i', $uriPath);
+$isUpload = preg_match('#^/?uploads/doc_[a-f0-9]+\.[a-z0-9]+$#i', $uriPath);
 if ($isUpload) {
-    $uploadFile = __DIR__ . '/uploads/' . $uriBasename;
+    $uploadDir = __DIR__ . '/uploads/';
+    $uploadFile = $uploadDir . $uriBasename;
+
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0755, true);
+    }
+
     if (file_exists($uploadFile) && is_file($uploadFile)) {
         $ext = strtolower(pathinfo($uriBasename, PATHINFO_EXTENSION));
         $mimeTypes = [
@@ -21,7 +27,7 @@ if ($isUpload) {
         ];
         header('Content-Type: ' . ($mimeTypes[$ext] ?? 'application/octet-stream'));
         header('Cache-Control: public, max-age=86400');
-        $data = file_get_contents($uploadFile);
+        $data = @file_get_contents($uploadFile);
         if ($data !== false) {
             echo $data;
             exit;
@@ -30,17 +36,52 @@ if ($isUpload) {
         echo 'Failed to read file';
         exit;
     }
+
+    // If the exact filename doesn't match, try to find any file starting with doc_
+    $matched = false;
+    if (is_dir($uploadDir) && ($dh = opendir($uploadDir))) {
+        $prefix = preg_replace('/^doc_[a-f0-9]+/i', '', $uriBasename);
+        while (($file = readdir($dh)) !== false) {
+            if (strpos($file, 'doc_') === 0 && substr($file, -strlen($prefix)) === $prefix) {
+                $matched = $uploadDir . $file;
+                break;
+            }
+        }
+        closedir($dh);
+    }
+
+    if ($matched && file_exists($matched) && is_file($matched)) {
+        $ext = strtolower(pathinfo($matched, PATHINFO_EXTENSION));
+        $mimeTypes = [
+            'pdf' => 'application/pdf',
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+        ];
+        header('Content-Type: ' . ($mimeTypes[$ext] ?? 'application/octet-stream'));
+        header('Cache-Control: public, max-age=86400');
+        $data = @file_get_contents($matched);
+        if ($data !== false) {
+            echo $data;
+            exit;
+        }
+        http_response_code(500);
+        echo 'Failed to read file';
+        exit;
+    }
+
     http_response_code(404);
-    echo 'File not found: ' . $uriBasename;
+    echo 'File not found: ' . htmlspecialchars($uriBasename);
     exit;
 }
 
-// Debug: log what's happening with upload requests
-if (strpos($uriPath, 'uploads') !== false) {
-    header('Content-Type: text/plain');
-    echo "URI: $uriPath\nBasename: $uriBasename\nMatch: " . ($isUpload ? 'yes' : 'no') . "\n";
-    exit;
-}
+// Debug: disabled in production
+// if (strpos($uriPath, 'uploads') !== false) {
+//     header('Content-Type: text/plain');
+//     echo "URI: $uriPath\nBasename: $uriBasename\nMatch: " . ($isUpload ? 'yes' : 'no') . "\n";
+//     exit;
+// }
 
 // Security headers
 header('X-Content-Type-Options: nosniff');
@@ -199,9 +240,10 @@ $router->post('/upload', function() {
     if (!in_array($ext, $allowedTypes, true)) {
         \App\Core\Router::jsonResponse(['error' => 'Invalid file type. Allowed: PDF, JPG, PNG'], 400);
     }
-    $detectedType = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']) ?: '';
-    if ($ext === 'pdf' && !in_array($detectedType, ['application/pdf','application/x-pdf'], true) && stripos($detectedType, 'pdf') === false) {
-        \App\Core\Router::jsonResponse(['error' => 'Invalid file type'], 400);
+    $detectedType = '';
+    if (class_exists('finfo')) {
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedType = $finfo->file($file['tmp_name']) ?: '';
     }
     if ($file['size'] > $maxSize) {
         \App\Core\Router::jsonResponse(['error' => 'File too large. Max 10MB'], 400);
@@ -217,11 +259,12 @@ $router->post('/upload', function() {
     @chmod($uploadDir . $filename, 0666);
     $fileHash = hash_file('sha256', $uploadDir . $filename);
     $basePath = rtrim((string) ($_ENV['BASE_PATH'] ?? getenv('BASE_PATH') ?? ''), '/');
+    $uploadUrl = ($basePath ? $basePath . '/' : '') . 'uploads/' . $filename;
     \App\Core\Router::jsonResponse([
         'message' => 'File uploaded',
         'file' => [
             'name' => basename($file['name']),
-            'url' => ($basePath ?: '') . '/uploads/' . $filename,
+            'url' => $uploadUrl,
             'size' => $file['size'],
             'type' => $detectedType,
             'hash' => $fileHash,

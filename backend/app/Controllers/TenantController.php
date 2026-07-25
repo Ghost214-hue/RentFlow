@@ -211,29 +211,35 @@ class TenantController
         try {
             $db->beginTransaction();
 
-            $tenantId = $db->insert('tenants', [
-                'owner_id'             => $ownerId,
-                'property_id'          => !empty($data['property_id']) ? (int) $data['property_id'] : null,
-                'house_id'             => !empty($data['house_id']) ? (int) $data['house_id'] : null,
-                'name'                 => $data['name'],
-                'email'                => $data['email'] !== '' ? $data['email'] : null,
-                'password'             => password_hash($data['password'] ?? $data['id_number'], PASSWORD_BCRYPT),
-                'phone'                => $data['phone'],
-                'id_number'            => $data['id_number'] !== '' ? $data['id_number'] : null,
-                'id_type'              => $data['id_type'] ?? 'National ID',
-                'id_kra_pin'           => $data['id_kra_pin'] ?? null,
-                'profile_picture'      => $data['profile_picture'] ?? null,
-                'next_of_kin_name'     => $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null,
-                'next_of_kin_phone'    => $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null,
-                'next_of_kin_email'    => $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null,
-                'lease_start'          => $data['lease_start'] ?? null,
-                'lease_end'            => $data['lease_end'] ?? null,
-                'deposit'              => $data['deposit'] ?? 0,
-                'balance'              => $data['balance'] ?? 0,
-                'water_balance'        => $data['water_balance'] ?? 0,
-                'elec_balance'         => $data['elec_balance'] ?? 0,
-                'documents'            => $data['documents'] ?? null,
-            ]);
+            // Only insert columns that actually exist in the tenants table
+            $existingColumns = array_column($db->fetchAll("SHOW COLUMNS FROM tenants WHERE Field IN ('owner_id','property_id','house_id','name','email','password','phone','id_number','id_type','id_kra_pin','profile_picture','next_of_kin_name','next_of_kin_phone','next_of_kin_email','lease_start','lease_end','deposit','balance','water_balance','elec_balance','documents')"), 'Field');
+            
+            $insertData = [
+                'owner_id'    => $ownerId,
+                'name'        => $data['name'],
+                'email'       => $data['email'] !== '' ? $data['email'] : null,
+                'password'    => password_hash($data['password'] ?? $data['id_number'], PASSWORD_BCRYPT),
+                'phone'       => $data['phone'],
+                'id_number'   => $data['id_number'] !== '' ? $data['id_number'] : null,
+                'id_type'     => $data['id_type'] ?? 'National ID',
+            ];
+            
+            if (!empty($data['property_id'])) $insertData['property_id'] = (int) $data['property_id'];
+            if (!empty($data['house_id'])) $insertData['house_id'] = (int) $data['house_id'];
+            if (isset($data['id_kra_pin']) && in_array('id_kra_pin', $existingColumns, true)) $insertData['id_kra_pin'] = $data['id_kra_pin'];
+            if (isset($data['profile_picture']) && in_array('profile_picture', $existingColumns, true)) $insertData['profile_picture'] = $data['profile_picture'];
+            if (isset($data['next_of_kin_name']) && in_array('next_of_kin_name', $existingColumns, true)) $insertData['next_of_kin_name'] = $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null;
+            if (isset($data['next_of_kin_phone']) && in_array('next_of_kin_phone', $existingColumns, true)) $insertData['next_of_kin_phone'] = $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null;
+            if (isset($data['next_of_kin_email']) && in_array('next_of_kin_email', $existingColumns, true)) $insertData['next_of_kin_email'] = $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null;
+            if (isset($data['lease_start']) && in_array('lease_start', $existingColumns, true)) $insertData['lease_start'] = $data['lease_start'];
+            if (isset($data['lease_end']) && in_array('lease_end', $existingColumns, true)) $insertData['lease_end'] = $data['lease_end'];
+            if (isset($data['deposit']) && in_array('deposit', $existingColumns, true)) $insertData['deposit'] = $data['deposit'] ?? 0;
+            if (isset($data['balance']) && in_array('balance', $existingColumns, true)) $insertData['balance'] = $data['balance'] ?? 0;
+            if (isset($data['water_balance']) && in_array('water_balance', $existingColumns, true)) $insertData['water_balance'] = $data['water_balance'] ?? 0;
+            if (isset($data['elec_balance']) && in_array('elec_balance', $existingColumns, true)) $insertData['elec_balance'] = $data['elec_balance'] ?? 0;
+            if (isset($data['documents']) && in_array('documents', $existingColumns, true)) $insertData['documents'] = $data['documents'];
+            
+            $tenantId = $db->insert('tenants', $insertData);
 
             // If house assigned, atomically claim it while it is still vacant.
             if (!empty($data['house_id'])) {
@@ -347,15 +353,15 @@ class TenantController
  
              $updateData = [];
              
-             // Define allowed fields based on role
-             if ($role === 'owner') {
-                 // Owners can update all fields
-                 $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'id_kra_pin', 'profile_picture', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
-                          'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
-             } else {
-                 // Tenants can only update phone and email
-                 $allowed = ['phone', 'email'];
-             }
+              // Define allowed fields based on role
+              if ($role === 'owner') {
+                  // Owners can update all fields
+                  $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'id_kra_pin', 'profile_picture', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
+                           'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
+              } else {
+                  // Tenants can only update phone, email and profile picture
+                  $allowed = ['phone', 'email', 'profile_picture'];
+              }
              
              foreach ($allowed as $field) {
                  if (isset($data[$field])) {
