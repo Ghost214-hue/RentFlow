@@ -82,10 +82,48 @@ if (($userRole ?? 'owner') === 'tenant') {
     async function apiRequest(url, options = {}) {
         const res = await fetch(url, { ...options, headers });
         const text = await res.text();
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { 
+            console.error('API returned non-JSON response from', url, text.slice(0, 200));
+            throw new Error('Server returned an invalid response. Please contact support.'); 
+        }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                // Clear cookie
+                document.cookie = 'rf_token=; path=/; max-age=0';
+                window.location.href = '<?php echo $basePath; ?>/signin';
+            }
+            const errorMsg = data.error || data.message || `Request failed with status ${res.status}`;
+            console.error('API error:', res.status, url, errorMsg);
+            toast(errorMsg, 'error');
+            throw new Error(errorMsg);
+        }
+        return data;
+    }
         let data;
         try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
         
         if (!res.ok) {
+    <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
+    <div id="globalError" class="hidden fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center"><i class="fas fa-exclamation-triangle text-red-600"></i></div>
+                <h3 class="text-lg font-bold text-slate-900">Something went wrong</h3>
+            </div>
+            <p class="text-slate-600 mb-4">The dashboard failed to load. Please check your connection and try again.</p>
+            <pre id="globalErrorDetail" class="bg-slate-50 rounded-xl p-4 text-xs text-slate-600 overflow-auto max-h-48 mb-4"></pre>
+            <div class="flex gap-3">
+                <button onclick="location.reload()" class="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-all">Retry</button>
+                <button onclick="document.getElementById('globalError').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-all">Dismiss</button>
+            </div>
+        </div>
+    </div>
+    <script>
             if (res.status === 401) {
                 // Clear cookie
                 document.cookie = 'rf_token=; path=/; max-age=0';
@@ -106,6 +144,45 @@ if (($userRole ?? 'owner') === 'tenant') {
 
     function getLastSixMonths() {
         const months = [];
+    async function loadDashboard() {
+        // Show loading state immediately
+        document.getElementById('statsGrid').innerHTML = `
+            <div class="col-span-full py-12 text-center">
+                <div class="inline-flex items-center gap-3 text-slate-500">
+                    <i class="fas fa-spinner fa-spin text-2xl text-blue-500"></i>
+                    <span class="text-lg font-medium">Loading dashboard...</span>
+                </div>
+            </div>
+        `;
+        try {
+            if (userRole === 'owner') await loadOwnerDashboard();
+            else if (userRole === 'caretaker') await loadCaretakerDashboard();
+            else {
+                document.getElementById('statsGrid').innerHTML = `
+                    <div class="col-span-full py-12 text-center">
+                        <div class="inline-flex items-center gap-3 text-red-500">
+                            <i class="fas fa-exclamation-triangle text-2xl"></i>
+                            <span class="text-lg font-medium">Unknown user role: ${userRole}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch(e) {
+            console.error('Dashboard load error:', e);
+            const errorMsg = e.message || 'Unknown error';
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="col-span-full py-12 text-center">
+                    <div class="inline-flex items-center gap-3 text-red-500">
+                        <i class="fas fa-times-circle text-2xl"></i>
+                        <span class="text-lg font-medium">Failed to load dashboard</span>
+                    </div>
+                    <p class="text-sm text-slate-500 mt-2">${errorMsg}</p>
+                    <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all">Retry</button>
+                </div>
+            `;
+            showGlobalError('Dashboard loading failed: ' + errorMsg);
+        }
+    }
         const now = new Date();
         for (let i = 5; i >= 0; i--) {
             const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -342,6 +419,34 @@ if (($userRole ?? 'owner') === 'tenant') {
         document.getElementById('vacLegend').textContent = ((h.total||0)-(h.occupied||0)) + ' units';
     }
 
+    setTimeout(() => {
+        const s = document.getElementById('statsGrid');
+        if (s && s.innerHTML.trim() === '') s.innerHTML = '<div class="col-span-full py-12 text-center text-red-400">Failed to load data.</div>';
+    }, 3000);
+
+    // Global error handlers to prevent silent blank pages
+    window.addEventListener('error', function(e) {
+        console.error('Global error:', e.error);
+        showGlobalError('A JavaScript error occurred: ' + (e.message || 'Unknown error'));
+    });
+
+    window.addEventListener('unhandledrejection', function(e) {
+        console.error('Unhandled promise rejection:', e.reason);
+        const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
+        showGlobalError('An unexpected error occurred: ' + msg);
+    });
+
+    function showGlobalError(message) {
+        const errorDiv = document.getElementById('globalError');
+        const detailPre = document.getElementById('globalErrorDetail');
+        if (errorDiv) {
+            detailPre.textContent = message + '\n\n' + new Date().toLocaleString();
+            errorDiv.classList.remove('hidden');
+        }
+    }
+
+    loadDashboard();
+    </script>
     setTimeout(() => {
         const s = document.getElementById('statsGrid');
         if (s && s.innerHTML.trim() === '') s.innerHTML = '<div class="col-span-full py-12 text-center text-red-400">Failed to load data.</div>';
