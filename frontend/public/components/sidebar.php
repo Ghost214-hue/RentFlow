@@ -5,8 +5,34 @@ $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
+$ownerNav = [
+    [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
+    [$basePath . '/properties','fa-building','Properties',''],
+    [$basePath . '/houses','fa-home','Houses',''],
+    [$basePath . '/tenants','fa-users','Tenants',''],
+    [$basePath . '/caretakers','fa-user-shield','Caretakers',''],
+    [$basePath . '/payments','fa-money-bill-wave','Payments',''],
+    [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
+    [$basePath . '/maintenance','fa-tools','Maintenance',''],
+    [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
+    [$basePath . '/documents','fa-file-alt','Rules',''],
+    [$basePath . '/reports','fa-chart-pie','Reports',''],
+    [$basePath . '/email-logs','fa-envelope-open-text','Email Delivery',''],
+];
 
 $ownerNav = [
+$caretakerNav = [
+    [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
+    [$basePath . '/properties','fa-building','Properties',''],
+    [$basePath . '/houses','fa-home','Houses',''],
+    [$basePath . '/tenants','fa-users','Tenants',''],
+    [$basePath . '/payments','fa-money-bill-wave','Payments',''],
+    [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
+    [$basePath . '/maintenance','fa-tools','Maintenance',''],
+    [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
+    [$basePath . '/documents','fa-file-alt','Rules',''],
+    [$basePath . '/email-logs','fa-envelope-open-text','Email Delivery',''],
+];
     [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
     [$basePath . '/properties','fa-building','Properties',''],
     [$basePath . '/houses','fa-home','Houses',''],

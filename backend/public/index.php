@@ -218,6 +218,11 @@ $router->post('/maintenance', ['App\Controllers\MaintenanceController', 'store']
 $router->put('/maintenance/{id}', ['App\Controllers\MaintenanceController', 'update'], [fn() => AuthMiddleware::authenticate()]);
 $router->delete('/maintenance/{id}', ['App\Controllers\MaintenanceController', 'destroy'], [fn() => AuthMiddleware::authenticate()]);
 
+// ==================== EMAIL LOGS ====================
+$router->get('/email-logs', ['App\Controllers\EmailLogController', 'index'], [fn() => AuthMiddleware::authenticate()]);
+$router->get('/email-logs/stats', ['App\Controllers\EmailLogController', 'stats'], [fn() => AuthMiddleware::authenticate()]);
+
+// ==================== REPORTS ====================
 // ==================== REPORTS ====================
 $router->get('/reports', ['App\Controllers\ReportController', 'index'], [fn() => AuthMiddleware::authenticate()]);
 $router->get('/reports/tenancy-vacancy', ['App\Controllers\TenancyVacancyReportController', 'index'], [fn() => AuthMiddleware::authenticate()]);
