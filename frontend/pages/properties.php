@@ -111,7 +111,14 @@ $token = $token ?? '';
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
     const API = '<?php echo $basePath; ?>/api';
-    let token = localStorage.getItem('rf_token') || '';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '';
     if (!token) {
         const m = document.cookie.match(/(?:^|; )rf_token=([^;]+)/);
         token = m ? decodeURIComponent(m[1]) : '';

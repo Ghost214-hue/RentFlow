@@ -3,7 +3,13 @@ session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
 if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
+// Load correct .env for localhost vs production
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
+\App\Core\Env::load($envPath);
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
@@ -164,7 +170,14 @@ if ($role === 'tenant') {
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {
@@ -185,6 +198,7 @@ if ($role === 'tenant') {
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
+        if (!el) return;
         const colors = { success:'bg-gradient-to-r from-emerald-500 to-emerald-600', error:'bg-gradient-to-r from-red-500 to-red-600', info:'bg-gradient-to-r from-blue-500 to-blue-600' };
         const icons = { success:'fa-check-circle', error:'fa-exclamation-circle', info:'fa-info-circle' };
         el.className = `fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2 ${colors[type]||colors.success}`;
@@ -194,6 +208,22 @@ if ($role === 'tenant') {
     }
 
     function initials(n) { return n.split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase(); }
+
+    function normalizeUrl(url) {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) return url;
+        const base = String(BASE || '').trim();
+        const path = String(url).trim();
+        
+        // If path already starts with base path, don't duplicate it
+        if (base && path.startsWith(base + '/')) {
+            return path;
+        }
+        
+        // Otherwise prepend base path
+        if (path.startsWith('/')) return base + path;
+        return base + '/' + path;
+    }
 
     async function uploadFile(file) {
         const formData = new FormData();
@@ -223,10 +253,12 @@ if ($role === 'tenant') {
             const fileData = result.file;
             
             // Update preview
-            preview.innerHTML = `<img src="${fileData.url}" class="w-full h-full object-cover" alt="Profile">`;
-            preview.classList.remove('bg-gradient-to-br', 'from-blue-50', 'to-blue-100', 'text-slate-400');
-            preview.classList.add('border-2', 'border-blue-200');
-            initialsEl.textContent = '';
+            if (preview) preview.innerHTML = `<img src="${fileData.url}" class="w-full h-full object-cover" alt="Profile">`;
+            if (preview) {
+                preview.classList.remove('bg-gradient-to-br', 'from-blue-50', 'to-blue-100', 'text-slate-400');
+                preview.classList.add('border-2', 'border-blue-200');
+            }
+            if (initialsEl) initialsEl.textContent = '';
 
             // Store for saving
             window.tempProfilePic = fileData;
@@ -243,6 +275,8 @@ if ($role === 'tenant') {
         const avatar = document.getElementById('userInitials');
         const preview = document.getElementById('profilePicPreview');
         const initialsEl = document.getElementById('profilePicInitials');
+
+        if (!avatar) return;
 
         if (!url) {
             // No picture: show initials in both avatar and preview
@@ -273,14 +307,13 @@ if ($role === 'tenant') {
         try {
             const profileData = await apiRequest(`${API}/auth/me`);
             if (profileData.user) {
-                document.getElementById('userName').textContent = profileData.user.name;
-                document.getElementById('userEmail').value = profileData.user.email || '';
+                const userNameEl = document.getElementById('userName');
+                const userEmailEl = document.getElementById('userEmail');
+                if (userNameEl) userNameEl.textContent = profileData.user.name;
+                if (userEmailEl) userEmailEl.value = profileData.user.email || '';
                 
-                // Set initials
-                const name = profileData.user.name || 'User';
-                const initialsText = initials(name);
-                document.getElementById('userInitials').textContent = initialsText;
-                document.getElementById('profilePicInitials').textContent = initialsText;
+                // Note: initials are now set in the tenant data section below,
+                // after checking for profile_picture to avoid overwriting avatars
             }
 
             // Determine which tenant to load: for owner/caretaker use viewTenantId, else self
@@ -293,22 +326,41 @@ if ($role === 'tenant') {
             <?php endif; ?>
 
             if (me) {
-                document.getElementById('userPhone').value = me.phone || '';
-                document.getElementById('userUnit').value = me.house_unit || '-';
-                document.getElementById('leaseProperty').value = me.property_name || '-';
-                document.getElementById('leaseStart').value = me.lease_start ? new Date(me.lease_start).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A';
-                document.getElementById('leaseEnd').value = me.lease_end ? new Date(me.lease_end).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A';
+                const userPhoneEl = document.getElementById('userPhone');
+                const userUnitEl = document.getElementById('userUnit');
+                const leasePropertyEl = document.getElementById('leaseProperty');
+                const leaseStartEl = document.getElementById('leaseStart');
+                const leaseEndEl = document.getElementById('leaseEnd');
+                const kinNameEl = document.getElementById('kinName');
+                const kinPhoneEl = document.getElementById('kinPhone');
+                const kinEmailEl = document.getElementById('kinEmail');
+                
+                if (userPhoneEl) userPhoneEl.value = me.phone || '';
+                if (userUnitEl) userUnitEl.value = me.house_unit || '-';
+                if (leasePropertyEl) leasePropertyEl.value = me.property_name || '-';
+                if (leaseStartEl) leaseStartEl.value = me.lease_start ? new Date(me.lease_start).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A';
+                if (leaseEndEl) leaseEndEl.value = me.lease_end ? new Date(me.lease_end).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'N/A';
                 
                 // Next of Kin (read-only)
-                document.getElementById('kinName').value = me.next_of_kin_name || '-';
-                document.getElementById('kinPhone').value = me.next_of_kin_phone || '-';
-                document.getElementById('kinEmail').value = me.next_of_kin_email || '-';
+                if (kinNameEl) kinNameEl.value = me.next_of_kin_name || '-';
+                if (kinPhoneEl) kinPhoneEl.value = me.next_of_kin_phone || '-';
+                if (kinEmailEl) kinEmailEl.value = me.next_of_kin_email || '-';
 
                 // Sync profile picture between header avatar and upload preview
+                // IMPORTANT: Do this BEFORE setting initials, so profile picture takes precedence
+                const userInitials = document.getElementById('userInitials');
+                const profilePicInitials = document.getElementById('profilePicInitials');
+                
                 if (me.profile_picture) {
-                    setProfilePicture(me.profile_picture);
+                    // Normalize the URL to include base path
+                    const normalizedPicUrl = normalizeUrl(me.profile_picture);
+                    setProfilePicture(normalizedPicUrl);
                 } else {
-                    setProfilePicture(null);
+                    // Only show initials if there's no profile picture
+                    const name = profileData.user?.name || me.name || 'User';
+                    const initialsText = initials(name);
+                    if (userInitials) userInitials.textContent = initialsText;
+                    if (profilePicInitials) profilePicInitials.textContent = initialsText;
                 }
             }
         } catch(e) {
@@ -318,8 +370,10 @@ if ($role === 'tenant') {
     }
 
     async function updateProfile() {
-        const phone = document.getElementById('userPhone').value.trim();
-        const email = document.getElementById('userEmailInput').value.trim();
+        const phoneEl = document.getElementById('userPhone');
+        const emailEl = document.getElementById('userEmailInput');
+        const phone = phoneEl ? phoneEl.value.trim() : '';
+        const email = emailEl ? emailEl.value.trim() : '';
         
         if (!phone) {
             toast('Phone number is required', 'error');
@@ -369,7 +423,8 @@ if ($role === 'tenant') {
             
             toast('Profile updated successfully!', 'success');
             window.tempProfilePic = null;
-            document.getElementById('profilePicStatus').textContent = '';
+            const profilePicStatusEl = document.getElementById('profilePicStatus');
+            if (profilePicStatusEl) profilePicStatusEl.textContent = '';
             loadProfile(); // Reload to show updated data
         } catch(e) {
             console.error(e);
@@ -378,8 +433,10 @@ if ($role === 'tenant') {
     }
 
     async function updatePassword() {
-        const newPassword = document.getElementById('newPassword').value;
-        const confirmPassword = document.getElementById('confirmPassword').value;
+        const newPasswordEl = document.getElementById('newPassword');
+        const confirmPasswordEl = document.getElementById('confirmPassword');
+        const newPassword = newPasswordEl ? newPasswordEl.value : '';
+        const confirmPassword = confirmPasswordEl ? confirmPasswordEl.value : '';
         
         if (!newPassword || newPassword.length < 6) {
             toast('Password must be at least 6 characters', 'error');
@@ -400,8 +457,8 @@ if ($role === 'tenant') {
             });
             
             toast('Password updated successfully!', 'success');
-            document.getElementById('newPassword').value = '';
-            document.getElementById('confirmPassword').value = '';
+            if (newPasswordEl) newPasswordEl.value = '';
+            if (confirmPasswordEl) confirmPasswordEl.value = '';
         } catch(e) {
             console.error(e);
             toast(e.message || 'Failed to update password', 'error');

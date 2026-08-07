@@ -56,6 +56,10 @@ $basePath = getBasePath();
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Rent (KES)</label><input type="number" id="houseRent" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="45000" required></div>
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label><select id="houseStatus" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all"><option>Vacant</option><option>Occupied</option></select></div>
                 </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Water Meter No.</label><input type="text" id="houseWaterMeter" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="e.g. WM-1042"></div>
+                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Electric Meter No.</label><input type="text" id="houseElecMeter" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="e.g. KPLC-88211"></div>
+                </div>
                 <div class="flex justify-end gap-3 pt-4"><button type="button" onclick="closeModal()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all">Cancel</button><button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all">Save</button></div>
             </form>
         </div>
@@ -72,7 +76,14 @@ $basePath = getBasePath();
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {
@@ -105,39 +116,67 @@ $basePath = getBasePath();
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
-    async function loadHouses(page = 1, perPage = window.getSavedPerPage(HOUSES_PER_PAGE_KEY, HOUSES_PER_PAGE_DEFAULT)) {
+    async function loadHouses(page, perPage) {
+        if (typeof page === 'undefined' || page === null) page = 1;
+        if (typeof perPage === 'undefined' || perPage === null) {
+            perPage = (typeof window.getSavedPerPage === 'function') ? window.getSavedPerPage(HOUSES_PER_PAGE_KEY, HOUSES_PER_PAGE_DEFAULT) : HOUSES_PER_PAGE_DEFAULT;
+        }
         try {
             console.log('Fetching houses from:', `${API}/houses${filterPropId ? `?property_id=${filterPropId}` : ''}`);
             const qs = filterPropId ? `?property_id=${filterPropId}` : '';
-            const data = await apiRequest(`${API}/houses${qs}${qs ? '&' : '?'}page=${page}&per_page=${perPage}`);
+            const data = await apiRequest(API + '/houses' + qs + (qs ? '&' : '?') + 'page=' + encodeURIComponent(page) + '&per_page=' + encodeURIComponent(perPage));
+            console.log('Houses API Response:', data);
+            console.log('First house encoded_id:', data.houses && data.houses[0] ? data.houses[0].encoded_id : 'NOT FOUND');
             const tbody = document.getElementById('housesTable');
             if (data.houses && data.houses.length) {
-                tbody.innerHTML = data.houses.map(h => `
-                    <tr class="hover:bg-blue-50/30 transition-colors">
-                        <td class="px-6 py-4 font-medium text-slate-900">${h.unit}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${h.property_name||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm text-slate-500">${h.type}</td>
-                        <td class="px-6 py-4">${h.tenant_name ? `<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${h.tenant_name.split(' ').map(s=>s[0]).join('').substring(0,2).toUpperCase()}</div><span class="text-sm text-slate-700">${h.tenant_name}</span></div>` : '<span class="text-sm text-slate-400">-</span>'}</td>
-                        <td class="px-6 py-4 text-sm font-medium text-slate-900">KES ${(h.rent||0).toLocaleString()}</td>
-                        <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${h.status==='occupied'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}">${h.status}</span></td>
-                        <td class="px-6 py-4">
-                            <div class="flex items-center gap-1">
-                                <a href="<?= $basePath; ?>/house-details?id=${h.id}" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View house details"><i class="fas fa-eye"></i></a>
-                                <?php if ($role === 'owner'): ?>
-                                <button onclick="editHouse(${h.id}, ${h.property_id}, '${h.unit}', '${h.type}', ${h.rent}, '${h.status}')" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Edit house"><i class="fas fa-edit"></i></button>
-                                <?php endif; ?>
-                            </div>
-                        </td>
-                    </tr>
-                `).join('');
+                var rows = [];
+                for (var i = 0; i < data.houses.length; i++) {
+                    var h = data.houses[i];
+                    try {
+                        console.log('House ' + i + ':', {id: h.id, encoded_id: h.encoded_id, link: '<?= $basePath; ?>/house-details?id=' + encodeURIComponent(h.encoded_id || '')});
+                    } catch (e) {}
+                    var tenantHtml = '-';
+                    if (h.tenant_name) {
+                        try {
+                            var initials = (h.tenant_name.split(' ').map(function(s){ return s[0]; }).join('') || '').substring(0,2).toUpperCase();
+                        } catch (e) { initials = '' }
+                        tenantHtml = '<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">' + initials + '</div><span class="text-sm text-slate-700">' + (h.tenant_name || '') + '</span></div>';
+                    } else {
+                        tenantHtml = '<span class="text-sm text-slate-400">-</span>';
+                    }
+                    var rentStr = 'KES ' + (h.rent || 0).toString();
+                    try { rentStr = 'KES ' + Number(h.rent || 0).toLocaleString(); } catch(e){ }
+                    var statusClass = (h.status === 'occupied') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700';
+                    var viewId = encodeURIComponent(h.encoded_id || h.id);
+                    var row = '' +
+                        '<tr class="hover:bg-blue-50/30 transition-colors">' +
+                        '<td class="px-6 py-4 font-medium text-slate-900">' + (h.unit || '') + '</td>' +
+                        '<td class="px-6 py-4 text-sm text-slate-600">' + (h.property_name || 'N/A') + '</td>' +
+                        '<td class="px-6 py-4 text-sm text-slate-500">' + (h.type || '') + '</td>' +
+                        '<td class="px-6 py-4">' + tenantHtml + '</td>' +
+                        '<td class="px-6 py-4 text-sm font-medium text-slate-900">' + rentStr + '</td>' +
+                        '<td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ' + statusClass + '">' + (h.status || '') + '</span></td>' +
+                        '<td class="px-6 py-4"><div class="flex items-center gap-1">' +
+                        '<a href="<?= $basePath; ?>/house-details?id=' + viewId + '" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View house details"><i class="fas fa-eye"></i></a>';
+                    <?php if ($role === 'owner'): ?>
+                    row += '<button data-house="' + encodeURIComponent(JSON.stringify(h)) + '" class="js-edit-house p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Edit house"><i class="fas fa-edit"></i></button>';
+                    <?php endif; ?>
+                    row += '</div></td></tr>';
+                    rows.push(row);
+                }
+                tbody.innerHTML = rows.join('');
             } else {
                 tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No units found</td></tr>';
             }
-            if (data.meta) renderPagination('housesPager', data.meta, (p) => loadHouses(p, perPage), {
-                perPageKey: HOUSES_PER_PAGE_KEY,
-                defaultPerPage: HOUSES_PER_PAGE_DEFAULT,
-                onPerPageChange: (newPerPage) => loadHouses(1, newPerPage),
-            });
+            if (data.meta) {
+                try {
+                    renderPagination('housesPager', data.meta, function(p){ loadHouses(p, perPage); }, {
+                        perPageKey: HOUSES_PER_PAGE_KEY,
+                        defaultPerPage: HOUSES_PER_PAGE_DEFAULT,
+                        onPerPageChange: function(newPerPage){ loadHouses(1, newPerPage); }
+                    });
+                } catch(e) { console.error('renderPagination error:', e); }
+            }
         } catch(e) {
             console.error('loadHouses error:', e);
             document.getElementById('housesTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error loading units: ${e.message}</td></tr>`;
@@ -150,11 +189,11 @@ $basePath = getBasePath();
     async function loadProperties() {
         try {
             console.log('Fetching properties...');
-            const data = await apiRequest(`${API}/properties`);
+            var data = await apiRequest(API + '/properties');
             console.log('Properties API response:', data);
-            const select = document.getElementById('houseProperty');
+            var select = document.getElementById('houseProperty');
             if (data.properties && data.properties.length) {
-                select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${p.id}" ${filterPropId==p.id?'selected':''}>${p.name}</option>`).join('');
+                select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(function(p){ return '<option value="' + p.id + '" ' + (filterPropId==p.id?'selected':'') + '>' + p.name + '</option>'; }).join('');
             } else {
                 select.innerHTML = '<option value="">No properties available - create one first</option>';
             }
@@ -171,7 +210,7 @@ $basePath = getBasePath();
         document.getElementById('modal').classList.remove('hidden'); 
     }
     
-    function editHouse(id, propertyId, unit, type, rent, status) {
+    function editHouse(id, propertyId, unit, type, rent, status, waterMeter, elecMeter) {
         document.getElementById('modalTitle').textContent = 'Edit Unit';
         document.getElementById('houseId').value = id;
         document.getElementById('houseProperty').value = propertyId;
@@ -179,12 +218,14 @@ $basePath = getBasePath();
         document.getElementById('houseType').value = type;
         document.getElementById('houseRent').value = rent;
         document.getElementById('houseStatus').value = status;
+        document.getElementById('houseWaterMeter').value = waterMeter || '';
+        document.getElementById('houseElecMeter').value = elecMeter || '';
         document.getElementById('modal').classList.remove('hidden');
     }
     
     function closeModal() { document.getElementById('modal').classList.add('hidden'); }
 
-    document.getElementById('houseForm').addEventListener('submit', async (e) => {
+    document.getElementById('houseForm').addEventListener('submit', async function (e) {
         e.preventDefault();
         const houseId = document.getElementById('houseId').value;
         const propertyId = parseInt(document.getElementById('houseProperty').value);
@@ -200,6 +241,8 @@ $basePath = getBasePath();
             type: document.getElementById('houseType').value,
             rent: parseFloat(document.getElementById('houseRent').value) || 0,
             status: document.getElementById('houseStatus').value,
+            water_meter: document.getElementById('houseWaterMeter').value.trim(),
+            elec_meter: document.getElementById('houseElecMeter').value.trim(),
         };
         
         if (!data.unit) {
@@ -228,6 +271,20 @@ $basePath = getBasePath();
     // Load data on page ready
     loadProperties();
     loadHouses();
+    // Delegate edit button clicks to avoid inline handlers and quoting issues
+    document.addEventListener('click', function (e) {
+        var btn = null;
+        try { btn = (e.target && e.target.closest) ? e.target.closest('.js-edit-house') : null; } catch (ex) { btn = null; }
+        if (!btn) return;
+        try {
+            var payload = btn.getAttribute('data-house') || '';
+            var h = JSON.parse(decodeURIComponent(payload));
+            editHouse(h.id, h.property_id, h.unit, h.type, h.rent, h.status, h.water_meter, h.elec_meter);
+        } catch (err) {
+            console.error('Failed to parse house payload for edit:', err);
+            toast('Failed to open edit dialog', 'error');
+        }
+    });
     </script>
 </body>
 </html>

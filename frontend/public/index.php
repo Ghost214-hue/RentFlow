@@ -28,6 +28,12 @@ if ($pageName === 'forgot-password') {
     exit;
 }
 
+// Handle setup-password page
+if ($pageName === 'setup-password') {
+    require __DIR__ . '/setup-password.php';
+    exit;
+}
+
 // Handle terms-and-conditions page
 if ($pageName === 'terms-and-conditions') {
     require __DIR__ . '/../pages/terms-and-conditions.php';

@@ -119,9 +119,12 @@ class EmailQueueService
             } else {
                 // Mark as failed or pending for retry
                 $newStatus = ($email['attempts'] + 1) >= $email['max_attempts'] ? 'failed' : 'pending';
+                $errorMessage = method_exists($emailService, 'getLastError')
+                    ? ($emailService->getLastError() ?: 'SMTP delivery failed')
+                    : 'SMTP delivery failed';
                 $this->db->update('email_queue', [
                     'status' => $newStatus,
-                    'error_message' => 'SMTP delivery failed',
+                    'error_message' => $errorMessage,
                     'updated_at' => date('Y-m-d H:i:s')
                 ], 'id = ?', [$email['id']]);
                 $failed++;

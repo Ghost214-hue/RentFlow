@@ -3,7 +3,13 @@ session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
 if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
+// Load correct .env for localhost vs production
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
+\App\Core\Env::load($envPath);
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
@@ -61,7 +67,14 @@ require_once __DIR__ . '/../public/components/report_tab.php';
                 BASE = BASE.replace(/\/[^\/]*$/, '');
             }
             const API = BASE + '/api';
-            const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+            // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
             const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
             async function apiRequest(url, options = {}) {

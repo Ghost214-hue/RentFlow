@@ -56,7 +56,6 @@ require_once __DIR__ . '/../includes/auth.php';
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Phone Number</label><input type="tel" id="caretakerPhone" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="+254 712 345 678"></div>
                     <div><label class="block text-sm font-medium text-slate-700 mb-1">National ID</label><input type="text" id="caretakerId" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="ID number" required></div>
                 </div>
-                <div><label class="block text-sm font-medium text-slate-700 mb-1">Password <span class="text-slate-400 text-xs">optional</span></label><input type="password" id="caretakerPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Leave blank to use ID number"></div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1">Assign Property</label>
                     <select id="caretakerProperties" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all">
@@ -217,7 +216,6 @@ require_once __DIR__ . '/../includes/auth.php';
         const submitButton = document.querySelector('#caretakerForm button[type="submit"]');
         const form = document.getElementById('caretakerForm');
         form.reset();
-        document.getElementById('caretakerPassword').value = '';
 
         if (id) {
             const caretaker = caretakersCache.find(c => c.id === id);
@@ -284,12 +282,6 @@ require_once __DIR__ . '/../includes/auth.php';
             id_number: document.getElementById('caretakerId').value.trim(),
             assigned_properties: selectedProperty,
         };
-        const passwordValue = document.getElementById('caretakerPassword').value;
-        if (!currentCaretakerId) {
-            payload.password = passwordValue || payload.id_number;
-        } else if (passwordValue) {
-            payload.password = passwordValue;
-        }
 
         const method = currentCaretakerId ? 'PUT' : 'POST';
         const url = currentCaretakerId ? `${API}/caretakers/${currentCaretakerId}` : `${API}/caretakers`;

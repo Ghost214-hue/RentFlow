@@ -109,8 +109,12 @@ spl_autoload_register(function ($class) {
     if (file_exists($file)) require $file;
 });
 
-// Load environment
-$envPath = file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env';
+// Load environment - prefer .env for localhost, .env.production for production
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
 \App\Core\Env::load($envPath);
 
 use App\Core\Router;
@@ -132,6 +136,9 @@ $router->get('/auth/me', ['App\Controllers\AuthController', 'me'], [fn() => Auth
 $router->post('/auth/forgot-password', ['App\Controllers\AuthController', 'forgotPassword']);
 $router->post('/auth/verify-reset-code', ['App\Controllers\AuthController', 'verifyResetCode']);
 $router->post('/auth/reset-password', ['App\Controllers\AuthController', 'resetPassword']);
+$router->get('/auth/setup-password', ['App\Controllers\SetupPasswordController', 'validateToken']);
+$router->post('/auth/setup-password', ['App\Controllers\SetupPasswordController', 'setupPassword']);
+$router->post('/auth/resend-setup-email', ['App\Controllers\SetupPasswordController', 'resendSetupEmail']);
 
 // ==================== DASHBOARD ====================
 $router->get('/dashboard', ['App\Controllers\DashboardController', 'index'], [fn() => AuthMiddleware::authenticate()]);
@@ -192,6 +199,7 @@ $router->post('/communications', ['App\Controllers\CommunicationController', 'st
 $router->get('/caretakers', ['App\Controllers\CaretakerController', 'index'], [fn() => AuthMiddleware::authenticate()]);
 $router->post('/caretakers', ['App\Controllers\CaretakerController', 'store'], [fn() => AuthMiddleware::authenticate()]);
 $router->put('/caretakers/{id}', ['App\Controllers\CaretakerController', 'update'], [fn() => AuthMiddleware::authenticate()]);
+$router->post('/caretakers/{id}/resend-setup-link', ['App\Controllers\CaretakerController', 'resendSetupLink'], [fn() => AuthMiddleware::authenticate()]);
 $router->delete('/caretakers/{id}', ['App\Controllers\CaretakerController', 'destroy'], [fn() => AuthMiddleware::authenticate()]);
 
 // ==================== DOCUMENTS ====================

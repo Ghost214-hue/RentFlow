@@ -111,7 +111,9 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
+   const BASE = '<?php echo $basePath; ?>';
+   const API = BASE + '/api';
+
     const CSRF_TOKEN = '<?php echo htmlspecialchars($csrfToken); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -174,17 +176,36 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
             const cookieSecure = '<?php echo $isHttps ? '; Secure' : ''; ?>';
             document.cookie = 'rf_token=' + encodeURIComponent(data.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Strict' + cookieSecure;
             
+            console.log('=== LOGIN HANDLER DEBUG ===');
+            console.log('Token stored in browser cookie (rf_token)');
+            console.log('Token length:', data.token.length, 'bytes');
+            console.log('Token first 50 chars:', data.token.substring(0, 50) + '...');
+            
             toast('Login successful! Redirecting...', 'success');
             
+            // Clear form fields
+            document.getElementById('loginForm').reset();
+            
             const role = data.user.role || 'owner';
-            console.log('Redirecting to dashboard for role:', role);
+            console.log('=== LOGIN SUCCESSFUL ===');
+            console.log('1. Token stored in cookie - rf_token present:', !!document.cookie.includes('rf_token'));
+            console.log('2. User role:', role);
+            console.log('3. BASE path:', BASE);
+            console.log('4. Current URL:', window.location.href);
             
             // Redirect WITHOUT token in URL - cookie handles auth now
             setTimeout(() => {
                 const dashboard = role === 'tenant' ? 'tenant-dashboard' :
                                   role === 'caretaker' ? 'caretaker-dashboard' : 
                                   'dashboard';
-                window.location.href = dashboard;
+                const redirectUrl = BASE + '/' + dashboard;
+                console.log('=== REDIRECT EXECUTING ===');
+                console.log('5. Target dashboard page:', dashboard);
+                console.log('6. Redirect URL:', redirectUrl);
+                console.log('7. Cookie before redirect:', document.cookie);
+                console.log('8. Setting window.location.href...');
+                window.location.href = redirectUrl;
+                console.log('9. (Should NOT see this - page is redirecting)');
             }, 1000);
         } catch(err) {
             console.error('Login error:', err);

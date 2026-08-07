@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\BillingService;
 use App\Services\EmailService;
 use App\Core\Pagination;
 
@@ -115,53 +116,28 @@ class PaymentController
             'tenant_confirmed' => $isTenantSelfPay ? 1 : 0,
         ]);
 
-        // Update tenant balance and carry over overpayment to next month
-        if (($data['type'] ?? 'Rent') === 'Rent' && ($data['status'] ?? 'completed') === 'completed') {
-            $current = $db->fetchOne("SELECT balance FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
-            $currentBalance = $current ? (float)$current['balance'] : 0;
-            $newBalance = $currentBalance - (float)$data['amount'];
-            
-            // Update tenant balance (can be negative = overpayment)
-            $db->update('tenants', ['balance' => $newBalance], 'id = ?', [(int) $data['tenant_id']]);
-            
-            // If overpaid (negative balance), apply to next month's bill
-            if ($newBalance < 0) {
-                $currentMonth = $data['month'] ?? date('Y-m');
-                $nextMonth = date('Y-m', strtotime($currentMonth . ' +1 month'));
-                
-                // Find next month's rent bill
-                $nextBill = $db->fetchOne(
-                    "SELECT id, total FROM bills WHERE house_id = ? AND month = ? AND type = 'Rent'",
-                    [$tenant['house_id'], $nextMonth]
-                );
-                
-                if ($nextBill) {
-                    // Apply overpayment to next month (reduce the bill total)
-                    $overpayment = abs($newBalance);
-                    $newTotal = max(0, (float)$nextBill['total'] - $overpayment);
-                    $db->update('bills', ['total' => $newTotal], 'id = ?', [$nextBill['id']]);
-                    
-                    // Reset tenant balance to 0 since overpayment was applied
-                    $db->update('tenants', ['balance' => 0], 'id = ?', [(int) $data['tenant_id']]);
-                }
-            }
+        $billingService = new BillingService();
+        $bill = $db->fetchOne(
+            "SELECT id FROM bills WHERE house_id = ? AND month = ? AND owner_id = ?",
+            [$tenant['house_id'], $data['month'] ?? date('Y-m'), $ownerId]
+        );
+
+        if ($bill) {
+            $billingService->allocatePayment(
+                $paymentId,
+                (int)$bill['id'],
+                (float)$data['amount'],
+                $data['type'] ?? 'Mixed'
+            );
+
+            $billTotals = $billingService->getBillTotals((int)$bill['id']);
+            $newStatus = $billTotals['paid'] >= $billTotals['total'] ? 'paid' : ($billTotals['paid'] > 0 ? 'partial' : 'pending');
+            $db->update('bills', ['status' => $newStatus], 'id = ?', [$bill['id']]);
         }
 
-        // Update bill status
-        if ($tenant['house_id'] && !empty($data['month'])) {
-            $houseId = $tenant['house_id'];
-            $paidTotal = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE house_id = ? AND owner_id = ? AND status = 'completed' AND month = ?",
-                [$houseId, $ownerId, $data['month']]
-            );
-            $bill = $db->fetchOne(
-                "SELECT total FROM bills WHERE house_id = ? AND month = ?",
-                [$houseId, $data['month']]
-            );
-            if ($bill) {
-                $newStatus = ($paidTotal['total'] >= $bill['total']) ? 'paid' : 'partial';
-                $db->update('bills', ['status' => $newStatus], 'house_id = ? AND month = ?', [$houseId, $data['month']]);
-            }
+        $paymentStatus = $isTenantSelfPay ? 'confirmed' : 'completed';
+        if (in_array($paymentStatus, ['confirmed', 'completed', 'paid'], true)) {
+            $billingService->recalcTenantCreditAndBalance((int) $data['tenant_id']);
         }
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
@@ -267,7 +243,7 @@ class PaymentController
         $db = Database::getInstance();
 
         $tenant = $db->fetchOne(
-            "SELECT t.id, t.name, t.balance, h.rent, h.unit, p.name as property_name
+            "SELECT t.id, t.name, t.balance, t.credit, h.rent, h.unit, p.name as property_name
              FROM tenants t
              LEFT JOIN houses h ON t.house_id = h.id
              LEFT JOIN properties p ON t.property_id = p.id
@@ -279,19 +255,20 @@ class PaymentController
             Router::jsonResponse(['error' => 'Tenant not found'], 404);
         }
 
-        // Calculate arrears (positive balance = owed)
-        $balance = (float) ($tenant['balance'] ?? 0);
+        $balance = max(0.0, (float) ($tenant['balance'] ?? 0));
+        $credit = max(0.0, (float) ($tenant['credit'] ?? 0));
         $rent = (float) ($tenant['rent'] ?? 0);
-        $arrears = max(0, $balance);
-        $overpaid = $balance < 0 ? abs($balance) : 0;
+        $arrears = $balance;
+        $overpaid = $credit;
 
         Router::jsonResponse([
             'tenant' => $tenant,
             'monthly_rent' => $rent,
             'balance' => $balance,
+            'credit' => $credit,
             'arrears' => $arrears,
             'overpaid' => $overpaid,
-            'suggested_payment' => $balance > 0 ? $balance : $rent,
+            'suggested_payment' => $balance > 0 ? $balance : 0,
         ]);
     }
 

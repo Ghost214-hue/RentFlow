@@ -1,9 +1,28 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/base-path-fix.php';
+require_once __DIR__ . '/../../backend/app/Core/IdEncoder.php';
 $basePath = getBasePath();
-$tenantId = (int) ($_GET['id'] ?? 0);
-if ($tenantId <= 0) {
+
+// Debug logging
+error_log('DEBUG: tenant-details.php loaded. $_GET[id] = ' . ($_GET['id'] ?? 'NOT SET'));
+
+$tenantRaw = $_GET['id'] ?? null;
+$tenantId = null;
+if ($tenantRaw !== null) {
+    // Try decode first (expected in production). If decoding fails and the value
+    // is a plain numeric id (e.g. ?id=50) fall back to using the integer id.
+    $tenantId = \App\Core\IdEncoder::decode((string) $tenantRaw);
+    if ($tenantId === null && ctype_digit((string) $tenantRaw)) {
+        $tenantId = (int) $tenantRaw;
+    }
+}
+
+// Debug logging
+error_log('DEBUG: After decoding/fallback, $tenantId = ' . ($tenantId ?? 'NULL'));
+
+if (!$tenantId) {
+    error_log('DEBUG: tenantId is null, redirecting to ' . $basePath . '/tenants');
     header('Location: ' . $basePath . '/tenants');
     exit;
 }
@@ -196,10 +215,24 @@ if ($tenantId <= 0) {
         if (url.startsWith('http://') || url.startsWith('https://')) return url;
         const base = String(BASE_PATH || '').trim();
         const path = String(url).trim();
+        
+        // If path already starts with base path, don't duplicate it
+        if (base && path.startsWith(base + '/')) {
+            return path;
+        }
+        
+        // Otherwise prepend base path
         if (path.startsWith('/')) return base + path;
         return base + '/' + path;
     }
-    const token = localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {

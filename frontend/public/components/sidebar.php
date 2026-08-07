@@ -154,7 +154,14 @@ function bindSidebarCounts() {
     async function loadSidebarCounts() {
         console.log('Loading sidebar counts...');
         try {
-            const token = localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
+            // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
             if (!token) {
                 console.log('No token found, skipping sidebar counts');
                 return;

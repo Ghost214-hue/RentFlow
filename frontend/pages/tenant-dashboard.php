@@ -30,8 +30,18 @@ $hasConsent = !empty($user['data_protection_consent_at']);
 
 <!-- Data Protection Consent Modal -->
 <?php if (!$hasConsent): ?>
-<div id="consentModal" class="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-8">
+<div id="consentModal" class="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <style>
+        /* Consent modal responsive adjustments */
+        #consentModal .consent-content { max-width: 680px; width: 100%; max-height: calc(100vh - 4rem); overflow-y: auto; -webkit-overflow-scrolling: touch; border-radius: 18px; }
+        @media (max-width: 640px) {
+            #consentModal .consent-content { max-width: 100%; max-height: calc(100vh - 3rem); padding: 18px; }
+            #consentModal .consent-actions { position: sticky; bottom: 0; left: 0; right: 0; padding: 12px; background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff 40%); }
+        }
+        /* Make modal content easier to read */
+        #consentModal .consent-content p, #consentModal .consent-content li { font-size: 15px; line-height: 1.5; }
+    </style>
+    <div class="bg-white consent-content shadow-2xl w-full p-8">
         <div class="text-center mb-6">
             <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center mx-auto mb-4">
                 <i class="fas fa-shield-alt text-2xl"></i>
@@ -78,14 +88,14 @@ $hasConsent = !empty($user['data_protection_consent_at']);
             </p>
         </div>
 
-                <div class="flex gap-3">
-            <button onclick="declineConsent()" class="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-all">
-                Cancel
-            </button>
-            <button onclick="acceptConsent()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg">
-                I Agree
-            </button>
-        </div>
+                <div class="consent-actions flex gap-3 mt-4">
+                    <button id="consentDecline" onclick="declineConsent()" class="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-all">
+                        Cancel
+                    </button>
+                    <button id="consentAccept" onclick="acceptConsent()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg">
+                        I Agree
+                    </button>
+                </div>
     </div>
 </div>
 <?php endif; ?>
@@ -497,7 +507,9 @@ $hasConsent = !empty($user['data_protection_consent_at']);
             try { localStorage.setItem('rf_consent', '1'); } catch (e) {}
             
             toast('Thank you for accepting. Welcome to your dashboard!', 'success');
-            setTimeout(() => location.reload(), 600);
+            // Restore page interactivity before reload
+            try { restoreConsentBlocking(); } catch(e){}
+            setTimeout(function(){ location.reload(); }, 600);
         } catch (e) {
             console.error(e);
             toast('Failed to record consent. Please try again.', 'error');
@@ -510,16 +522,70 @@ $hasConsent = !empty($user['data_protection_consent_at']);
         window.location.href = '<?php echo $basePath; ?>/signin';
     }
 
+    /* Consent blocking helpers: prevent background interaction while modal visible */
+    function applyConsentBlocking() {
+        try {
+            // prevent body scroll
+            document.body.style.overflow = 'hidden';
+            // blur and disable interactive regions if present
+            var selectors = ['header', '.sidebar', 'nav', 'aside', '.header'];
+            var stored = [];
+            selectors.forEach(function(s){
+                var els = document.querySelectorAll(s);
+                els.forEach(function(el){
+                    // save current inline pointerEvents to restore
+                    el.dataset._pointerEvents = el.style.pointerEvents || '';
+                    el.dataset._ariaHidden = el.getAttribute('aria-hidden') || '';
+                    el.style.pointerEvents = 'none';
+                    el.setAttribute('aria-hidden','true');
+                    el.style.filter = 'blur(1px)';
+                    stored.push(el);
+                });
+            });
+            // focus the accept button for accessibility
+            var acceptBtn = document.getElementById('consentAccept');
+            if (acceptBtn) acceptBtn.focus();
+            // store a marker
+            document.documentElement.dataset.consentActive = '1';
+        } catch(e){ console.error('applyConsentBlocking error', e); }
+    }
+
+    function restoreConsentBlocking() {
+        try {
+            document.body.style.overflow = '';
+            var selectors = ['header', '.sidebar', 'nav', 'aside', '.header'];
+            selectors.forEach(function(s){
+                var els = document.querySelectorAll(s);
+                els.forEach(function(el){
+                    if (el.dataset._pointerEvents !== undefined) el.style.pointerEvents = el.dataset._pointerEvents || '';
+                    if (el.dataset._ariaHidden !== undefined) {
+                        if (el.dataset._ariaHidden === '') el.removeAttribute('aria-hidden'); else el.setAttribute('aria-hidden', el.dataset._ariaHidden);
+                    }
+                    el.style.filter = '';
+                    delete el.dataset._pointerEvents;
+                    delete el.dataset._ariaHidden;
+                });
+            });
+            delete document.documentElement.dataset.consentActive;
+        } catch(e){ console.error('restoreConsentBlocking error', e); }
+    }
+
+    // Apply consent blocking if modal is visible
+    (function(){
+        var modal = document.getElementById('consentModal');
+        try {
+            // If consent already accepted in this browser, hide modal
+            if (localStorage.getItem('rf_consent') === '1') {
+                if (modal) modal.style.display = 'none';
+            } else {
+                // block background interaction while modal is visible
+                if (modal) applyConsentBlocking();
+            }
+        } catch (e) { console.error('consent init error', e); }
+    })();
+
     loadTenantDashboard();
     loadEmergencyContacts();
-
-    // If consent was previously accepted in this browser, hide the modal immediately
-    try {
-        if (localStorage.getItem('rf_consent') === '1') {
-            const modal = document.getElementById('consentModal');
-            if (modal) modal.style.display = 'none';
-        }
-    } catch (e) {}
     </script>
 </body>
 </html>

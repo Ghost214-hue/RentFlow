@@ -142,7 +142,14 @@ require_once __DIR__ . '/../includes/auth.php';
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const userRole = '<?php echo $role; ?>';
     let currentDocumentId = null;
 

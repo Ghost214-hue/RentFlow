@@ -5,6 +5,7 @@
 namespace App\Controllers;
 
 use App\Core\Database;
+use App\Core\IdEncoder;
 use App\Core\Router;
 use App\Core\Pagination;
 
@@ -55,11 +56,22 @@ class HouseController
             $countParams = array_merge($countParams, $propertyIds);
         }
 
-        $sql .= " ORDER BY h.created_at DESC LIMIT ?, ?";
+        // Order houses chronologically/naturally by unit within each property,
+        // e.g. A1, A2 ... A10 then B1, B2 ... B10 then C1, C2 ... C10
+        $sql .= " ORDER BY p.name ASC,
+                  CAST(REGEXP_REPLACE(h.unit, '[0-9]+$', '') AS CHAR) ASC,
+                  CAST(REGEXP_REPLACE(h.unit, '^[^0-9]*', '') AS UNSIGNED) ASC
+                  LIMIT ?, ?";
         $queryParams[] = $page['offset'];
         $queryParams[] = $page['limit'];
 
         $houses = $db->fetchAll($sql, $queryParams);
+        $houses = array_map(function ($house) {
+            if (isset($house['id'])) {
+                $house['encoded_id'] = IdEncoder::encode((int) $house['id']);
+            }
+            return $house;
+        }, $houses);
 
         $totalRow = $db->fetchOne($countSql, $countParams);
         $total = (int) ($totalRow['total'] ?? 0);
@@ -92,8 +104,25 @@ class HouseController
             $queryParams[] = $propertyId;
         }
 
+        if (Router::getAuthRole() === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) {
+                Router::jsonResponse(['houses' => []]);
+                return;
+            }
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql .= " AND h.property_id IN ($placeholders)";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        }
+
         $sql .= " ORDER BY p.name ASC, h.unit ASC";
         $houses = $db->fetchAll($sql, $queryParams);
+        $houses = array_map(function ($house) {
+            if (isset($house['id'])) {
+                $house['encoded_id'] = IdEncoder::encode((int) $house['id']);
+            }
+            return $house;
+        }, $houses);
 
         Router::jsonResponse(['houses' => $houses]);
     }
@@ -209,8 +238,9 @@ class HouseController
                      FROM tenants
                      WHERE id = ? AND owner_id = ?",
                     [$house['tenant_id'], $ownerId]
-                );
-            }
+                );                if ($currentTenant && isset($currentTenant['id'])) {
+                    $currentTenant['encoded_id'] = IdEncoder::encode((int) $currentTenant['id']);
+                }            }
 
             // Past tenants who lived in this house
             $pastTenants = [];

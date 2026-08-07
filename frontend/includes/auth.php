@@ -5,7 +5,7 @@ require_once __DIR__ . '/base-path-fix.php';
 $basePath = rtrim((string)($basePath ?? ''), '/');
 
 // Determine if we're in production/HTTPS environment
-$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
+$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'development') === 'production';
 $isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
            (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
            (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
@@ -16,7 +16,7 @@ if (session_status() === PHP_SESSION_NONE) {
         'path' => '/',
         'secure' => $isHttps,
         'httponly' => true,
-        'samesite' => 'Strict'
+        'samesite' => 'Lax'
     ]);
     session_start();
 }
@@ -44,14 +44,31 @@ if (!$token) {
 
 // Validate and decode token
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
+\App\Core\Env::load($envPath);
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
+// Debug logging when token decode fails to help diagnose local issues
+if (!$user) {
+    try {
+        $parts = explode('.', $token);
+        $partsCount = count($parts);
+        $sample = substr($token, 0, 64);
+        error_log("DEBUG: JWT decode failed. token_len=" . strlen($token) . " parts=" . $partsCount . " sample=" . $sample);
+    } catch (\Throwable $e) {
+        error_log('DEBUG: JWT decode failure and logging error: ' . $e->getMessage());
+    }
+}
 
 // Redirect if token is invalid or expired
 if (!$user) {
+    error_log('[AUTH] Token validation failed - redirecting to signin');
     require_once __DIR__ . '/base-path-fix.php';
     $basePath = rtrim((string)($basePath ?? ''), '/');
     
@@ -61,6 +78,7 @@ if (!$user) {
     $_SESSION = [];
     session_destroy();
     header('Location: ' . $basePath . '/signin');
+    error_log('[AUTH] Redirect header sent to: ' . $basePath . '/signin');
     exit;
 }
 

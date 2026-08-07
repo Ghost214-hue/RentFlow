@@ -1,9 +1,28 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/base-path-fix.php';
+require_once __DIR__ . '/../../backend/app/Core/IdEncoder.php';
 $basePath = rtrim((string)($basePath ?? getBasePath() ?? ''), '/');
-$houseId = (int) ($_GET['id'] ?? 0);
-if ($houseId <= 0) {
+
+// Debug logging
+error_log('DEBUG: house-details.php loaded. $_GET[id] = ' . ($_GET['id'] ?? 'NOT SET'));
+
+$houseRaw = $_GET['id'] ?? null;
+$houseId = null;
+if ($houseRaw !== null) {
+    // Try decode first (expected token). If that fails and a numeric id was
+    // provided (e.g. ?id=50) fall back to the integer id for compatibility.
+    $houseId = \App\Core\IdEncoder::decode((string) $houseRaw);
+    if ($houseId === null && ctype_digit((string) $houseRaw)) {
+        $houseId = (int) $houseRaw;
+    }
+}
+
+// Debug logging
+error_log('DEBUG: After decoding/fallback, $houseId = ' . ($houseId ?? 'NULL'));
+
+if (!$houseId) {
+    error_log('DEBUG: houseId is null, redirecting to ' . $basePath . '/houses');
     header('Location: ' . $basePath . '/houses');
     exit;
 }
@@ -69,6 +88,32 @@ if ($houseId <= 0) {
                         </div>
                     </div>
 
+                    <!-- Meters -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-semibold text-slate-900"><i class="fas fa-tachometer-alt mr-2 text-blue-600"></i>Meters</h3>
+                            <?php if ($role === 'owner'): ?>
+                            <button onclick="openMeterModal()" class="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"><i class="fas fa-edit mr-1"></i>Edit Meters</button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-slate-50/50 rounded-xl p-4 flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-sky-100 to-sky-200 text-sky-600 flex items-center justify-center"><i class="fas fa-faucet-drip"></i></div>
+                                <div>
+                                    <p class="text-xs font-medium text-slate-500 mb-1">Water Meter No.</p>
+                                    <p class="text-sm font-medium text-slate-900" id="houseWaterMeter">-</p>
+                                </div>
+                            </div>
+                            <div class="bg-slate-50/50 rounded-xl p-4 flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-amber-100 to-amber-200 text-amber-600 flex items-center justify-center"><i class="fas fa-bolt"></i></div>
+                                <div>
+                                    <p class="text-xs font-medium text-slate-500 mb-1">Electric Meter No.</p>
+                                    <p class="text-sm font-medium text-slate-900" id="houseElecMeter">-</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Current Tenant -->
                     <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
                         <h3 class="font-semibold text-slate-900 mb-4"><i class="fas fa-user mr-2 text-blue-600"></i>Current Tenant</h3>
@@ -119,13 +164,44 @@ if ($houseId <= 0) {
         </main>
     </div>
 
+    <!-- Meters Edit Modal -->
+    <div id="meterModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeMeterModal()">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900">Edit Meters</h3>
+                <button onclick="closeMeterModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <form id="meterForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Water Meter No.</label>
+                    <input type="text" id="meterWaterMeter" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="e.g. WM-1042">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Electric Meter No.</label>
+                    <input type="text" id="meterElecMeter" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="e.g. KPLC-88211">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeMeterModal()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all">Cancel</button>
+                    <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
 
     <script>
     const BASE = '<?= $basePath; ?>';
     const API = BASE + '/api';
     const houseId = <?= $houseId; ?>;
-    const token = localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {
@@ -175,13 +251,17 @@ if ($houseId <= 0) {
             document.getElementById('houseType').textContent = house.type || '-';
             document.getElementById('houseRent').textContent = formatMoney(house.rent);
 
+            // Meters
+            document.getElementById('houseWaterMeter').textContent = house.water_meter || '-';
+            document.getElementById('houseElecMeter').textContent = house.elec_meter || '-';
+
             // Current tenant
             const currentTenant = data.current_tenant;
             const currentTenantSection = document.getElementById('currentTenantSection');
             if (currentTenant && currentTenant.name) {
                 const initials = currentTenant.name.split(' ').map(s => s[0]).join('').substring(0, 2).toUpperCase();
                 currentTenantSection.innerHTML = `
-                    <a href="${BASE}/tenant-details?id=${currentTenant.id}" class="flex items-center gap-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100/50 hover:bg-blue-100/50 transition-colors">
+                    <a href="${BASE}/tenant-details?id=${encodeURIComponent(currentTenant.encoded_id || '')}" class="flex items-center gap-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100/50 hover:bg-blue-100/50 transition-colors">
                         <div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center text-lg font-bold">${escapeHtml(initials)}</div>
                         <div class="flex-1">
                             <p class="font-medium text-slate-900">${escapeHtml(currentTenant.name)}</p>
@@ -279,6 +359,33 @@ if ($houseId <= 0) {
             document.getElementById('errorState').classList.remove('hidden');
         }
     }
+
+    function openMeterModal() {
+        document.getElementById('meterWaterMeter').value = (document.getElementById('houseWaterMeter').textContent === '-') ? '' : document.getElementById('houseWaterMeter').textContent;
+        document.getElementById('meterElecMeter').value = (document.getElementById('houseElecMeter').textContent === '-') ? '' : document.getElementById('houseElecMeter').textContent;
+        document.getElementById('meterModal').classList.remove('hidden');
+    }
+
+    function closeMeterModal() {
+        document.getElementById('meterModal').classList.add('hidden');
+    }
+
+    document.getElementById('meterForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var data = {
+            water_meter: document.getElementById('meterWaterMeter').value.trim(),
+            elec_meter: document.getElementById('meterElecMeter').value.trim()
+        };
+        try {
+            await apiRequest(API + '/houses/' + houseId, { method: 'PUT', body: JSON.stringify(data) });
+            document.getElementById('houseWaterMeter').textContent = data.water_meter || '-';
+            document.getElementById('houseElecMeter').textContent = data.elec_meter || '-';
+            closeMeterModal();
+            toast('Meters updated!');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
 
     loadHouseDetails();
     </script>

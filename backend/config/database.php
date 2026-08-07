@@ -5,13 +5,19 @@
  */
 require_once __DIR__ . '/../app/Core/Env.php';
 
-// Load environment variables - prefer .env.production for production deployments
+// Load environment variables - prefer .env for localhost, .env.production for production
 if (!\App\Core\Env::get('DB_HOST')) {
-    $productionEnv = dirname(__DIR__) . '/.env.production';
-    if (file_exists($productionEnv)) {
-        \App\Core\Env::load($productionEnv);
+    $isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+                   str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+    if ($isLocalhost) {
+        \App\Core\Env::load(dirname(__DIR__) . '/../.env');
     } else {
-        \App\Core\Env::load();
+        $productionEnv = dirname(__DIR__) . '/.env.production';
+        if (file_exists($productionEnv)) {
+            \App\Core\Env::load($productionEnv);
+        } else {
+            \App\Core\Env::load();
+        }
     }
 }
 

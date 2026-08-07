@@ -445,7 +445,14 @@ if (!isset($user, $role, $token)) {
         return base.replace(/\/[^\/]*$/, '');
     })();
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {
@@ -619,11 +626,13 @@ if (!isset($user, $role, $token)) {
             tbody.innerHTML = '<tr id="loadingRow"><td colspan="7" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading tenants...</span></div></td></tr>';
             
             const data = await apiRequest(`${API}/tenants`);
+            console.log('Tenants API Response:', data);
+            console.log('First tenant encoded_id:', data.tenants && data.tenants[0] ? data.tenants[0].encoded_id : 'NOT FOUND');
             tenantsCache = data.tenants || [];
             if (data.tenants && data.tenants.length) {
                 tbody.innerHTML = data.tenants.map(t => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
-                        <td class="px-6 py-4"><a href="<?php echo $basePath; ?>/tenant-details?id=${Number(t.id)||0}" class="flex items-center gap-2 text-inherit hover:text-inherit"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold overflow-hidden">${t.profile_picture ? '<img src="' + escapeHtml(t.profile_picture) + '" class="w-full h-full object-cover" alt="">' : escapeHtml(initials(t.name))}</div><div><p class="text-sm font-medium text-slate-900">${escapeHtml(t.name || 'N/A')}</p><p class="text-xs text-slate-400">${escapeHtml(t.email || '')}</p></div></a></td>
+                        <td class="px-6 py-4"><a href="<?php echo $basePath; ?>/tenant-details?id=${encodeURIComponent(t.encoded_id ?? t.id)}" class="flex items-center gap-2 text-inherit hover:text-inherit"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold overflow-hidden">${t.profile_picture ? '<img src="' + escapeHtml(t.profile_picture) + '" class="w-full h-full object-cover" alt="">' : escapeHtml(initials(t.name))}</div><div><p class="text-sm font-medium text-slate-900">${escapeHtml(t.name || 'N/A')}</p><p class="text-xs text-slate-400">${escapeHtml(t.email || '')}</p></div></a></td>
                         <td class="px-6 py-4 text-sm text-slate-600">${escapeHtml(t.property_name || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">${escapeHtml(t.house_unit || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(t.phone || 'N/A')}</td>
@@ -631,7 +640,7 @@ if (!isset($user, $role, $token)) {
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(formatDate(t.lease_end))}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center gap-2">
-                                <a href="<?php echo $basePath; ?>/tenant-details?id=${Number(t.id)||0}" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors inline-flex items-center justify-center" aria-label="View tenant details"><i class="fas fa-eye"></i></a>
+                                <a href="<?php echo $basePath; ?>/tenant-details?id=${encodeURIComponent(t.encoded_id ?? t.id)}" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors inline-flex items-center justify-center" aria-label="View tenant details"><i class="fas fa-eye"></i></a>
                                 <button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Edit tenant"><i class="fas fa-pen"></i></button>
                                 ${t.status === 'pending_termination' ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Pending</span>` : ''}
                                 <?php if ($role === 'owner'): ?>
@@ -675,30 +684,44 @@ if (!isset($user, $role, $token)) {
     }
 
     // ==================== LOAD HOUSES (on property change) ====================
-    document.getElementById('tenantProperty').addEventListener('change', async function() {
-        const propId = this.value;
+    async function loadHousesForProperty(propId, selectedHouseId = null) {
         const houseSelect = document.getElementById('tenantHouse');
         const housePreview = document.getElementById('housePreview');
         const houseList = document.getElementById('houseList');
-        
+
         if (!propId) {
             houseSelect.innerHTML = '<option value="">Select house...</option>';
             housePreview.classList.add('hidden');
             return;
         }
-        
+
         houseSelect.innerHTML = '<option value="">Loading...</option>';
         houseSelect.disabled = true;
         try {
             const data = await apiRequest(`${API}/houses/available?property_id=${propId}`);
-            
-            if (data.houses && data.houses.length) {
-                houseSelect.innerHTML = '<option value="">Select house...</option>' + data.houses.map(h => 
+            let houses = Array.isArray(data.houses) ? data.houses.slice() : [];
+
+            if (selectedHouseId) {
+                const selectedId = Number(selectedHouseId);
+                const alreadyPresent = houses.some(h => Number(h.id) === selectedId);
+                if (!alreadyPresent) {
+                    try {
+                        const selectedData = await apiRequest(`${API}/houses/${selectedId}`);
+                        if (selectedData.house && Number(selectedData.house.property_id) === Number(propId)) {
+                            houses.unshift(selectedData.house);
+                        }
+                    } catch (innerErr) {
+                        console.warn('Could not load current tenant house details:', innerErr);
+                    }
+                }
+            }
+
+            if (houses.length) {
+                houseSelect.innerHTML = '<option value="">Select house...</option>' + houses.map(h => 
                     `<option value="${Number(h.id)||0}" data-rent="${Number(h.rent)||0}" data-unit="${escapeHtml(h.unit || '')}" data-type="${escapeHtml(h.type || '')}">${escapeHtml(h.unit)} - ${escapeHtml(h.type)} (KES ${formatMoney(h.rent)})</option>`
                 ).join('');
-                // Show preview
                 housePreview.classList.remove('hidden');
-                houseList.innerHTML = data.houses.map(h => `
+                houseList.innerHTML = houses.map(h => `
                     <div class="house-option flex items-center justify-between p-2 rounded-lg border border-blue-100 bg-white text-sm cursor-pointer hover:bg-blue-50" onclick="selectHouseFromList(${Number(h.id)||0}, event)">
                         <div class="flex items-center gap-2">
                             <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center"><i class="fas fa-door-open text-xs text-blue-500"></i></div>
@@ -708,16 +731,31 @@ if (!isset($user, $role, $token)) {
                         <span class="text-sm font-semibold text-slate-900">KES ${formatMoney(h.rent)}</span>
                     </div>
                 `).join('');
+                if (selectedHouseId) {
+                    houseSelect.value = selectedHouseId;
+                    const selected = houseSelect.options[houseSelect.selectedIndex];
+                    if (selected?.dataset.rent) {
+                        document.getElementById('tenantRent').value = Number(selected.dataset.rent) || 0;
+                    }
+                }
             } else {
                 houseSelect.innerHTML = '<option value="">No vacant units available</option>';
                 housePreview.classList.add('hidden');
             }
-        } catch(e) { 
-            console.error(e); 
+        } catch(e) {
+            console.error(e);
             houseSelect.innerHTML = '<option value="">Failed to load</option>';
         } finally {
             houseSelect.disabled = false;
         }
+    }
+
+    async function handlePropertyChange(propId, selectedHouseId = null) {
+        await loadHousesForProperty(propId, selectedHouseId);
+    }
+
+    document.getElementById('tenantProperty').addEventListener('change', async function() {
+        await handlePropertyChange(this.value);
     });
 
     function selectHouseFromList(id, clickEvent) {
@@ -728,16 +766,23 @@ if (!isset($user, $role, $token)) {
         const rent = Number(selected?.dataset.rent) || 0;
         document.getElementById('tenantRent').value = rent || 0;
         toast(`Selected ${unit}${type ? ' - ' + type : ''} (KES ${formatMoney(rent)})`, 'info');
-        // Highlight in dropdown
         document.querySelectorAll('.house-option').forEach(el => el.classList.remove('selected', 'bg-blue-50', 'border-blue-300'));
         clickEvent.currentTarget.classList.add('selected', 'bg-blue-50', 'border-blue-300');
     }
 
-    // ==================== AUTO-FILL RENT ====================
+    // ==================== AUTO-FILL RENT & DEPOSIT ====================
     document.getElementById('tenantHouse').addEventListener('change', function() {
         const selected = this.options[this.selectedIndex];
         const rent = selected ? selected.dataset.rent : 0;
-        if (rent) document.getElementById('tenantRent').value = rent;
+        if (rent) {
+            document.getElementById('tenantRent').value = rent;
+            // Auto-fill deposit with same amount as rent (only if deposit is empty or 0)
+            const depositEl = document.getElementById('tenantDeposit');
+            const currentDeposit = parseFloat(depositEl.value) || 0;
+            if (!currentDeposit || currentDeposit === 0) {
+                depositEl.value = rent;
+            }
+        }
     });
 
     // ==================== FILE UPLOAD HELPERS ====================
@@ -870,7 +915,7 @@ if (!isset($user, $role, $token)) {
         editingTenantId = null;
     }
 
-    function openTenantDetails(id) {
+    async function openTenantDetails(id) {
         const tenant = tenantsCache.find(t => Number(t.id) === Number(id));
         if (!tenant) {
             toast('Tenant details are not available right now.', 'error');
@@ -901,6 +946,10 @@ if (!isset($user, $role, $token)) {
         document.getElementById('tenantDeposit').value = tenant.deposit || 0;
         document.getElementById('tenantBalance').value = tenant.balance || 0;
         
+        // Store original property and house IDs for consistency
+        window._editingPropertyId = tenant.property_id;
+        window._editingHouseId = tenant.house_id;
+        
         // Reset document uploads
         tenantIdDoc = null;
         tenantKraDoc = null;
@@ -921,23 +970,19 @@ if (!isset($user, $role, $token)) {
         document.getElementById('kinIdFileStatus').textContent = '';
         document.getElementById('kinKraFileStatus').textContent = '';
         
-        // Load properties first, then set house after a short delay
+        // Show modal and load properties
         document.getElementById('tenantModal').classList.remove('hidden');
-        loadProperties();
+        await loadProperties();
         
-        // Set property and house after properties load
-        if (tenant.property_id) {
-            setTimeout(() => {
-                document.getElementById('tenantProperty').value = tenant.property_id;
-                // Trigger house load
-                document.getElementById('tenantProperty').dispatchEvent(new Event('change'));
-                // Set house after houses load
-                setTimeout(() => {
-                    if (tenant.house_id) {
-                        document.getElementById('tenantHouse').value = tenant.house_id;
-                    }
-                }, 500);
-            }, 100);
+        // Restore property and house selections
+        if (window._editingPropertyId) {
+            const propertySelect = document.getElementById('tenantProperty');
+            propertySelect.value = window._editingPropertyId;
+            await handlePropertyChange(window._editingPropertyId, window._editingHouseId);
+            
+            // Clear editing state
+            window._editingPropertyId = null;
+            window._editingHouseId = null;
         }
     }
 

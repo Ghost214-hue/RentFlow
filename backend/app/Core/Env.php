@@ -22,9 +22,15 @@ class Env
             $path = file_exists($base . '/.env.production') ? $base . '/.env.production' : $base . '/.env';
         }
 
-        if (!file_exists($path)) return;
+        error_log('[ENV LOAD] Loading from: ' . $path . ' (exists: ' . (file_exists($path) ? 'YES' : 'NO') . ')');
+
+        if (!file_exists($path)) {
+            error_log('[ENV LOAD] File does not exist: ' . $path);
+            return;
+        }
 
         $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $loadedCount = 0;
         foreach ($lines as $line) {
             $line = trim($line);
             if ($line === '' || str_starts_with($line, '#')) continue;
@@ -43,8 +49,14 @@ class Env
 
             putenv("{$key}={$value}");
             $_ENV[$key] = $value;
+            
+            if ($key === 'JWT_SECRET') {
+                error_log('[ENV LOAD] Set JWT_SECRET - Length: ' . strlen($value) . ' bytes');
+                $loadedCount++;
+            }
         }
 
+        error_log('[ENV LOAD] Loaded ' . $loadedCount . ' JWT_SECRET entries from ' . $path);
         self::$loaded = $_ENV;
     }
 

@@ -129,6 +129,7 @@ class CaretakerController
             'name'                 => $data['name'],
             'email'                => $data['email'],
             'phone'                => $data['phone'] ?? null,
+            'id_number'            => $data['id_number'],
             'password'             => $hashedPassword,
             'avatar'               => 'CT',
             'assigned_properties'  => $propertyIds ? implode(',', $propertyIds) : null,
@@ -214,6 +215,62 @@ class CaretakerController
 
         $caretaker = $db->fetchOne("SELECT id, name, email, phone, id_number, avatar, assigned_properties FROM caretakers WHERE id = ?", [$caretakerId]);
         Router::jsonResponse(['message' => 'Caretaker updated', 'caretaker' => $caretaker]);
+    }
+
+    public function resendSetupLink(array $params): void
+    {
+        Router::requireOwner();
+        $ownerId = Router::getAuthUserId();
+        $caretakerId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        $caretaker = $db->fetchOne(
+            "SELECT id, name, email, phone, id_number, avatar, assigned_properties, owner_id
+             FROM caretakers
+             WHERE id = ? AND owner_id = ?",
+            [$caretakerId, $ownerId]
+        );
+
+        if (!$caretaker) {
+            Router::jsonResponse(['error' => 'Caretaker not found'], 404);
+        }
+
+        if (empty($caretaker['email']) || !filter_var($caretaker['email'], FILTER_VALIDATE_EMAIL)) {
+            Router::jsonResponse(['error' => 'Caretaker does not have a valid email address'], 400);
+        }
+
+        try {
+            $db->update(
+                'password_setup_tokens',
+                ['used_at' => date('Y-m-d H:i:s')],
+                'user_type = ? AND user_id = ? AND owner_id = ? AND used_at IS NULL',
+                ['caretaker', $caretakerId, $ownerId]
+            );
+        } catch (\Throwable $e) {
+            error_log('Failed to invalidate caretaker setup tokens: ' . $e->getMessage());
+        }
+
+        try {
+            $emailService = new EmailService();
+            $emailSent = $emailService->sendCaretakerWelcome($ownerId, $caretaker);
+
+            if (!$emailSent) {
+                Router::jsonResponse(['error' => 'Failed to send setup email. Please check email logs.'], 500);
+            }
+
+            Router::jsonResponse([
+                'message' => 'Setup link sent to caretaker.',
+                'email_sent' => true,
+                'caretaker' => [
+                    'id' => (int) $caretaker['id'],
+                    'name' => $caretaker['name'],
+                    'email' => $caretaker['email'],
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            error_log('Caretaker resend setup link error: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Failed to resend setup link'], 500);
+        }
     }
 
     public function destroy(array $params): void

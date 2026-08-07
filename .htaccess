@@ -1,74 +1,63 @@
-# RentaFlow - Apache Security Configuration
+# RentaFlow - Main .htaccess Configuration
+# Deployment: /RentalFlow subdirectory
+
+# Point directory requests to the frontend index
 DirectoryIndex frontend/public/index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Disable directory listing
-    Options -Indexes
+    # Set base path for rewrite rules
+    RewriteBase /RentalFlow/
 
-    # Protect hidden files
-    <FilesMatch "^\.">
-        Order allow,deny
-        Deny from all
-    </FilesMatch>
-
-    # Protect sensitive files
+    # Security: Block access to sensitive files
     <FilesMatch "\.(env|log|sql|md)$">
         Order allow,deny
         Deny from all
     </FilesMatch>
 
-    # Protect config files
-    <FilesMatch "^(composer\.json|composer\.lock|package\.json)$">
+    <FilesMatch "^(composer\.json|composer\.lock|package\.json|\.git)">
         Order allow,deny
         Deny from all
     </FilesMatch>
 
-    # Limit file upload size
-    LimitRequestBody 5242880
-
-    RedirectMatch 404 /\.git
-
-    # Serve uploads directly from backend/public/uploads/ (before API/SPA rules)
-    RewriteRule ^uploads/(.*)$ backend/public/uploads/$1 [QSA,L]
-
-    # --- API routes ---
+    # API Routes - forward to backend
     RewriteRule ^api(/.*)?$ backend/public/index.php [QSA,L]
 
-    # --- Static assets ---
-    RewriteRule ^(?:[^/]+/)?css/(.*)$ frontend/public/css/$1 [QSA,L]
-    RewriteRule ^(?:[^/]+/)?js/(.*)$ frontend/public/js/$1 [QSA,L]
-    RewriteRule ^(?:[^/]+/)?images/(.*)$ frontend/public/images/$1 [QSA,L]
-    RewriteRule ^(?:[^/]+/)?favicon\.ico$ frontend/public/favicon.ico [L]
+    # Static Assets - serve directly from frontend/public
+    RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
+    RewriteRule ^js/(.*)$ frontend/public/js/$1 [QSA,L]
+    RewriteRule ^images/(.*)$ frontend/public/images/$1 [QSA,L]
+    RewriteRule ^favicon\.ico$ frontend/public/favicon.ico [L]
 
-    # --- Auth pages ---
+    # Auth Pages
     RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
     RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
     RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
+    RewriteRule ^setup-password$ frontend/public/setup-password.php [QSA,L]
     RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
 
-    # --- Other PHP pages ---
+    # Frontend Pages - route through index.php for SPA fallback
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/pages/$1.php [QSA,L,PT]
+    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/public/index.php [QSA,L]
 
-    # SPA fallback
+    # SPA fallback for any other requests
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
 </IfModule>
 
+# Security Headers
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "DENY"
+    Header set X-Frame-Options "SAMEORIGIN"
     Header set X-XSS-Protection "1; mode=block"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
-    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
 </IfModule>
 
-# Ensure proper MIME types for static files
+# MIME Types
 <IfModule mod_mime.c>
     AddType text/css .css
     AddType application/javascript .js
@@ -81,27 +70,5 @@ DirectoryIndex frontend/public/index.php
     AddType font/woff .woff
 </IfModule>
 
-# PHP Security Settings
-<IfModule mod_php7.c>
-    php_flag expose_php Off
-    php_flag display_errors Off
-    php_flag display_startup_errors Off
-    php_flag log_errors On
-    php_value error_log "/opt/lampp/htdocs/RentalFlow/backend/logs/php_errors.log"
-    php_value max_execution_time 30
-    php_value max_input_time 30
-    php_value memory_limit 128M
-    php_value post_max_size 10M
-    php_value upload_max_filesize 5M
-    php_flag session.cookie_httponly On
-    php_flag session.cookie_secure Off
-    php_value session.cookie_samesite "Strict"
-    php_value session.gc_maxlifetime 7200
-</IfModule>
-
-# Cache Control for sensitive files
-<FilesMatch "\.(php|sql|env|log)$">
-    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
-    Header set Pragma "no-cache"
-    Header set Expires "0"
-</FilesMatch>
+# Disable directory listing
+Options -Indexes

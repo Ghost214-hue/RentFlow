@@ -1,13 +1,44 @@
 <?php
 session_start();
+error_log('[CARETAKER-DASHBOARD] ========== PAGE ACCESS START ==========');
+error_log('[CARETAKER-DASHBOARD] Time: ' . date('Y-m-d H:i:s'));
+error_log('[CARETAKER-DASHBOARD] HTTP_HOST: ' . ($_SERVER['HTTP_HOST'] ?? 'NOT_SET'));
+
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: ../public/signin.php'); exit; }
+error_log('[CARETAKER-DASHBOARD] Token from cookie/session: ' . ($token ? 'YES (length: ' . strlen($token) . ')' : 'NO'));
+
+if (!$token) { 
+    error_log('[CARETAKER-DASHBOARD] No token found - REDIRECT TO SIGNIN');
+    header('Location: ../public/signin.php'); 
+    exit; 
+}
+
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
+// Load correct .env for localhost vs production
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
+
+error_log('[CARETAKER-DASHBOARD] isLocalhost: ' . ($isLocalhost ? 'YES' : 'NO'));
+error_log('[CARETAKER-DASHBOARD] Loading env from: ' . $envPath);
+
+\App\Core\Env::load($envPath);
+
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
+error_log('[CARETAKER-DASHBOARD] JWT class loaded, about to decode token');
+
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: ../public/signin.php'); exit; }
+
+if (!$user) { 
+    error_log('[CARETAKER-DASHBOARD] JWT decode FAILED - REDIRECT TO SIGNIN');
+    header('Location: ../public/signin.php'); 
+    exit; 
+}
+
+error_log('[CARETAKER-DASHBOARD] JWT decode SUCCESS - User: ' . $user['email']);
 require_once __DIR__ . '/../includes/base-path-fix.php';
 $basePath = getBasePath();
 $_SESSION['rf_user'] = $user;
@@ -102,7 +133,14 @@ if ($role !== 'caretaker') { header('Location: ../public/signin.php'); exit; }
         BASE = BASE.replace(/\/[^\/]*$/, '');
     }
     const API = BASE + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
 
     async function apiRequest(url, options = {}) {

@@ -1,10 +1,10 @@
 <?php
-// Shared base path for all pages
-// Priority: environment config > computed from actual script location
 
-// Load .env from project root if not already loaded
-// Prioritize .env.production first, then .env
-$envFiles = [__DIR__ . '/../../.env.production', __DIR__ . '/../../.env'];
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envFiles = $isLocalhost
+    ? [__DIR__ . '/../../.env', __DIR__ . '/../../.env.production']
+    : [__DIR__ . '/../../.env.production', __DIR__ . '/../../.env'];
 if (!isset($_ENV['BASE_PATH']) && !getenv('BASE_PATH')) {
     foreach ($envFiles as $envPath) {
         if (file_exists($envPath)) {

@@ -130,6 +130,7 @@ class EmailService
             '{{national_id}}' => $data['national_id'] ?? '',
             '{{phone}}' => $data['phone'] ?? '',
             '{{link}}' => $data['link'] ?? getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost',
+            '{{setup_link}}' => $data['setup_link'] ?? '',
             '{{owner_name}}' => $data['owner_name'] ?? '',
             '{{days_until_due}}' => $data['days_until_due'] ?? '',
             '{{reply_text}}' => $data['reply_text'] ?? '',
@@ -184,8 +185,42 @@ class EmailService
      */
     public function queueTemplate(string $templateName, int $ownerId, string $toEmail, string $toName, array $variables = [], int $priority = 0, ?\DateTime $scheduledAt = null): bool
     {
-        // Queue is disabled - send immediately
-        return $this->sendTemplate($templateName, $ownerId, $toEmail, $toName, $variables);
+        $template = $this->getTemplate($templateName, $ownerId);
+
+        if (!$template) {
+            error_log("Email template not found: $templateName for owner $ownerId");
+            return false;
+        }
+
+        $subject = $this->replaceVariables($template['subject'], $variables);
+        $body = $this->replaceVariables($template['body'], $variables);
+
+        if ($this->queueEnabled) {
+            $queued = $this->queueService->queue(
+                $ownerId,
+                $templateName,
+                $toEmail,
+                $toName,
+                $subject,
+                $body,
+                $priority,
+                $scheduledAt
+            );
+
+            if ($queued) {
+                error_log("EMAIL QUEUED: To: {$toEmail}, Template: {$templateName}");
+                return true;
+            }
+
+            error_log("EMAIL QUEUE FAILED: falling back to direct send for {$toEmail}");
+        }
+
+        return $this->send($toEmail, $toName, $subject, $body);
+    }
+
+    public function getLastError(): string
+    {
+        return $this->lastError;
     }
     
     /**
@@ -442,21 +477,43 @@ class EmailService
             $safeFromName = addcslashes(str_replace(["\r", "\n"], '', $this->fromName), '"\\');
             $safeToName = addcslashes(str_replace(["\r", "\n"], '', $toName), '"\\');
             $safeSubject = str_replace(["\r", "\n"], ' ', $subject);
+            $date = date('D, d M Y H:i:s O');
+            $messageId = '<' . bin2hex(random_bytes(8)) . '-' . time() . '@' . ($displayFrom ?: $envelopeFrom) . '>';
+            
+            // Build multipart/alternative message with both plain-text and HTML.
+            // Spam filters reward multipart messages, and some recipients'
+            // mail systems rank plain-text higher than HTML-only.
+            $boundary = 'bnd_' . bin2hex(random_bytes(12));
+            $plainBody = preg_replace("/\r?\n/", "\n", $body);
+            $htmlBody = '<html><body>' . nl2br(htmlspecialchars($body, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) . '</body></html>';
+            
+            // Dot-stuff any line that starts with a lone '.', otherwise the SMTP
+            // server treats it as the end-of-DATA marker.
+            $plainBody = preg_replace('/^\./m', '..', $plainBody);
+            $htmlBody = preg_replace('/^\./m', '..', $htmlBody);
+            
             $headers = [
                 "From: \"{$safeFromName}\" <{$displayFrom}>",
                 "Reply-To: {$displayFrom}",
                 "To: \"{$safeToName}\" <{$toEmail}>",
                 "Subject: {$safeSubject}",
+                "Date: {$date}",
+                "Message-ID: {$messageId}",
                 "MIME-Version: 1.0",
-                "Content-Type: text/html; charset=UTF-8",
+                "Content-Type: multipart/alternative; boundary=\"{$boundary}\"",
                 "X-Mailer: RentaFlow/" . (getenv('APP_VERSION') ?: $_ENV['APP_VERSION'] ?? '1.0')
             ];
             
-            $htmlBody = nl2br($body);
-            // Dot-stuffing: a line starting with a lone '.' would otherwise be
-            // read by the server as the end-of-DATA terminator.
-            $htmlBody = preg_replace('/^\./m', '..', $htmlBody);
-            $message = implode("\r\n", $headers) . "\r\n\r\n" . $htmlBody . "\r\n.\r\n";
+            $message  = implode("\r\n", $headers) . "\r\n\r\n";
+            $message .= "--{$boundary}\r\n";
+            $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $message .= $plainBody . "\r\n\r\n";
+            $message .= "--{$boundary}\r\n";
+            $message .= "Content-Type: text/html; charset=UTF-8\r\n";
+            $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $message .= $htmlBody . "\r\n\r\n";
+            $message .= "--{$boundary}--\r\n.\r\n";
             fputs($socket, $message);
             
             $response = $this->readMultiLineResponse($socket);
@@ -473,6 +530,15 @@ class EmailService
                 $this->lastError = 'Message not accepted by server: ' . trim($response);
                 error_log("SMTP: {$this->lastError}");
             }
+            
+            // Persist raw SMTP transcript for debugging spam/relay rejections
+            try {
+                if (!empty($logId)) {
+                    $this->db->update('email_logs', [
+                        'error' => $this->lastError ?: ($success ? null : 'SMTP delivery failed')
+                    ], 'id = ?', [$logId]);
+                }
+            } catch (\Throwable $ignore) {}
             
             return $success;
             
@@ -541,17 +607,39 @@ class EmailService
     }
     
     /**
+     * Generate a secure password-setup token and return the full setup link.
+     */
+    public function generateSetupToken(string $userType, int $userId, int $ownerId): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $this->db->insert('password_setup_tokens', [
+            'user_type'  => $userType,
+            'user_id'    => $userId,
+            'owner_id'   => $ownerId,
+            'token'      => $token,
+            'expires_at' => date('Y-m-d H:i:s', strtotime('+48 hours')),
+        ]);
+        
+        $appUrl = rtrim((string) (\App\Core\Env::get('APP_URL', 'http://localhost')), '/');
+        return $appUrl . '/setup-password?token=' . urlencode($token);
+    }
+    
+    /**
      * Send welcome email to new tenant
      */
     public function sendTenantWelcome(int $ownerId, array $tenant, string $propertyName, string $houseUnit): bool
     {
+        $setupLink = '';
+        if (!empty($tenant['id'])) {
+            $setupLink = $this->generateSetupToken('tenant', (int)$tenant['id'], $ownerId);
+        }
+        
         $variables = [
             'tenant' => $tenant['name'],
             'property' => $propertyName,
             'house' => $houseUnit,
             'email' => $tenant['email'],
-            'password' => $tenant['temp_password'] ?? $tenant['id_number'],
-            'national_id' => $tenant['id_number'] ?? '',
+            'setup_link' => $setupLink,
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
@@ -563,11 +651,15 @@ class EmailService
      */
     public function sendCaretakerWelcome(int $ownerId, array $caretaker): bool
     {
+        $setupLink = '';
+        if (!empty($caretaker['id'])) {
+            $setupLink = $this->generateSetupToken('caretaker', (int)$caretaker['id'], $ownerId);
+        }
+        
         $variables = [
             'tenant' => $caretaker['name'],
             'email' => $caretaker['email'],
-            'password' => $caretaker['temp_password'] ?? $caretaker['id_number'],
-            'national_id' => $caretaker['id_number'] ?? '',
+            'setup_link' => $setupLink,
             'link' => getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost'
         ];
         
