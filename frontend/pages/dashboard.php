@@ -447,12 +447,5 @@ if (($userRole ?? 'owner') === 'tenant') {
 
     loadDashboard();
     </script>
-    setTimeout(() => {
-        const s = document.getElementById('statsGrid');
-        if (s && s.innerHTML.trim() === '') s.innerHTML = '<div class="col-span-full py-12 text-center text-red-400">Failed to load data.</div>';
-    }, 3000);
-
-    loadDashboard();
-    </script>
 </body>
 </html>
