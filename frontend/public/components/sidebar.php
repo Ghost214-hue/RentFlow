@@ -5,6 +5,7 @@ $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
+
 $ownerNav = [
     [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
     [$basePath . '/properties','fa-building','Properties',''],
@@ -19,7 +20,6 @@ $ownerNav = [
     [$basePath . '/reports','fa-chart-pie','Reports',''],
     [$basePath . '/email-logs','fa-envelope-open-text','Email Delivery',''],
 ];
-
 $ownerNav = [
 $caretakerNav = [
     [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
