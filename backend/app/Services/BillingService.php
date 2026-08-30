@@ -19,10 +19,19 @@ class BillingService
             $total += (float) ($item['amount'] ?? 0);
         }
 
-        $existing = $this->db->fetchOne(
-            "SELECT id FROM bills WHERE house_id = ? AND month = ?",
-            [$houseId, $month]
-        );
+        $existing = null;
+        if ($tenantId) {
+            $existing = $this->db->fetchOne(
+                "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
+                [$ownerId, $tenantId, $month]
+            );
+        }
+        if (!$existing) {
+            $existing = $this->db->fetchOne(
+                "SELECT id FROM bills WHERE owner_id = ? AND house_id = ? AND month = ?",
+                [$ownerId, $houseId, $month]
+            );
+        }
 
         if ($existing) {
             $billId = (int) $existing['id'];
@@ -85,6 +94,25 @@ class BillingService
             $paid += (float) $item['paid'];
         }
         return ['total' => $total, 'paid' => $paid];
+    }
+
+    public function getBillPaidTotal(array $bill): float
+    {
+        $billId = (int) ($bill['id'] ?? 0);
+        if ($billId <= 0) {
+            return 0.0;
+        }
+
+        $this->ensureLegacyBillItems($bill);
+        $paidRow = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(pa.amount), 0) as total
+             FROM payment_allocations pa
+             JOIN payments p ON p.id = pa.payment_id
+             WHERE pa.bill_item_id IN (SELECT id FROM bill_items WHERE bill_id = ?)
+               AND p.status IN ('confirmed','completed','paid')",
+            [$billId]
+        );
+        return max(0.0, (float) ($paidRow['total'] ?? 0));
     }
 
     public function ensureLegacyBillItems(array $bill): void

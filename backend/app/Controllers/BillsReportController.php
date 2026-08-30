@@ -8,6 +8,7 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Router;
 use App\Core\Pagination;
+use App\Services\BillingService;
 
 class BillsReportController
 {
@@ -41,7 +42,7 @@ class BillsReportController
                 FROM bills b
                 LEFT JOIN houses h ON b.house_id = h.id
                 LEFT JOIN properties p ON h.property_id = p.id
-                LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+                LEFT JOIN tenants t ON b.tenant_id = t.id
                 WHERE b.owner_id = ?";
         $queryParams = [$ownerId];
 
@@ -106,13 +107,9 @@ class BillsReportController
         }
 
         try {
+            $billingService = new BillingService();
             foreach ($bills as &$bill) {
-                $paidRow = $db->fetchOne(
-                    "SELECT COALESCE(SUM(amount), 0) as total FROM payments
-                     WHERE house_id = ? AND owner_id = ? AND month = ? AND status IN ('confirmed','completed','paid')",
-                    [$bill['house_id'], $ownerId, $bill['month']]
-                );
-                $paid = (float) ($paidRow['total'] ?? 0);
+                $paid = $billingService->getBillPaidTotal($bill);
                 $bill['paid'] = $paid;
                 $bill['balance'] = (float) $bill['total'] - $paid;
                 if ($paid <= 0) $bill['payment_status'] = 'pending';
@@ -173,7 +170,7 @@ class BillsReportController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+             LEFT JOIN tenants t ON b.tenant_id = t.id
              WHERE $baseWhere",
             $baseParams
         );
@@ -183,7 +180,7 @@ class BillsReportController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+             LEFT JOIN tenants t ON b.tenant_id = t.id
              WHERE $baseWhere
              GROUP BY b.status",
             $baseParams
@@ -194,7 +191,7 @@ class BillsReportController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+             LEFT JOIN tenants t ON b.tenant_id = t.id
              WHERE $baseWhere
              GROUP BY b.type",
             $baseParams
@@ -205,7 +202,7 @@ class BillsReportController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+             LEFT JOIN tenants t ON b.tenant_id = t.id
              WHERE $baseWhere AND b.due_date < CURRENT_DATE() AND b.status != 'paid'",
             $baseParams
         );
@@ -216,7 +213,7 @@ class BillsReportController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+             LEFT JOIN tenants t ON b.tenant_id = t.id
              WHERE $baseWhere AND b.month = ?",
             array_merge($baseParams, [$currentMonth])
         );

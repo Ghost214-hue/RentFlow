@@ -1,3 +1,22 @@
+<?php
+require_once __DIR__ . '/../includes/auth.php';
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Delivery - RentaFlow</title>
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
+    <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
+    <div class="flex-1 flex flex-col min-h-screen">
+        <?php include __DIR__ . '/../public/components/header.php'; ?>
+        <main class="flex-1 overflow-y-auto p-4 lg:p-8">
+
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                     <h1 class="text-2xl font-bold text-slate-900">Email Delivery</h1>
@@ -116,6 +135,31 @@
             </div>
         </main>
     </div>
+
+    <!-- Email Content Modal -->
+    <div id="emailModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeEmailModal()">
+        <div class="rf-modal-panel p-5 sm:p-6 max-w-lg" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900 pr-4 break-words" id="emailModalSubject">Email Subject</h3>
+                <button onclick="closeEmailModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="mt-1 space-y-1.5">
+                <p class="text-sm text-slate-600 break-words"><span class="font-semibold">To:</span> <span id="emailModalRecipient">-</span></p>
+                <p class="text-sm text-slate-600"><span class="font-semibold">Sent At:</span> <span id="emailModalDate">-</span></p>
+                <p class="text-sm text-slate-600"><span class="font-semibold">Status:</span> <span id="emailModalStatus">-</span></p>
+            </div>
+            <div class="mt-4 border-t border-slate-200 pt-3">
+                <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Email Content</label>
+                    <button type="button" onclick="copyEmailContent()" id="copyEmailBtn" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all whitespace-nowrap"><i class="fas fa-copy"></i><span>Copy</span></button>
+                </div>
+                <div id="emailModalBody" class="bg-slate-50 rounded-xl p-3.5 text-sm text-slate-800 whitespace-pre-wrap max-h-64 overflow-y-auto border border-slate-200 leading-relaxed break-words"></div>
+            </div>
+            <div class="mt-4 flex justify-end">
+                <button type="button" onclick="closeEmailModal()" class="px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50">Close</button>
+            </div>
+        </div>
+    </div>
     <script>
         const API = "<?php echo $basePath; ?>/api";
         const token = "<?php echo $token; ?>";
@@ -181,7 +225,7 @@
                 else if (subject.includes("maintenance")) type = "Maintenance";
                 else if (subject.includes("vacate") || subject.includes("termination")) type = "Vacate";
                 const propInfo = [log.property_name, log.house_unit].filter(Boolean).join(" - ") || "-";
-                return `<tr class="hover:bg-slate-50">` +
+                return `<tr class="hover:bg-slate-50 cursor-pointer" onclick="openEmailLog(${log.id})">` +
                     `<td class="px-6 py-4"><div><p class="text-sm font-medium text-slate-900">${log.to_name || "-"}</p><p class="text-xs text-slate-500">${log.to_email}</p></div></td>` +
                     `<td class="px-6 py-4"><p class="text-sm text-slate-700">${log.subject || "-"}</p></td>` +
                     `<td class="px-6 py-4"><span class="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 text-slate-700">${type}</span></td>` +
@@ -191,6 +235,74 @@
                     `<td class="px-6 py-4 text-sm text-red-600">${log.error || "-"}</td>` +
                 `</tr>`;
             }).join("");
+        }
+        async function openEmailLog(id) {
+            const modal = document.getElementById("emailModal");
+            const tbody = document.getElementById("logsTableBody");
+            tbody.style.pointerEvents = "none";
+            try {
+                const res = await fetch(`${API}/email-logs/${id}`, { headers: getHeaders() });
+                if (res.ok) {
+                    const data = await res.json();
+                    const log = data.log || {};
+                    document.getElementById("emailModalSubject").textContent = log.subject || "-";
+                    document.getElementById("emailModalRecipient").textContent = log.to_name ? `${log.to_name} <${log.to_email}>` : log.to_email || "-";
+                    document.getElementById("emailModalDate").textContent = log.sent_at ? new Date(log.sent_at).toLocaleString() : "-";
+                    const statusEl = document.getElementById("emailModalStatus");
+                    statusEl.textContent = log.status || "unknown";
+                    statusEl.className = "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg " + ({"sent": "bg-emerald-100 text-emerald-700", "failed": "bg-red-100 text-red-700", "pending": "bg-amber-100 text-amber-700"}[log.status] || "bg-slate-100 text-slate-700");
+                    document.getElementById("emailModalBody").textContent = log.body || "No content available.";
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    // Surface the real backend reason (e.g. "Email log not found", "Unauthorized", or "Route not found")
+                    // so the generic message doesn't hide the underlying 4xx cause.
+                    const reason = errData.error || (res.status === 404 ? "Not found (HTTP 404)" : `Request failed (HTTP ${res.status})`);
+                    document.getElementById("emailModalBody").textContent = "This email log is no longer available. Reason: " + reason;
+                }
+            } catch (e) {
+                console.error("Failed to load email detail:", e);
+                document.getElementById("emailModalBody").textContent = "Error loading email content.";
+            }
+            modal.classList.remove("hidden");
+            tbody.style.pointerEvents = "";
+        }
+        function closeEmailModal() {
+            document.getElementById("emailModal").classList.add("hidden");
+        }
+        function copyEmailContent() {
+            const body = document.getElementById("emailModalBody").innerText || document.getElementById("emailModalBody").textContent || "";
+            const btn = document.getElementById("copyEmailBtn");
+            const label = btn.querySelector("span");
+            const showDone = () => {
+                if (label) { label.textContent = "Copied!"; }
+                btn.classList.remove("bg-blue-50","border-blue-200","text-blue-600");
+                btn.classList.add("bg-emerald-50","border-emerald-200","text-emerald-600");
+                setTimeout(() => {
+                    if (label) { label.textContent = "Copy"; }
+                    btn.classList.add("bg-blue-50","border-blue-200","text-blue-600");
+                    btn.classList.remove("bg-emerald-50","border-emerald-200","text-emerald-600");
+                }, 2000);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(body).then(showDone).catch(() => fallbackCopyText(body, showDone));
+            } else {
+                fallbackCopyText(body, showDone);
+            }
+        }
+        function fallbackCopyText(text, done) {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.select();
+            let ok = false;
+            try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            if (ok) { done(); return; }
+            const label = document.getElementById("copyEmailBtn").querySelector("span");
+            if (label) { label.textContent = "Copy failed"; }
         }
         function renderPagination(pagination) {
             const info = document.getElementById("paginationInfo");

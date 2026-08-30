@@ -33,17 +33,6 @@ $caretakerNav = [
     [$basePath . '/documents','fa-file-alt','Rules',''],
     [$basePath . '/email-logs','fa-envelope-open-text','Email Delivery',''],
 ];
-$caretakerNav = [
-    [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
-    [$basePath . '/properties','fa-building','Properties',''],
-    [$basePath . '/houses','fa-home','Houses',''],
-    [$basePath . '/tenants','fa-users','Tenants',''],
-    [$basePath . '/payments','fa-money-bill-wave','Payments',''],
-    [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
-    [$basePath . '/maintenance','fa-tools','Maintenance',''],
-    [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
-    [$basePath . '/documents','fa-file-alt','Rules',''],
-];
 
 $tenantNav = [
     [$basePath . '/tenant-dashboard','fa-chart-line','Dashboard',''],

@@ -118,8 +118,8 @@ class PaymentController
 
         $billingService = new BillingService();
         $bill = $db->fetchOne(
-            "SELECT id FROM bills WHERE house_id = ? AND month = ? AND owner_id = ?",
-            [$tenant['house_id'], $data['month'] ?? date('Y-m'), $ownerId]
+            "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
+            [$ownerId, (int)$data['tenant_id'], $data['month'] ?? date('Y-m')]
         );
 
         if ($bill) {
@@ -153,8 +153,8 @@ class PaymentController
                     
                     // Find the bill ID for this payment to generate invoice link
                     $bill = $db->fetchOne(
-                        "SELECT b.id FROM bills b WHERE b.house_id = ? AND b.month = ? AND b.owner_id = ? LIMIT 1",
-                        [$tenant['house_id'], $payment['month'], $ownerId]
+                        "SELECT b.id FROM bills b WHERE b.owner_id = ? AND b.tenant_id = ? AND b.month = ? ORDER BY b.id LIMIT 1",
+                        [$ownerId, $tenant['id'], $payment['month']]
                     );
                     
                     // Generate JWT token for invoice access

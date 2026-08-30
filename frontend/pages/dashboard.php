@@ -229,7 +229,6 @@ if (($userRole ?? 'owner') === 'tenant') {
                 '<p class="text-2xl font-bold text-slate-900">' + (maint.total || 0) + '</p><p class="text-sm text-slate-500">Maintenance (' + fmtCurrency(maint.total_cost || 0) + ')</p></div>';
 
         document.getElementById('chartsRow').style.display = 'grid';
-    }
 
         document.getElementById('activityRow').innerHTML =
             '<div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">' +
@@ -268,7 +267,6 @@ if (($userRole ?? 'owner') === 'tenant') {
             '<div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5"><div class="flex items-center justify-between mb-3"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 flex items-center justify-center"><i class="fas fa-users text-purple-600"></i></div></div><p class="text-2xl font-bold text-slate-900">' + tenantsCount + '</p><p class="text-sm text-slate-500">Tenants</p></div>' +
             '<div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5"><div class="flex items-center justify-between mb-3"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center"><i class="fas fa-exclamation-triangle text-amber-600"></i></div></div><p class="text-2xl font-bold text-slate-900">' + openComplaints + '</p><p class="text-sm text-slate-500">Open Complaints</p></div>';
         document.getElementById('chartsRow').style.display = 'none';
-    }
 
 
         document.getElementById('activityRow').innerHTML =

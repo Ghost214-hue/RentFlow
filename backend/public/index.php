@@ -221,6 +221,7 @@ $router->delete('/maintenance/{id}', ['App\Controllers\MaintenanceController', '
 // ==================== EMAIL LOGS ====================
 $router->get('/email-logs', ['App\Controllers\EmailLogController', 'index'], [fn() => AuthMiddleware::authenticate()]);
 $router->get('/email-logs/stats', ['App\Controllers\EmailLogController', 'stats'], [fn() => AuthMiddleware::authenticate()]);
+$router->get('/email-logs/{id}', ['App\Controllers\EmailLogController', 'show'], [fn() => AuthMiddleware::authenticate()]);
 
 // ==================== REPORTS ====================
 // ==================== REPORTS ====================

@@ -140,6 +140,7 @@ class EmailService
             '{{description}}' => $data['description'] ?? '',
             '{{next_of_kin_intro}}' => $data['next_of_kin_intro'] ?? '',
             '{{recipient_name}}' => $data['recipient_name'] ?? '',
+            '{{recipient_note}}' => $data['recipient_note'] ?? '',
             '{{payment_instructions}}' => $data['payment_instructions'] ?? '',
             '{{invoice_section}}' => $invoiceSection,
             '{{invoice_url}}' => $data['invoice_url'] ?? '',

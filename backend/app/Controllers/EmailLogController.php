@@ -158,6 +158,42 @@ class EmailLogController
         ];
     }
 
+    public function show(array $params = []): void
+    {
+        Router::requireOwnerOrCaretaker();
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $db = Database::getInstance();
+
+        $id = (int) ($params['id'] ?? 0);
+        if (!$id) {
+            Router::jsonResponse(['error' => 'Invalid email log ID'], 400);
+            return;
+        }
+
+        $sql = "SELECT el.*, t.name as tenant_name, h.unit as house_unit, p.name as property_name FROM email_logs el LEFT JOIN tenants t ON t.email = el.to_email AND t.owner_id = el.owner_id LEFT JOIN houses h ON h.id = t.house_id LEFT JOIN properties p ON p.id = h.property_id WHERE el.id = ? AND el.owner_id = ?";
+        $queryParams = [$id, $ownerId];
+
+        if ($role === "caretaker") {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!empty($propertyIds)) {
+                $sql .= " AND (p.id IN (" . implode(",", array_fill(0, count($propertyIds), "?")) . ") OR el.to_email NOT IN (SELECT email FROM tenants WHERE owner_id = ?))";
+                $queryParams = array_merge($queryParams, $propertyIds, [$ownerId]);
+            } else {
+                Router::jsonResponse(['error' => 'Unauthorized'], 403);
+                return;
+            }
+        }
+
+        $log = $db->fetchOne($sql, $queryParams);
+        if (!$log) {
+            Router::jsonResponse(['error' => 'Email log not found'], 404);
+            return;
+        }
+
+        Router::jsonResponse(['log' => $log]);
+    }
+
     private function emptyStats(): array
     {
         return [

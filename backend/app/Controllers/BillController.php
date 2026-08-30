@@ -29,7 +29,7 @@ class BillController
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
-             LEFT JOIN tenants t ON COALESCE(b.tenant_id, h.tenant_id) = t.id
+             LEFT JOIN tenants t ON b.tenant_id = t.id
              WHERE b.owner_id = ? AND b.month = ?";
         $queryParams = [$ownerId, $month];
 
@@ -57,7 +57,7 @@ class BillController
             $sql .= " AND p.id = ?";
             $queryParams[] = $propertyId;
 
-            $countSql .= " AND p.id = ?";
+            $countSql .= " AND h.property_id = ?";
             $countParams[] = $propertyId;
         }
 
@@ -68,16 +68,10 @@ class BillController
         $bills = $db->fetchAll($sql, $queryParams);
         $billingService = new BillingService();
 
-        // Calculate actual paid amount and balance for each bill.
-        // We read directly from the payments table so the list view always
-        // reflects reality, even if payment_allocations are out of sync
-        // with the current bill_items (e.g. after a bill regeneration).
+        // Calculate paid amount from bill item allocations. This keeps the
+        // invoice tied to the snapshotted tenant instead of the current unit occupant.
         foreach ($bills as &$bill) {
-            $paidRow = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE house_id = ? AND owner_id = ? AND month = ? AND status IN ('confirmed','completed','paid')",
-                [$bill['house_id'], $ownerId, $month]
-            );
-            $paid = (float)($paidRow['total'] ?? 0);
+            $paid = $billingService->getBillPaidTotal($bill);
 
             $bill['paid'] = $paid;
             $bill['balance'] = max(0.0, (float)$bill['total'] - $paid);
@@ -119,9 +113,12 @@ class BillController
             Router::jsonResponse(['error' => 'Bills can only be generated for the current month (' . $currentMonth . '). Please use the current month.'], 400);
         }
 
-        // Only allow generation on or after the 25th of the month
-        if ((int)date('d') < 25) {
-            Router::jsonResponse(['error' => 'Bill generation is only allowed on or after the 25th of the month. Please wait until the 25th.'], 400);
+        // Day-of-month gate (configurable). Set BILL_GENERATION_DAY in .env to enforce
+        // generation only from a specific day of the month (e.g. 25). Leave unset or 0
+        // to allow bill generation on any day (useful for development/Q&A and pre-billing).
+        $genDay = (int)(getenv('BILL_GENERATION_DAY') ?: ($_ENV['BILL_GENERATION_DAY'] ?? 0));
+        if ($genDay > 0 && (int) date('d') < $genDay) {
+            Router::jsonResponse(['error' => "Bill generation is only allowed on or after day {$genDay} of the month. Please wait until the {$genDay}th."], 400);
         }
 
         // Build query based on role
@@ -156,6 +153,7 @@ class BillController
 
         $generated = 0;
         $summary = [];
+        $newHouses = [];
         $billingService = new BillingService();
 
         foreach ($houses as $house) {
@@ -167,16 +165,24 @@ class BillController
             // items, paid amounts, allocations and status — so recorded payments are never
             // overwritten by a second run of "Generate Bills".
             $existingBill = $db->fetchOne(
-                "SELECT id FROM bills WHERE house_id = ? AND month = ?",
-                [$house['id'], $month]
+                "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
+                [$ownerId, $house['tenant_id'], $month]
             );
 
             if ($existingBill) {
                 $billId = (int) $existingBill['id'];
             } else {
+                $tenant = $db->fetchOne(
+                    "SELECT deposit FROM tenants WHERE id = ? AND owner_id = ?",
+                    [$house['tenant_id'], $ownerId]
+                );
+                $depositAmount = (float) ($tenant['deposit'] ?? 0);
                 $chargeItems = [
                     ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => (float)$house['rent']],
                 ];
+                if ($depositAmount > 0) {
+                    $chargeItems[] = ['type' => 'Deposit', 'description' => 'Security Deposit', 'amount' => $depositAmount];
+                }
                 if ($water > 0) {
                     $chargeItems[] = ['type' => 'Water', 'description' => 'Water Charges', 'amount' => $water];
                 }
@@ -192,6 +198,7 @@ class BillController
                     $chargeItems
                 );
                 $generated++;
+                $newHouses[] = $house;
             }
 
             $billItems = $billingService->getBillItems($billId);
@@ -212,12 +219,52 @@ class BillController
             }
         }
 
-        // Send bill notification emails to each tenant
+        // If there are no occupied units to bill, report that clearly.
+        if (empty($houses)) {
+            Router::jsonResponse([
+                'message' => 'No occupied units found for billing.',
+                'count' => 0,
+                'month' => $month,
+                'summary' => [],
+                'emails_sent' => 0,
+                'emails_failed' => 0,
+            ]);
+            return;
+        }
+
+        // Bills are idempotent per house + month: if every unit already has a bill for
+        // this month, nothing new was created. Report that clearly and do NOT re-send
+        // invoice emails, so an owner can never double-bill or spam tenants by clicking
+        // "Generate Bills" more than once in a month.
+        if ($generated === 0) {
+            Router::jsonResponse([
+                'message' => "Bills for {$month} already exist. No new bills were created and no emails were re-sent.",
+                'count' => 0,
+                'month' => $month,
+                'summary' => $summary,
+                'emails_sent' => 0,
+                'emails_failed' => 0,
+                'already_existed' => true,
+            ]);
+            return;
+        }
+
+        // Send bill notification emails ONLY to tenants whose bills were newly created
+        // in this run, so a repeated "Generate Bills" never sends duplicate emails.
         $emailSent = 0;
         $emailFailed = 0;
         $emailService = new EmailService();
-        
-        foreach ($houses as $house) {
+
+        // Property manager / owner name for a more personal, informative email.
+        $ownerName = '';
+        try {
+            $ownerRow = $db->fetchOne("SELECT name FROM owners WHERE id = ?", [$ownerId]);
+            $ownerName = $ownerRow['name'] ?? '';
+        } catch (\Throwable $e) {
+            $ownerName = '';
+        }
+
+        foreach ($newHouses as $house) {
             if (!empty($house['tenant_name']) && !empty($house['tenant_id'])) {
                 $tenant = $db->fetchOne(
                     "SELECT id, name, email, next_of_kin_email, next_of_kin_name, house_id, property_id FROM tenants WHERE id = ? AND owner_id = ?",
@@ -227,8 +274,8 @@ class BillController
                 if ($tenant && !empty($tenant['email'])) {
                     // Calculate total bill amount for this tenant
                     $tenantBills = $db->fetchAll(
-                        "SELECT id, type, total FROM bills WHERE house_id = ? AND month = ? AND owner_id = ?",
-                        [$house['id'], $month, $ownerId]
+                        "SELECT id, type, total FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ?",
+                        [$ownerId, $house['tenant_id'], $month]
                     );
 
                     if (empty($tenantBills)) {
@@ -253,6 +300,8 @@ class BillController
                     
                     $variables = [
                         'tenant' => $tenant['name'],
+                        'recipient_name' => $tenant['name'],
+                        'recipient_note' => 'This is the monthly invoice for your tenancy at ' . ($house['property_name'] ?? 'our property') . ', unit ' . ($house['unit'] ?? '') . '.',
                         'amount' => number_format($totalBill, 2),
                         'month' => date('F Y', strtotime($month . '-01')),
                         'property' => $house['property_name'] ?? '',
@@ -260,6 +309,8 @@ class BillController
                         'balance' => number_format($totalBill, 2),
                         'date' => date('Y-m-d'),
                         'invoice_url' => $invoiceUrl,
+                        'owner_name' => $ownerName,
+                        'payment_instructions' => 'Please arrange full payment by the due date. You can pay via M-Pesa or through the channel provided by the property office, and keep your payment reference for your records.',
                     ];
                     
                     try {
@@ -273,7 +324,10 @@ class BillController
                     // Also send to next of kin
                     if (!empty($tenant['next_of_kin_email'])) {
                         try {
-                            $nokVariables = array_merge($variables, ['recipient_name' => $tenant['next_of_kin_name'] ?? 'Next of Kin']);
+                            $nokVariables = array_merge($variables, [
+                                'recipient_name' => $tenant['next_of_kin_name'] ?? 'Next of Kin',
+                                'recipient_note' => 'You have been registered as the next of kin for tenant ' . $tenant['name'] . ' at ' . ($house['property_name'] ?? 'our property') . ', unit ' . ($house['unit'] ?? '') . '. This is a courtesy copy of their invoice for your information.',
+                            ]);
                             $nokSent = $emailService->sendTemplate('Billing Notification', $ownerId, $tenant['next_of_kin_email'], $tenant['next_of_kin_name'] ?? 'Next of Kin', $nokVariables);
                             if ($nokSent) $emailSent++;
                         } catch (\Exception $e) {
@@ -347,8 +401,8 @@ class BillController
             );
         } else {
             $payments = $db->fetchAll(
-                "SELECT * FROM payments WHERE house_id = ? AND owner_id = ? AND month = ? ORDER BY created_at DESC",
-                [$bill['house_id'], $ownerId, $bill['month']]
+                "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? AND month = ? ORDER BY created_at DESC",
+                [(int)$bill['tenant_id'], $ownerId, $bill['month']]
             );
         }
 
@@ -487,8 +541,8 @@ class BillController
             $totalPaid = array_sum(array_column($payments, 'allocated_amount'));
         } else {
             $payments = $db->fetchAll(
-                "SELECT * FROM payments WHERE house_id = ? AND owner_id = ? AND month = ? AND status IN ('confirmed','completed','paid') ORDER BY created_at DESC",
-                [$bill['house_id'], $ownerId, $bill['month']]
+                "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? AND month = ? AND status IN ('confirmed','completed','paid') ORDER BY created_at DESC",
+                [(int)$bill['tenant_id'], $ownerId, $bill['month']]
             );
             $totalPaid = array_sum(array_column($payments, 'amount'));
         }

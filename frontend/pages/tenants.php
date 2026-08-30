@@ -337,11 +337,18 @@ if (!isset($user, $role, $token)) {
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Security Deposit (KES)</label>
-                                    <div class="relative">
-                                        <i class="fas fa-shield-alt absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                                        <input type="number" id="tenantDeposit" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 outline-none transition-all" placeholder="Same as rent">
-                                    </div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-2">Require Security Deposit?</label>
+                                    <button type="button" onclick="toggleDeposit()" id="depositToggleBtn" class="relative inline-flex h-9 w-16 items-center rounded-full bg-slate-300 transition-all duration-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                                        <span id="depositToggleKnob" class="inline-block h-7 w-7 transform rounded-full bg-white shadow transition-all duration-200 translate-x-1"></span>
+                                    </button>
+                                    <span id="depositStatusLabel" class="ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">OFF</span>
+                                </div>
+                            </div>
+                            <div id="depositField" class="hidden">
+                                <label class="block text-sm font-medium text-slate-700 mb-1.5">Security Deposit Amount (KES)</label>
+                                <div class="relative max-w-md">
+                                    <i class="fas fa-shield-alt absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                    <input type="number" id="tenantDeposit" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 outline-none transition-all" placeholder="Same as rent">
                                 </div>
                             </div>
                             <div>
@@ -618,6 +625,33 @@ if (!isset($user, $role, $token)) {
         showStep(currentStep - 1);
     }
 
+    function toggleDeposit() {
+        const btn = document.getElementById('depositToggleBtn');
+        const knob = document.getElementById('depositToggleKnob');
+        const field = document.getElementById('depositField');
+        const statusLabel = document.getElementById('depositStatusLabel');
+        const isOn = btn.classList.contains('bg-blue-600');
+        
+        if (isOn) {
+            btn.classList.remove('bg-blue-600');
+            btn.classList.add('bg-slate-300');
+            knob.classList.remove('translate-x-9');
+            knob.classList.add('translate-x-1');
+            field.classList.add('hidden');
+            document.getElementById('tenantDeposit').value = 0;
+            statusLabel.textContent = 'OFF';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide';
+        } else {
+            btn.classList.remove('bg-slate-300');
+            btn.classList.add('bg-blue-600');
+            knob.classList.remove('translate-x-1');
+            knob.classList.add('translate-x-9');
+            field.classList.remove('hidden');
+            statusLabel.textContent = 'ON';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-blue-600 uppercase tracking-wide';
+        }
+    }
+
     // ==================== LOAD TENANTS TABLE ====================
     async function loadTenants() {
         const tbody = document.getElementById('tenantsTable');
@@ -776,10 +810,12 @@ if (!isset($user, $role, $token)) {
         const rent = selected ? selected.dataset.rent : 0;
         if (rent) {
             document.getElementById('tenantRent').value = rent;
-            // Auto-fill deposit with same amount as rent (only if deposit is empty or 0)
+            // Auto-fill deposit with same amount as rent only if toggle is ON and deposit is empty
             const depositEl = document.getElementById('tenantDeposit');
             const currentDeposit = parseFloat(depositEl.value) || 0;
-            if (!currentDeposit || currentDeposit === 0) {
+            const toggleBtn = document.getElementById('depositToggleBtn');
+            const isToggleOn = toggleBtn.classList.contains('bg-blue-600');
+            if (isToggleOn && (!currentDeposit || currentDeposit === 0)) {
                 depositEl.value = rent;
             }
         }
@@ -908,6 +944,18 @@ if (!isset($user, $role, $token)) {
         document.getElementById('kraFileStatus').textContent = '';
         document.getElementById('kinIdFileStatus').textContent = '';
         document.getElementById('kinKraFileStatus').textContent = '';
+        // Reset deposit toggle
+        const btn = document.getElementById('depositToggleBtn');
+        const knob = document.getElementById('depositToggleKnob');
+        const statusLabel = document.getElementById('depositStatusLabel');
+        btn.classList.remove('bg-blue-600');
+        btn.classList.add('bg-slate-300');
+        knob.classList.remove('translate-x-9');
+        knob.classList.add('translate-x-1');
+        document.getElementById('depositField').classList.add('hidden');
+        document.getElementById('tenantDeposit').value = 0;
+        statusLabel.textContent = 'OFF';
+        statusLabel.className = 'ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide';
     }
     
     function closeTenantModal() {
@@ -943,7 +991,32 @@ if (!isset($user, $role, $token)) {
         document.getElementById('tenantLeaseStart').value = tenant.lease_start || '';
         document.getElementById('tenantLeaseEnd').value = tenant.lease_end || '';
         document.getElementById('tenantRent').value = tenant.rent || 0;
-        document.getElementById('tenantDeposit').value = tenant.deposit || 0;
+        const depositAmount = tenant.deposit || 0;
+        document.getElementById('tenantDeposit').value = depositAmount;
+        
+        // Set deposit toggle state
+        const btn = document.getElementById('depositToggleBtn');
+        const knob = document.getElementById('depositToggleKnob');
+        const depositField = document.getElementById('depositField');
+        const statusLabel = document.getElementById('depositStatusLabel');
+        if (depositAmount > 0) {
+            btn.classList.remove('bg-slate-300');
+            btn.classList.add('bg-blue-600');
+            knob.classList.remove('translate-x-1');
+            knob.classList.add('translate-x-9');
+            depositField.classList.remove('hidden');
+            statusLabel.textContent = 'ON';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-blue-600 uppercase tracking-wide';
+        } else {
+            btn.classList.remove('bg-blue-600');
+            btn.classList.add('bg-slate-300');
+            knob.classList.remove('translate-x-9');
+            knob.classList.add('translate-x-1');
+            depositField.classList.add('hidden');
+            statusLabel.textContent = 'OFF';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide';
+        }
+        
         document.getElementById('tenantBalance').value = tenant.balance || 0;
         
         // Store original property and house IDs for consistency

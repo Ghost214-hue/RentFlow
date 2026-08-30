@@ -276,10 +276,14 @@ class TenantController
 
             // If house assigned, atomically claim it while it is still vacant.
             if (!empty($data['house_id'])) {
-                $updated = $db->update('houses', [
+                $houseUpdate = [
                     'status'    => 'occupied',
                     'tenant_id' => $tenantId,
-                ], 'id = ? AND owner_id = ? AND status = ?', [(int) $data['house_id'], $ownerId, 'vacant']);
+                ];
+                if (isset($data['rent']) && (float)$data['rent'] > 0) {
+                    $houseUpdate['rent'] = (float)$data['rent'];
+                }
+                $updated = $db->update('houses', $houseUpdate, 'id = ? AND owner_id = ? AND status = ?', [(int) $data['house_id'], $ownerId, 'vacant']);
 
                 if ($updated < 1) {
                     throw new \RuntimeException('House is already occupied');
@@ -296,20 +300,23 @@ class TenantController
                 }
             }
 
-            // Generate initial bill for the month with rent only (no deposit)
-            // Deposit is stored in tenants.deposit as a reference but not billed monthly
-            // This standardizes bill structure: all bills (initial + monthly) have Rent only
+            // Generate initial bill for the month with rent + optional deposit
+            // Deposit is included in the initial bill only if amount > 0
             if (!empty($data['house_id']) && !empty($data['rent'])) {
                 $month = date('Y-m');
                 $existing = $db->fetchOne(
-                    "SELECT id FROM bills WHERE house_id = ? AND month = ?",
-                    [(int) $data['house_id'], $month]
+                    "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
+                    [$ownerId, $tenantId, $month]
                 );
                 if (!$existing) {
                     $billingService = new BillingService();
+                    $depositAmount = (float) ($data['deposit'] ?? 0);
                     $chargeItems = [
                         ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => (float)$data['rent']],
                     ];
+                    if ($depositAmount > 0) {
+                        $chargeItems[] = ['type' => 'Deposit', 'description' => 'Security Deposit', 'amount' => $depositAmount];
+                    }
 
                     $billingService->createBillWithItems(
                         $ownerId,

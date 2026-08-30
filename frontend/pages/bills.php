@@ -79,7 +79,7 @@ $basePath = getBasePath();
                 <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1.5">Billing Month</label>
                     <input type="month" id="billMonthInput" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" value="<?php echo date('Y-m'); ?>" required>
-                    <p class="text-xs text-red-500 mt-1 font-medium">Bill generation is only allowed on or after the 25th of the current month.</p>
+                    <p class="text-xs text-slate-500 mt-1">Generates bills for all tenanted units and emails each tenant (and next of kin) with their invoice.</p>
                 </div>
                 <div class="bg-amber-50/70 rounded-xl p-4 border border-amber-100/70">
                     <div class="flex items-start gap-3">
@@ -251,7 +251,8 @@ $basePath = getBasePath();
         try {
             const result = await apiRequest(`${API}/bills/generate`, { method:'POST', body });
             closeBillingModal();
-            toast(result.message || 'Bills generated successfully!');
+            const msg = result.message || (result.count > 0 ? 'Bills generated successfully!' : 'No new bills were created.');
+            toast(msg, result.already_existed ? 'info' : 'success');
             loadBills();
         } catch(err) { toast(err.message, 'error'); }
         finally {

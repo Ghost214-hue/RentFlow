@@ -41,7 +41,7 @@ if ($pageName === 'terms-and-conditions') {
 }
 
 // Check if this is a valid authenticated page
-$validPages = ['dashboard', 'properties', 'houses', 'tenants', 'caretakers', 'bills', 'payments', 'complaints', 'communications', 'reports', 'tenant-dashboard', 'tenant-profile', 'settings'];
+$validPages = ['dashboard', 'properties', 'houses', 'tenants', 'caretakers', 'bills', 'payments', 'complaints', 'communications', 'reports', 'tenant-dashboard', 'caretaker-dashboard', 'tenant-profile', 'settings', 'maintenance', 'documents', 'email-logs'];
 $pageFile = __DIR__ . '/../pages/' . $pageName . '.php';
 
 if (in_array($pageName, $validPages) && file_exists($pageFile)) {
