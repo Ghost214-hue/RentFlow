@@ -1,23 +1,31 @@
 <?php
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
+// Load correct .env for localhost vs production
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
+\App\Core\Env::load($envPath);
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bills - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Bills - RentaFlow</title>
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -35,7 +43,7 @@ $role = $user['role'] ?? 'owner';
                         <option value="">All Properties</option>
                     </select>
                 </div>
-                <button onclick="generateBills()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-file-invoice"></i>Generate Bills</button>
+                <button onclick="openBillingModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-file-invoice"></i>Generate Bills</button>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 overflow-hidden">
                 <div class="overflow-x-auto">
@@ -44,7 +52,7 @@ $role = $user['role'] ?? 'owner';
                             <th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Unit</th><th class="px-6 py-4">Month</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Paid</th><th class="px-6 py-4">Balance</th><th class="px-6 py-4">Status</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="billsTable">
-                            <tr><td colspan="8" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
+                            <tr id="loadingRow"><td colspan="8" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading bills...</span></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -53,13 +61,87 @@ $role = $user['role'] ?? 'owner';
             <?php include __DIR__ . '/../public/components/pagination.php'; ?>
         </main>
     </div>
+    <!-- Billing Confirmation Modal -->
+    <div id="billingModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeBillingModal()">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900">Generate Bills</h3>
+                <button onclick="closeBillingModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <form id="billingForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Property</label>
+                    <select id="billPropertySelect" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all">
+                        <option value="">All Properties</option>
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">Leave as "All Properties" to generate bills for every tenanted unit.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Billing Month</label>
+                    <input type="month" id="billMonthInput" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" value="<?php echo date('Y-m'); ?>" required>
+                    <p class="text-xs text-slate-500 mt-1">Generates bills for all tenanted units and emails each tenant (and next of kin) with their invoice.</p>
+                </div>
+                <div class="bg-amber-50/70 rounded-xl p-4 border border-amber-100/70">
+                    <div class="flex items-start gap-3">
+                        <i class="fas fa-info-circle text-amber-500 mt-0.5"></i>
+                        <div>
+                            <p class="text-sm font-medium text-slate-800">What happens next?</p>
+                            <ul class="text-xs text-slate-600 mt-1 space-y-1 list-disc ml-4">
+                                <li>Bills will be created for all occupied units</li>
+                                <li>Each tenant will receive an email with their invoice</li>
+                                <li>Next of kin will also be notified</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeBillingModal()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all text-sm">Cancel</button>
+                    <button type="submit" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2 text-sm">
+                        <i class="fas fa-file-invoice"></i> Generate & Send
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const BILLS_PER_PAGE_KEY = 'rf_bills_per_page';
     const BILLS_PER_PAGE_DEFAULT = 25;
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = BASE + '/signin';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -82,8 +164,7 @@ $role = $user['role'] ?? 'owner';
             url.searchParams.set('page', page);
             url.searchParams.set('per_page', perPage);
 
-            const res = await fetch(url.pathname + url.search, { headers });
-            const data = await res.json();
+            const data = await apiRequest(url.pathname + url.search);
             const tbody = document.getElementById('billsTable');
             if (data.bills && data.bills.length) {
                 tbody.innerHTML = data.bills.map(b => `
@@ -113,7 +194,7 @@ $role = $user['role'] ?? 'owner';
                     onPerPageChange: (newPerPage) => loadBills(1, newPerPage),
                 });
             }
-        } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+        } catch(e) { console.error(e); }
     }
 
     async function generateBills() {
@@ -121,71 +202,12 @@ $role = $user['role'] ?? 'owner';
         const propertyId = document.getElementById('propertyFilter')?.value || null;
         const body = propertyId ? JSON.stringify({month, property_id: Number(propertyId)}) : JSON.stringify({month});
         try {
-            const res = await fetch(`${API}/bills/generate`, { method:'POST', headers, body });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            const result = await apiRequest(`${API}/bills/generate`, { method:'POST', body });
             toast('Bills generated!');
             loadBills();
-            if (result.summary && result.summary.length) showArrearsSummary(result.summary);
         } catch(err) { toast(err.message, 'error'); }
     }
 
-    function showArrearsSummary(summary) {
-        const paid = summary.filter(s => s.status === 'paid');
-        const partial = summary.filter(s => s.status === 'partial');
-        const pending = summary.filter(s => s.status === 'pending');
-
-        const rows = summary.map(s => {
-            let badge = '';
-            if (s.status === 'paid') badge = '<span class="px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Paid</span>';
-            else if (s.status === 'partial') badge = '<span class="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Partial</span>';
-            else badge = '<span class="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Not Paid</span>';
-            return `<tr class="border-b border-slate-200">
-              <td class="px-3 py-3 text-sm font-medium text-slate-900">${s.tenant_name}</td>
-              <td class="px-3 py-3 text-sm text-slate-600">${s.unit}</td>
-              <td class="px-3 py-3 text-sm text-right font-medium">KES ${s.expected.toLocaleString()}</td>
-              <td class="px-3 py-3 text-sm text-right text-emerald-700 font-medium">KES ${s.paid.toLocaleString()}</td>
-              <td class="px-3 py-3 text-sm text-right font-medium ${s.arrears > 0 ? 'text-red-700' : 'text-emerald-700'}">KES ${s.arrears.toLocaleString()}</td>
-              <td class="px-3 py-3 text-sm text-center">${badge}</td>
-            </tr>`;
-        }).join('');
-
-        const title = summary[0]?.property ? `Rent Follow-up Summary - ${summary[0].property}` : 'Rent Follow-up Summary';
-        const subtitle = [summary[0]?.unit ? `Unit ${summary[0].unit}` : '', new Date().toLocaleDateString()].filter(Boolean).join('  ·  ');
-
-        const html = `<!DOCTYPE html><html><head><title>${title}</title><link rel="stylesheet" href="/css/output.css"></head><body class="bg-slate-50 p-6">
-          <div class="max-w-4xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h1 class="text-xl font-bold text-slate-900">${title}</h1>
-                <p class="text-sm text-slate-500 mt-1">${subtitle}</p>
-              </div>
-              <button onclick="window.print()" class="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm">Print / Save PDF</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-left">
-                <thead>
-                  <tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    <th class="px-6 py-3">Tenant</th>
-                    <th class="px-6 py-3">Unit</th>
-                    <th class="px-6 py-3 text-right">Expected</th>
-                    <th class="px-6 py-3 text-right">Paid</th>
-                    <th class="px-6 py-3 text-right">Arrears</th>
-                    <th class="px-6 py-3 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">${rows}</tbody>
-              </table>
-            </div>
-            <div class="px-6 py-4 border-t border-slate-100 text-xs text-slate-500">Generated by RentFlow on ${new Date().toLocaleString()}</div>
-          </div>
-        </body></html>`;
-
-        const w = window.open('', '_blank', 'width=1000,height=800');
-        if (!w) { alert(summary.map(s => `${s.tenant_name}: Paid=${s.paid}, Arrears=${s.arrears}`).join('\n')); return; }
-        w.document.write(html);
-        w.document.close();
-    }
 
     function downloadInvoice(billId, tenantName, month) {
         const url = `${API}/bills/${billId}/invoice?token=${encodeURIComponent(token)}`;
@@ -199,10 +221,49 @@ $role = $user['role'] ?? 'owner';
         if (!w) { toast('Popup blocked. Please allow popups for PDF export.', 'error'); }
     }
 
+    function openBillingModal() {
+        // Populate property dropdown
+        const select = document.getElementById('billPropertySelect');
+        select.innerHTML = '<option value="">All Properties</option>';
+        // Copy options from filter
+        const filterSelect = document.getElementById('propertyFilter');
+        for (let i = 1; i < filterSelect.options.length; i++) {
+            const opt = document.createElement('option');
+            opt.value = filterSelect.options[i].value;
+            opt.textContent = filterSelect.options[i].textContent;
+            select.appendChild(opt);
+        }
+        document.getElementById('billMonthInput').value = '<?php echo date('Y-m'); ?>';
+        document.getElementById('billingModal').classList.remove('hidden');
+    }
+    function closeBillingModal() { document.getElementById('billingModal').classList.add('hidden'); }
+
+    document.getElementById('billingForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+        
+        const month = document.getElementById('billMonthInput').value;
+        const propertyId = document.getElementById('billPropertySelect').value;
+        const body = propertyId ? JSON.stringify({month, property_id: Number(propertyId)}) : JSON.stringify({month});
+        
+        try {
+            const result = await apiRequest(`${API}/bills/generate`, { method:'POST', body });
+            closeBillingModal();
+            const msg = result.message || (result.count > 0 ? 'Bills generated successfully!' : 'No new bills were created.');
+            toast(msg, result.already_existed ? 'info' : 'success');
+            loadBills();
+        } catch(err) { toast(err.message, 'error'); }
+        finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-file-invoice"></i> Generate & Send';
+        }
+    });
+
     async function loadProperties() {
         try {
-            const res = await fetch(`${API}/properties`, { headers });
-            const data = await res.json();
+            const data = await apiRequest(`${API}/properties`);
             const select = document.getElementById('propertyFilter');
             if (select && data.properties) {
                 data.properties.forEach(p => {

@@ -1,12 +1,15 @@
 <?php
 
-/**
- * Application Configuration Loader
- * This file loads environment-specific configurations
- * 
- * Usage in bootstrap file:
- * require_once __DIR__ . '/config/bootstrap.php';
- */
+
+// Load environment variables FIRST using custom Env loader (supports all value types)
+require_once __DIR__ . '/../app/Core/Env.php';
+$envFiles = [dirname(__DIR__, 2) . '/.env.production', dirname(__DIR__, 2) . '/.env'];
+foreach ($envFiles as $envPath) {
+    if (file_exists($envPath)) {
+        \App\Core\Env::load($envPath);
+        break;
+    }
+}
 
 // Detect environment
 $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'development';
@@ -38,18 +41,18 @@ require_once __DIR__ . '/database.php';
 // JWT configuration
 require_once __DIR__ . '/jwt.php';
 
-// Load environment variables
-if (file_exists(BASE_PATH . '/.env')) {
-    $env = parse_ini_file(BASE_PATH . '/.env');
-    foreach ($env as $key => $value) {
-        if (!isset($_ENV[$key])) {
-            $_ENV[$key] = $value;
-        }
-    }
-}
+// Register autoloader
+spl_autoload_register(function ($class) {
+    $prefix = 'App\\';
+    $baseDir = BACKEND_PATH . '/app/';
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) return;
+    $file = $baseDir . str_replace('\\', '/', substr($class, $len)) . '.php';
+    if (file_exists($file)) require $file;
+});
 
 // Application meta
-const APP_NAME = 'RentFlow';
+const APP_NAME = 'RentaFlow';
 const APP_VERSION = '1.0.0';
 
 // API Routes

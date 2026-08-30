@@ -1,13 +1,34 @@
 <?php
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+$basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], '', dirname(__DIR__, 2))), '/');
+
+// Determine if we're in production/HTTPS environment
+$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
+$isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+           (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+           (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+
+// Generate CSRF token
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'path' => '/',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
+    session_start();
+}
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Up - RentalFlow</title>
-   <link rel="stylesheet" href="/css/output.css">
+    <title>Sign Up - RentaFlow</title>
+    <base href="<?php echo $basePath; ?>/">
+    <link rel="stylesheet" href="css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -19,15 +40,6 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                 <path d="M0 100 C 40 20 60 20 100 100 Z" fill="white" opacity="0.5"/>
             </svg>
         </div>
-        <?php
-    // Generate CSRF token
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    ?>
     <div class="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col lg:flex-row">
             <div class="lg:w-5/12 bg-gradient-to-br from-blue-600 to-blue-800 p-8 lg:p-12 flex flex-col justify-between text-white relative">
                 <div class="absolute inset-0 opacity-5">
@@ -55,7 +67,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             <div class="lg:w-7/12 p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
                     <div class="text-center mb-8">
-                        <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
+                        <img src="<?php echo $basePath; ?>/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
                         <h2 class="text-2xl font-bold text-slate-900">Create Account</h2>
                         <p class="text-slate-500 mt-1">Start managing your properties</p>
                     </div>
@@ -68,7 +80,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Password</label><input type="password" id="regPassword" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="Min 6 characters" minlength="6" required></div>
                         <div class="flex items-start gap-2">
                             <input type="checkbox" id="regTerms" class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" required>
-                            <label for="regTerms" class="text-sm text-slate-600">I have read and agree to the <a href="/terms-and-conditions" target="_blank" class="text-blue-600 hover:underline font-medium">terms and conditions</a> of RentalFlow</label>
+                            <label for="regTerms" class="text-sm text-slate-600">I have read and agree to the <a href="<?php echo $basePath; ?>/terms-and-conditions" target="_blank" class="text-blue-600 hover:underline font-medium">terms and conditions</a> of RentalFlow</label>
                         </div>
                         <button type="submit" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all">Create Account</button>
                     </form>
@@ -81,7 +93,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const API = '<?php echo $basePath; ?>/api';
     const CSRF_TOKEN = '<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -129,7 +141,8 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
             if(!res.ok) throw new Error(result.error || 'Registration failed');
             
             // Store token in cookie only (primary auth method)
-            document.cookie = 'rf_token=' + encodeURIComponent(result.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Lax';
+            const cookieSecure = '<?php echo $isHttps ? '; Secure' : ''; ?>';
+            document.cookie = 'rf_token=' + encodeURIComponent(result.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Strict' + cookieSecure;
             
             toast('Account created! Redirecting...', 'success');
             

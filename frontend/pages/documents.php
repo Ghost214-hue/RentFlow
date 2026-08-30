@@ -6,8 +6,8 @@ require_once __DIR__ . '/../includes/auth.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Property Documents - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Property Documents - RentaFlow</title>
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -30,7 +30,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
             <!-- Documents Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="documentsGrid">
-                <div class="col-span-full py-12 text-center text-slate-400">Loading documents...</div>
+                <div class="col-span-full py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading documents...</span></div></div>
             </div>
         </main>
     </div>
@@ -132,21 +132,41 @@ require_once __DIR__ . '/../includes/auth.php';
         .consequences-section li { color: #7f1d1d; }
     </style>
     <script>
-    const API = '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const userRole = '<?php echo $role; ?>';
     let currentDocumentId = null;
 
-    function getHeaders(isGetRequest = false) {
-        const headers = {};
-        if (token) {
-            headers['Authorization'] = 'Bearer ' + token;
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers: { ...options.headers, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = BASE + '/signin';
+            }
+            throw new Error(data.error || 'Request failed');
         }
-        // Only add Content-Type for non-GET requests
-        if (!isGetRequest) {
-            headers['Content-Type'] = 'application/json';
-        }
-        return headers;
+        return data;
     }
 
     function toast(msg, type='success') {
@@ -161,7 +181,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
     async function loadProperties() {
         try {
-            const res = await fetch(`${API}/properties`, { headers: getHeaders(true) });
+            const res = await fetch(`${API}/properties`, { headers: { 'Authorization': 'Bearer ' + token } });
             const data = await res.json();
             const select = document.getElementById('docProperty');
             
@@ -180,7 +200,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
     async function loadDocuments() {
         try {
-            const res = await fetch(`${API}/documents`, { headers: getHeaders(true) });
+            const res = await fetch(`${API}/documents`, { headers: { 'Authorization': 'Bearer ' + token } });
             const data = await res.json();
             const grid = document.getElementById('documentsGrid');
             
@@ -223,7 +243,6 @@ require_once __DIR__ . '/../includes/auth.php';
             }
         } catch(e) {
             console.error('Failed to load documents:', e);
-            if (e.message.includes('401')) window.location.href = '/signin';
         }
     }
 
@@ -257,12 +276,9 @@ require_once __DIR__ . '/../includes/auth.php';
 
     async function editDocument(id) {
         try {
-            const res = await fetch(`${API}/documents/${id}`, { headers: getHeaders(true) });
-            const data = await res.json();
-            
-            if (!res.ok) throw new Error(data.error || 'Failed to load document');
-            
+            const data = await apiRequest(`${API}/documents/${id}`);
             const doc = data.document;
+            
             document.getElementById('documentModalTitle').textContent = 'Edit Document';
             document.getElementById('documentId').value = doc.id;
             document.getElementById('docTitle').value = doc.title;
@@ -281,13 +297,7 @@ require_once __DIR__ . '/../includes/auth.php';
         if (!confirm('Are you sure you want to delete this document?')) return;
         
         try {
-            const res = await fetch(`${API}/documents/${id}`, {
-                method: 'DELETE',
-                headers: getHeaders()
-            });
-            const data = await res.json();
-            
-            if (!res.ok) throw new Error(data.error || 'Failed to delete');
+            await apiRequest(`${API}/documents/${id}`, { method: 'DELETE' });
             
             toast('Document deleted');
             loadDocuments();
@@ -298,11 +308,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
     async function viewDocument(id) {
         try {
-            const res = await fetch(`${API}/documents/${id}`, { headers: getHeaders(true) });
-            const data = await res.json();
-            
-            if (!res.ok) throw new Error(data.error || 'Failed to load document');
-            
+            const data = await apiRequest(`${API}/documents/${id}`);
             const doc = data.document;
             currentDocumentId = id;
             
@@ -430,7 +436,7 @@ require_once __DIR__ . '/../includes/auth.php';
                     </div>
                     <div class="content">${formatDocumentContent(document.content)}</div>
                     <div class="footer">
-                        <p>RentFlow Property Management System</p>
+                        <p>RentaFlow Property Management System</p>
                         <p>Generated on ${new Date().toLocaleDateString('en-GB')}</p>
                     </div>
                 </body>
@@ -468,14 +474,7 @@ require_once __DIR__ . '/../includes/auth.php';
             const method = id ? 'PUT' : 'POST';
             const url = id ? `${API}/documents/${id}` : `${API}/documents`;
             
-            const res = await fetch(url, {
-                method,
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to save');
+            const result = await apiRequest(url, { method, body: JSON.stringify(data) });
             
             toast(id ? 'Document updated' : 'Document created');
             closeDocumentModal();

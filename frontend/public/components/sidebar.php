@@ -1,40 +1,46 @@
 <?php
+require_once __DIR__ . '/../../includes/base-path-fix.php';
+$basePath = getBasePath();
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $user = $_SESSION['rf_user'] ?? null;
 $role = $user['role'] ?? 'owner';
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
 
 $ownerNav = [
-    ['/dashboard','fa-chart-line','Dashboard',''],
-    ['/properties','fa-building','Properties',''],
-    ['/houses','fa-home','Houses',''],
-    ['/tenants','fa-users','Tenants',''],
-    ['/caretakers','fa-user-shield','Caretakers',''],
-    ['/payments','fa-money-bill-wave','Payments',''],
-    ['/bills','fa-file-invoice-dollar','Bills',''],
-    ['/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
-    ['/documents','fa-file-alt','Rules',''],
-    ['/reports','fa-chart-pie','Reports',''],
+    [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
+    [$basePath . '/properties','fa-building','Properties',''],
+    [$basePath . '/houses','fa-home','Houses',''],
+    [$basePath . '/tenants','fa-users','Tenants',''],
+    [$basePath . '/caretakers','fa-user-shield','Caretakers',''],
+    [$basePath . '/payments','fa-money-bill-wave','Payments',''],
+    [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
+    [$basePath . '/maintenance','fa-tools','Maintenance',''],
+    [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
+    [$basePath . '/documents','fa-file-alt','Rules',''],
+    [$basePath . '/reports','fa-chart-pie','Reports',''],
+    [$basePath . '/email-logs','fa-envelope-open-text','Email Delivery',''],
 ];
 
 $caretakerNav = [
-    ['/dashboard','fa-chart-line','Dashboard',''],
-    ['/properties','fa-building','Properties',''],
-    ['/houses','fa-home','Houses',''],
-    ['/tenants','fa-users','Tenants',''],
-    ['/payments','fa-money-bill-wave','Payments',''],
-    ['/bills','fa-file-invoice-dollar','Bills',''],
-    ['/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
-    ['/documents','fa-file-alt','Rules',''],
+    [$basePath . '/dashboard','fa-chart-line','Dashboard',''],
+    [$basePath . '/properties','fa-building','Properties',''],
+    [$basePath . '/houses','fa-home','Houses',''],
+    [$basePath . '/tenants','fa-users','Tenants',''],
+    [$basePath . '/payments','fa-money-bill-wave','Payments',''],
+    [$basePath . '/bills','fa-file-invoice-dollar','Bills',''],
+    [$basePath . '/maintenance','fa-tools','Maintenance',''],
+    [$basePath . '/complaints','fa-exclamation-triangle','Complaints','complaintCount'],
+    [$basePath . '/documents','fa-file-alt','Rules',''],
+    [$basePath . '/email-logs','fa-envelope-open-text','Email Delivery',''],
 ];
 
 $tenantNav = [
-    ['/tenant-dashboard','fa-chart-line','Dashboard',''],
-    ['/tenant-profile','fa-user','My Profile',''],
-    ['/payments','fa-money-bill-wave','My Payments','paymentCount'],
-    ['/bills','fa-file-invoice-dollar','My Bills',''],
-    ['/complaints','fa-exclamation-triangle','My Complaints','complaintCount'],
-    ['/documents','fa-file-alt','Rules',''],
+    [$basePath . '/tenant-dashboard','fa-chart-line','Dashboard',''],
+    [$basePath . '/tenant-profile','fa-user','My Profile',''],
+    [$basePath . '/payments','fa-money-bill-wave','My Payments','paymentCount'],
+    [$basePath . '/bills','fa-file-invoice-dollar','My Bills',''],
+    [$basePath . '/complaints','fa-exclamation-triangle','My Complaints','complaintCount'],
+    [$basePath . '/documents','fa-file-alt','Rules',''],
 ];
 
 $nav = match($role) {
@@ -52,7 +58,7 @@ function isActive($uri, $path) {
 <aside id="sidebarMobile" class="lg:hidden fixed inset-y-0 left-0 z-40 w-64 bg-gradient-to-b from-blue-700 to-blue-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out flex flex-col min-h-screen">
     <div class="h-16 flex items-center px-5 border-b border-white/10">
         <div class="flex items-center gap-3">
-            <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="h-8 w-auto object-contain" onerror="this.style.display='none'">
+            <img src="<?php echo $basePath; ?>/images/rentalflow-logo.png" alt="RentalFlow" class="h-8 w-auto object-contain" onerror="this.style.display='none'">
             <span class="font-bold text-lg text-white">RentalFlow</span>
         </div>
         <button onclick="closeSidebar()" class="ml-auto text-white/60 hover:text-white"><i class="fas fa-times text-xl"></i></button>
@@ -82,7 +88,7 @@ function isActive($uri, $path) {
 <aside id="sidebarDesktop" class="hidden lg:flex w-64 flex-shrink-0 bg-gradient-to-b from-blue-700 to-blue-900 shadow-2xl flex-col min-h-screen">
     <div class="h-16 flex items-center px-5 border-b border-white/10">
         <div class="flex items-center gap-3">
-            <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="h-8 w-auto object-contain" onerror="this.style.display='none'">
+            <img src="<?php echo $basePath; ?>/images/rentalflow-logo.png" alt="RentalFlow" class="h-8 w-auto object-contain" onerror="this.style.display='none'">
             <span class="font-bold text-lg text-white">RentalFlow</span>
         </div>
     </div>
@@ -150,67 +156,87 @@ function bindSidebarCounts() {
     async function loadSidebarCounts() {
         console.log('Loading sidebar counts...');
         try {
-            const token = localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
-            console.log('Token present:', !!token);
-            if (!token) return;
+            // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token ?? ''; ?>';
+            if (!token) {
+                console.log('No token found, skipping sidebar counts');
+                return;
+            }
+            
             const userRole = '<?php echo $role; ?>';
             const headers = {'Authorization':'Bearer '+token, 'Content-Type':'application/json'};
             
-            // Fetch complaints count
-            const compRes = await fetch('/api/complaints', { headers });
-            console.log('Complaints response status:', compRes.status);
+            // Fetch complaints count with error handling
             let notifyCount = 0;
-            if (compRes.ok) {
-                const compData = await compRes.json();
-                const list = compData.complaints || [];
-                if (userRole === 'tenant') {
-                // For tenants: only count unread complaints
-                notifyCount = list.filter(c => c.is_unread && (c.status === 'open' || c.status === 'in-progress')).length;
-            } else {
-                // For owner/caretaker: count all open/in-progress complaints
-                notifyCount = list.filter(c => c.status === 'open' || c.status === 'in-progress').length;
+            try {
+                const compRes = await fetch('<?php echo $basePath; ?>/api/complaints', { headers });
+                console.log('Complaints response status:', compRes.status);
+                if (compRes.ok) {
+                    const compData = await compRes.json();
+                    const list = compData.complaints || [];
+                    if (userRole === 'tenant') {
+                        // For tenants: only count unread complaints
+                        notifyCount = list.filter(c => c.is_unread && (c.status === 'open' || c.status === 'in-progress')).length;
+                    } else {
+                        // For owner/caretaker: count all open/in-progress complaints
+                        notifyCount = list.filter(c => c.status === 'open' || c.status === 'in-progress').length;
+                    }
+                }
+            } catch(e) {
+                console.warn('Failed to load complaints count:', e);
             }
-        }
-        console.log('Notification count:', notifyCount);
-        
-        ['complaintCountMobile','complaintCountDesktop'].forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) {
-                console.warn('Element not found:', id);
-                return;
-            }
-            if (notifyCount > 0) {
-                el.textContent = notifyCount;
-                el.classList.remove('hidden');
-                console.log('Showing badge', id, '=', notifyCount);
-            } else {
-                el.classList.add('hidden');
-            }
-        });
-        
-        // For tenants, fetch unconfirmed payments count
-        if (userRole === 'tenant') {
-            const payRes = await fetch('/api/payments', { headers });
-            let unconfirmed = 0;
-            if (payRes.ok) {
-                const payData = await payRes.json();
-                unconfirmed = (payData.payments || []).filter(p => {
-                    try { return parseInt(p.tenant_confirmed || '0', 10) === 0; } catch(err) { return true; }
-                }).length;
-            }
-            ['paymentCountMobile','paymentCountDesktop'].forEach(id => {
+            
+            console.log('Notification count:', notifyCount);
+            
+            ['complaintCountMobile','complaintCountDesktop'].forEach(id => {
                 const el = document.getElementById(id);
-                if (!el) return;
-                if (unconfirmed > 0) {
-                    el.textContent = unconfirmed;
+                if (!el) {
+                    console.warn('Element not found:', id);
+                    return;
+                }
+                if (notifyCount > 0) {
+                    el.textContent = notifyCount;
                     el.classList.remove('hidden');
+                    console.log('Showing badge', id, '=', notifyCount);
                 } else {
                     el.classList.add('hidden');
                 }
             });
+            
+            // For tenants, fetch unconfirmed payments count
+            if (userRole === 'tenant') {
+                let unconfirmed = 0;
+                try {
+                    const payRes = await fetch('<?php echo $basePath; ?>/api/payments', { headers });
+                    if (payRes.ok) {
+                        const payData = await payRes.json();
+                        unconfirmed = (payData.payments || []).filter(p => {
+                            try { return parseInt(p.tenant_confirmed || '0', 10) === 0; } catch(err) { return true; }
+                        }).length;
+                    }
+                } catch(e) {
+                    console.warn('Failed to load payments count:', e);
+                }
+                
+                ['paymentCountMobile','paymentCountDesktop'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    if (unconfirmed > 0) {
+                        el.textContent = unconfirmed;
+                        el.classList.remove('hidden');
+                    } else {
+                        el.classList.add('hidden');
+                    }
+                });
+            }
+        } catch(e) {
+            console.warn('Failed to load sidebar counts', e);
         }
-    } catch(e) {
-        console.warn('Failed to load sidebar counts', e);
     }
-}
 </script>

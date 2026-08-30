@@ -1,14 +1,35 @@
 <?php
 // No auth required - public page
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+$basePath = rtrim(str_replace('\\', '/', str_replace($_SERVER['DOCUMENT_ROOT'], '', dirname(__DIR__, 2))), '/');
+
+// Determine if we're in production/HTTPS environment
+$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
+$isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+           (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+           (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+
+// Generate CSRF token
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'path' => '/',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
+    session_start();
+}
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forgot Password - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Forgot Password - RentaFlow</title>
+    <base href="<?php echo $basePath; ?>/">
+    <link rel="stylesheet" href="css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -35,7 +56,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
                         <i class="fas fa-key text-blue-600"></i>
                     </div>
-                    <span class="font-bold text-xl text-slate-900">RentFlow</span>
+                    <span class="font-bold text-xl text-slate-900">RentaFlow</span>
                 </div>
                 <h1 class="text-2xl font-bold text-slate-900">Forgot Password?</h1>
                 <p class="text-slate-500 mt-2 text-sm">Enter your email address and we'll send you a verification code to reset your password.</p>
@@ -108,7 +129,7 @@ $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+    const API = '<?php echo $basePath; ?>/api';
     const CSRF_TOKEN = '<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');

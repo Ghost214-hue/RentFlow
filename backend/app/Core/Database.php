@@ -13,14 +13,18 @@ class Database
     {
         $config = require __DIR__ . '/../../config/database.php';
 
-        $this->connection = new \mysqli(
-            $config['host'],
-            $config['username'],
-            $config['password'],
-            $config['dbname'],
-            $config['port'],
-            $config['socket'] ?? null
-        );
+        $host = $config['host'];
+        $username = $config['username'];
+        $password = $config['password'];
+        $dbname = $config['dbname'];
+        $port = (int) ($config['port'] ?? 3306);
+        $socket = $config['socket'] ?? null;
+
+        if ($socket) {
+            $this->connection = new \mysqli($host, $username, $password, $dbname, $port, $socket);
+        } else {
+            $this->connection = new \mysqli($host, $username, $password, $dbname, $port);
+        }
 
         if ($this->connection->connect_error) {
             throw new \RuntimeException('Database connection failed: ' . $this->connection->connect_error);

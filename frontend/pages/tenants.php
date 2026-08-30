@@ -1,13 +1,24 @@
 <?php
-require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = $basePath ?? rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+
+// Ensure auth context exists before view logic
+if (!isset($user, $role, $token)) {
+    if (file_exists(__DIR__ . '/../includes/auth.php')) {
+        require_once __DIR__ . '/../includes/auth.php';
+    }
+    $user = $_SESSION['rf_user'] ?? $user ?? null;
+    $role = $user['role'] ?? $role ?? 'owner';
+    $token = $token ?? ($_COOKIE['rf_token'] ?? ($_SESSION['rf_token'] ?? ''));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tenants - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Tenants - RentaFlow</title>
+    <link rel="stylesheet" href="<?= htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -18,7 +29,7 @@ require_once __DIR__ . '/../includes/auth.php';
         <main class="flex-1 overflow-y-auto p-4 lg:p-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div><h1 class="text-2xl font-bold text-slate-900">Tenants</h1><p class="text-slate-500 mt-1">Manage your tenants</p></div>
-                <?php if ($role === 'owner'): ?>
+                <?php if ($role === 'owner' || $role === 'caretaker'): ?>
                 <button onclick="openTenantModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>Add Tenant</button>
                 <?php endif; ?>
             </div>
@@ -29,7 +40,7 @@ require_once __DIR__ . '/../includes/auth.php';
                             <th class="px-6 py-4">Name</th><th class="px-6 py-4">Property</th><th class="px-6 py-4">Unit</th><th class="px-6 py-4">Phone</th><th class="px-6 py-4">Balance</th><th class="px-6 py-4">Lease End</th><th class="px-6 py-4">Actions</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="tenantsTable">
-                            <tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">Loading...</td></tr>
+                            <tr id="loadingRow"><td colspan="7" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading tenants...</span></div></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -46,42 +57,37 @@ require_once __DIR__ . '/../includes/auth.php';
             <!-- Header -->
             <div class="flex items-center justify-between mb-6">
                 <div>
-                    <h3 class="text-xl font-bold text-slate-900" id="modalTitle">Add Tenant</h3>
-                    <p class="text-sm text-slate-500 mt-0.5">Step <span id="stepNum">1</span> of 6</p>
+                <h3 class="text-xl font-bold text-slate-900" id="modalTitle">Add Tenant</h3>
+                <p class="text-sm text-slate-500 mt-0.5">Step <span id="stepNum">1</span> of 5</p>
                 </div>
                 <button onclick="closeTenantModal()" class="text-slate-400 hover:text-slate-600 transition-colors"><i class="fas fa-times text-xl"></i></button>
             </div>
 
             <!-- Progress Indicator -->
             <div class="progress-container flex items-center mb-8 px-2">
-                <div class="progress-step active text-center" data-step="1">
+                <div class="progress-step active text-center cursor-pointer" data-step="1" onclick="goToStep(1)">
                     <div class="step-circle mx-auto">1</div>
                     <p class="text-xs font-medium mt-1.5 text-blue-600">Personal</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="2">
+                <div class="progress-step text-center cursor-pointer" data-step="2" onclick="goToStep(2)">
                     <div class="step-circle mx-auto">2</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">ID</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="3">
+                <div class="progress-step text-center cursor-pointer" data-step="3" onclick="goToStep(3)">
                     <div class="step-circle mx-auto">3</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Next of Kin</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="4">
+                <div class="progress-step text-center cursor-pointer" data-step="4" onclick="goToStep(4)">
                     <div class="step-circle mx-auto">4</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Lease</p>
                 </div>
                 <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="5">
+                <div class="progress-step text-center cursor-pointer" data-step="5" onclick="goToStep(5)">
                     <div class="step-circle mx-auto">5</div>
                     <p class="text-xs font-medium mt-1.5 text-slate-400">Finance</p>
-                </div>
-                <div class="step-line"></div>
-                <div class="progress-step text-center" data-step="6">
-                    <div class="step-circle mx-auto">6</div>
-                    <p class="text-xs font-medium mt-1.5 text-slate-400">Docs</p>
                 </div>
             </div>
 
@@ -94,6 +100,18 @@ require_once __DIR__ . '/../includes/auth.php';
                             <div><h4 class="font-bold text-slate-900">Personal Information</h4><p class="text-xs text-slate-500">Basic contact details of the tenant</p></div>
                         </div>
                         <div class="space-y-4">
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-slate-400 flex items-center justify-center text-2xl font-bold overflow-hidden" id="profilePreview"><span id="profileInitials">?</span></div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Profile Picture</label>
+                                    <div class="upload-zone rounded-xl p-3 text-center cursor-pointer" onclick="document.getElementById('profilePicInput').click()">
+                                        <i class="fas fa-camera text-lg text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Click to upload photo</p>
+                                        <input type="file" id="profilePicInput" class="hidden" accept=".jpg,.jpeg,.png" onchange="handleProfilePicUpload(this.files)">
+                                    </div>
+                                    <div id="profilePicStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
+                            </div>
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1.5">Full Name <span class="text-red-400">*</span></label>
                                 <div class="relative">
@@ -103,10 +121,10 @@ require_once __DIR__ . '/../includes/auth.php';
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Email Address <span class="text-red-400">*</span></label>
                                     <div class="relative">
                                         <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                                        <input type="email" id="tenantEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="tenant@example.com">
+                                        <input type="email" id="tenantEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all" placeholder="tenant@example.com" required>
                                     </div>
                                 </div>
                                 <div>
@@ -124,12 +142,12 @@ require_once __DIR__ . '/../includes/auth.php';
                     </div>
                 </div>
 
-                <!-- STEP 2: Identification -->
+                <!-- STEP 2: Identification & Documents -->
                 <div class="step-card hidden" id="step2">
                     <div class="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl p-5 border border-emerald-100/80 shadow-sm">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center text-lg"><i class="fas fa-id-card"></i></div>
-                            <div><h4 class="font-bold text-slate-900">Identification</h4><p class="text-xs text-slate-500">Government-issued ID and emergency contact</p></div>
+                            <div><h4 class="font-bold text-slate-900">Identification</h4><p class="text-xs text-slate-500">ID details and supporting documents</p></div>
                         </div>
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -151,10 +169,31 @@ require_once __DIR__ . '/../includes/auth.php';
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1.5">Emergency Contact</label>
+                                <label class="block text-sm font-medium text-slate-700 mb-1.5">KRA PIN</label>
                                 <div class="relative">
-                                    <i class="fas fa-phone-alt absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                                    <input type="text" id="tenantEmergency" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all" placeholder="Name and phone number of emergency contact">
+                                    <i class="fas fa-hashtag absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                    <input type="text" id="tenantKraPin" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none transition-all" placeholder="e.g. A123456789B">
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1">Enter the tenant's KRA PIN manually. You can also upload the KRA document below.</p>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">ID Document</label>
+                                    <div class="upload-zone rounded-xl p-4 text-center cursor-pointer" onclick="document.getElementById('idFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-xl text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Click to upload ID scan</p>
+                                        <input type="file" id="idFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleIdUpload(this.files)">
+                                    </div>
+                                    <div id="idFileStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">KRA Pin Document</label>
+                                    <div class="upload-zone rounded-xl p-4 text-center cursor-pointer" onclick="document.getElementById('kraFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-xl text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Click to upload KRA pin</p>
+                                        <input type="file" id="kraFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleKraUpload(this.files)">
+                                    </div>
+                                    <div id="kraFileStatus" class="text-xs text-slate-500 mt-1"></div>
                                 </div>
                             </div>
                         </div>
@@ -194,6 +233,26 @@ require_once __DIR__ . '/../includes/auth.php';
                                         <i class="fas fa-envelope absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                                         <input type="email" id="nextOfKinEmail" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 outline-none transition-all" placeholder="nextofkin@example.com">
                                     </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Next of Kin ID Document</label>
+                                    <div class="upload-zone rounded-xl p-3 text-center cursor-pointer" onclick="document.getElementById('kinIdFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-lg text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Upload ID</p>
+                                        <input type="file" id="kinIdFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleKinIdUpload(this.files)">
+                                    </div>
+                                    <div id="kinIdFileStatus" class="text-xs text-slate-500 mt-1"></div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Next of Kin KRA Pin</label>
+                                    <div class="upload-zone rounded-xl p-3 text-center cursor-pointer" onclick="document.getElementById('kinKraFileInput').click()">
+                                        <i class="fas fa-cloud-upload-alt text-lg text-slate-400 mb-1"></i>
+                                        <p class="text-xs text-slate-500">Upload KRA Pin</p>
+                                        <input type="file" id="kinKraFileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="handleKinKraUpload(this.files)">
+                                    </div>
+                                    <div id="kinKraFileStatus" class="text-xs text-slate-500 mt-1"></div>
                                 </div>
                             </div>
                         </div>
@@ -278,11 +337,18 @@ require_once __DIR__ . '/../includes/auth.php';
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-slate-700 mb-1.5">Security Deposit (KES)</label>
-                                    <div class="relative">
-                                        <i class="fas fa-shield-alt absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                                        <input type="number" id="tenantDeposit" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 outline-none transition-all" placeholder="Same as rent">
-                                    </div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-2">Require Security Deposit?</label>
+                                    <button type="button" onclick="toggleDeposit()" id="depositToggleBtn" class="relative inline-flex h-9 w-16 items-center rounded-full bg-slate-300 transition-all duration-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                                        <span id="depositToggleKnob" class="inline-block h-7 w-7 transform rounded-full bg-white shadow transition-all duration-200 translate-x-1"></span>
+                                    </button>
+                                    <span id="depositStatusLabel" class="ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">OFF</span>
+                                </div>
+                            </div>
+                            <div id="depositField" class="hidden">
+                                <label class="block text-sm font-medium text-slate-700 mb-1.5">Security Deposit Amount (KES)</label>
+                                <div class="relative max-w-md">
+                                    <i class="fas fa-shield-alt absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                                    <input type="number" id="tenantDeposit" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 outline-none transition-all" placeholder="Same as rent">
                                 </div>
                             </div>
                             <div>
@@ -295,52 +361,11 @@ require_once __DIR__ . '/../includes/auth.php';
                             </div>
                         </div>
                         <div class="flex justify-between mt-6 pt-4 border-t border-purple-100/70">
-                            <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
-                            <button type="button" onclick="nextStep()" class="px-6 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg shadow-purple-500/30 hover:shadow-purple-500/40 transition-all inline-flex items-center gap-2">Next <i class="fas fa-arrow-right text-sm"></i></button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- STEP 6: Documents & Review -->
-                <div class="step-card hidden" id="step6">
-                    <div class="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-xl p-5 border border-rose-100/80 shadow-sm">
-                        <div class="flex items-center gap-3 mb-5">
-                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 text-white flex items-center justify-center text-lg"><i class="fas fa-upload"></i></div>
-                            <div><h4 class="font-bold text-slate-900">Documents & Review</h4><p class="text-xs text-slate-500">Upload documents and confirm details</p></div>
-                        </div>
-                        <!-- Document Upload -->
-                        <div class="upload-zone rounded-xl p-6 text-center cursor-pointer mb-4" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-                            <div class="flex flex-col items-center gap-2">
-                                <div class="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center"><i class="fas fa-cloud-upload-alt text-2xl text-blue-400"></i></div>
-                                <p class="text-sm font-medium text-slate-700">Drop files here or click to upload</p>
-                                <p class="text-xs text-slate-400">ID, passport, lease agreement, receipts (PDF, JPG, PNG - Max 10MB)</p>
+                            <button type="button" id="deleteTenantBtn" onclick="deleteTenant()" class="hidden px-5 py-2.5 bg-red-600 text-white border border-red-700 rounded-xl font-medium hover:bg-red-700 transition-all inline-flex items-center gap-2"><i class="fas fa-trash text-sm"></i> Delete Tenant</button>
+                            <div class="flex gap-3 ml-auto">
+                                <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
+                                <button type="button" onclick="submitTenant()" class="px-8 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all inline-flex items-center gap-2" id="submitBtn"><i class="fas fa-check-circle text-sm"></i> <span id="submitBtnText">Register Tenant</span></button>
                             </div>
-                            <input type="file" id="fileInput" class="hidden" accept=".pdf,.jpg,.jpeg,.png" multiple onchange="handleFileUpload(this.files)">
-                        </div>
-                        <div id="uploadedFiles" class="space-y-2 mb-4"></div>
-
-                        <!-- Summary Review -->
-                        <div class="bg-white/70 rounded-xl p-4 border border-rose-100/60">
-                            <h5 class="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2"><i class="fas fa-clipboard-list text-rose-500"></i>Summary</h5>
-                            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" id="summaryDetails">
-                                <div class="text-slate-500">Name:</div><div class="font-medium text-slate-900" id="sumName">-</div>
-                                <div class="text-slate-500">Email:</div><div class="font-medium text-slate-900" id="sumEmail">-</div>
-                                <div class="text-slate-500">Phone:</div><div class="font-medium text-slate-900" id="sumPhone">-</div>
-                                <div class="text-slate-500">ID:</div><div class="font-medium text-slate-900" id="sumId">-</div>
-                                <div class="text-slate-500">Unit:</div><div class="font-medium text-slate-900" id="sumUnit">-</div>
-                                <div class="text-slate-500">Next of Kin:</div><div class="font-medium text-slate-900" id="sumNextOfKin">-</div>
-                                <div class="text-slate-500">Kin Phone:</div><div class="font-medium text-slate-900" id="sumNextOfKinPhone">-</div>
-                                <div class="text-slate-500">Rent:</div><div class="font-medium text-slate-900" id="sumRent">KES 0</div>
-                                <div class="text-slate-500">Deposit:</div><div class="font-medium text-slate-900" id="sumDeposit">KES 0</div>
-                                <div class="text-slate-500">Lease:</div><div class="font-medium text-slate-900" id="sumLease">-</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex justify-between mt-4">
-                        <button type="button" id="deleteTenantBtn" onclick="deleteTenant()" class="hidden px-5 py-2.5 bg-red-600 text-white border border-red-700 rounded-xl font-medium hover:bg-red-700 transition-all inline-flex items-center gap-2"><i class="fas fa-trash text-sm"></i> Delete Tenant</button>
-                        <div class="flex gap-3 ml-auto">
-                            <button type="button" onclick="prevStep()" class="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-xl font-medium hover:bg-slate-50 transition-all inline-flex items-center gap-2"><i class="fas fa-arrow-left text-sm"></i> Back</button>
-                            <button type="button" onclick="submitTenant()" class="px-8 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all inline-flex items-center gap-2" id="submitBtn"><i class="fas fa-check-circle text-sm"></i> <span id="submitBtnText">Register Tenant</span></button>
                         </div>
                     </div>
                 </div>
@@ -350,7 +375,7 @@ require_once __DIR__ . '/../includes/auth.php';
 
     <!-- TERMINATE TENANCY MODAL -->
     <div id="terminateModal" class="hidden rf-modal-backdrop" onclick="if(event.target===this)closeTerminateModal()">
-        <div class="rf-modal-panel p-5 sm:p-6 lg:p-8" onclick="event.stopPropagation()">
+        <div class="rf-modal-panel p-5 sm:p-6 lg:p-8 max-w-2xl" onclick="event.stopPropagation()">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-lg font-bold text-slate-900">Terminate Tenancy</h3>
                 <button onclick="closeTerminateModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
@@ -359,12 +384,26 @@ require_once __DIR__ . '/../includes/auth.php';
                 <input type="hidden" id="terminateTenantId">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-1.5">Reason for Termination</label>
-                    <textarea id="terminateReason" rows="3" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm" placeholder="Optional reason"></textarea>
+                    <textarea id="terminateReason" rows="2" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm" placeholder="Optional reason"></textarea>
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-1.5">Effective Date</label>
                     <input type="date" id="terminateDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500/30 focus:border-red-500 outline-none transition-all text-sm">
                 </div>
+
+                <!-- Damages Section -->
+                <div class="border-t border-red-100 pt-4 mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-sm font-semibold text-slate-700"><i class="fas fa-tools mr-1 text-amber-600"></i>Damages & Costs</h4>
+                        <button type="button" onclick="addDamageRow()" class="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all"><i class="fas fa-plus mr-1"></i>Add Damage</button>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-2">Record any damages found during inspection and their repair costs.</p>
+                    <div id="damagesContainer">
+                        <!-- Damage rows will be added here -->
+                    </div>
+                    <div id="damagesTotal" class="hidden text-sm font-semibold text-slate-700 mt-2 pt-2 border-t border-slate-100">Total Damage Cost: KES <span id="damageCostTotal">0.00</span></div>
+                </div>
+
                 <p class="text-xs text-red-500 mb-4">This will make the house vacant immediately. This action cannot be undone.</p>
                 <div class="flex gap-3">
                     <button type="button" onclick="closeTerminateModal()" class="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
@@ -400,61 +439,57 @@ require_once __DIR__ . '/../includes/auth.php';
         </div>
     </div>
 
-    <script>
-    const TENANTS_API = '/api';
-    const TENANTS_TOKEN = localStorage.getItem('rf_token') || '';
-    const TENANTS_HEADERS = TENANTS_TOKEN ? {'Authorization':'Bearer '+TENANTS_TOKEN, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
-    const TENANTS_PER_PAGE_KEY = 'rf_tenants_per_page';
-    const TENANTS_PER_PAGE_DEFAULT = 25;
-
-    async function loadTenants(page = 1, perPage = window.getSavedPerPage(TENANTS_PER_PAGE_KEY, TENANTS_PER_PAGE_DEFAULT)) {
-        try {
-            const res = await fetch(`${TENANTS_API}/tenants?page=${page}&per_page=${perPage}`, { headers: TENANTS_HEADERS });
-            const data = await res.json();
-            const tbody = document.getElementById('tenantsTable');
-            if (data.tenants && data.tenants.length) {
-                tbody.innerHTML = data.tenants.map(t => `
-                    <tr class="hover:bg-blue-50/30 transition-colors">
-                        <td class="px-6 py-4 text-sm font-medium text-slate-900">${(t.name||'N/A')}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${t.property_name||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${t.house_unit||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${t.phone||'N/A'}</td>
-                        <td class="px-6 py-4 text-sm font-medium ${t.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${(t.balance||0).toLocaleString()}</td>
-                        <td class="px-6 py-4 text-sm text-slate-500">${t.lease_end||'-'}</td>
-                        <td class="px-6 py-4"> <button onclick="viewTenant(${t.id})" class="text-blue-600">View</button> </td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No tenants found</td></tr>';
-            }
-            if (data.meta) renderPagination('tenantsPager', data.meta, (p) => loadTenants(p, perPage), {
-                perPageKey: TENANTS_PER_PAGE_KEY,
-                defaultPerPage: TENANTS_PER_PAGE_DEFAULT,
-                onPerPageChange: (newPerPage) => loadTenants(1, newPerPage),
-            });
-        } catch (e) { console.error('loadTenants error', e); }
-    }
-
-    // small helper to view tenant (uses existing page)
-    function viewTenant(id) { window.location.href = '/pages/tenant-profile.php?id=' + id; }
-
-    // initialize
-    loadTenants();
-    </script>
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
 
     <script>
-    // ==================== CONFIG ====================
-    const BASE = window.location.pathname.replace(/\/[^\/]*$/, '');
-    const API = (BASE || '') + '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Use the server-rendered base path when available. Fallback to JS computation only if unavailable.
+    const RENDERED_BASE = <?= json_encode((string)($basePath ?? '')); ?>;
+    const BASE = RENDERED_BASE || (() => {
+        let base = window.location.pathname;
+        const idx = base.indexOf('/frontend/pages/');
+        if (idx !== -1) return base.substring(0, idx);
+        return base.replace(/\/[^\/]*$/, '');
+    })();
+    const API = BASE + '/api';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { data = {}; }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = BASE + '/signin';
+            }
+            const errMsg = (data && data.error) ? data.error : text || 'Request failed';
+            throw new Error(errMsg);
+        }
+        return data;
+    }
     let tenantsCache = [];
     let uploadedDocs = [];
     let currentStep = 1;
-    const totalSteps = 6;
+    const totalSteps = 5;
     let editingTenantId = null;
+
+    // tenant/kin/profile document uploads
+    let tenantIdDoc = null;
+    let tenantKraDoc = null;
+    let kinIdDoc = null;
+    let kinKraDoc = null;
+    let profilePicDoc = null;
 
     // ==================== HELPERS ====================
     function escapeHtml(value) {
@@ -503,22 +538,28 @@ require_once __DIR__ . '/../includes/auth.php';
         setTimeout(() => el.classList.add('hidden'), 3000);
     }
 
+    function goToStep(step) {
+        if (step < 1 || step > totalSteps) return;
+        if (step > currentStep && !validateStep(currentStep)) return;
+        showStep(step);
+    }
+
     function updateProgress(step) {
         for (let i = 1; i <= totalSteps; i++) {
             const el = document.querySelector(`.progress-step[data-step="${i}"]`);
             const circle = el.querySelector('.step-circle');
             const label = el.querySelector('p');
             if (i < step) {
-                el.className = 'progress-step completed text-center';
+                el.className = 'progress-step completed text-center cursor-pointer';
                 circle.innerHTML = '<i class="fas fa-check text-xs"></i>';
                 label.className = 'text-xs font-medium mt-1.5 text-emerald-600';
             } else if (i === step) {
-                el.className = 'progress-step active text-center';
+                el.className = 'progress-step active text-center cursor-pointer';
                 circle.textContent = i;
                 const colors = ['text-blue-600','text-emerald-600','text-amber-600','text-purple-600','text-rose-600'];
                 label.className = `text-xs font-medium mt-1.5 ${colors[i-1]}`;
             } else {
-                el.className = 'progress-step text-center';
+                el.className = 'progress-step text-center cursor-pointer';
                 circle.textContent = i;
                 label.className = 'text-xs font-medium mt-1.5 text-slate-400';
             }
@@ -573,8 +614,10 @@ require_once __DIR__ . '/../includes/auth.php';
 
     function nextStep() {
         if (!validateStep(currentStep)) return;
-        // Update summary when leaving step 5 (Finance)
-        if (currentStep === 5) updateSummary();
+        if (currentStep === 5) {
+            // Final step: submit via button, do not advance
+            return;
+        }
         showStep(currentStep + 1);
     }
 
@@ -582,18 +625,48 @@ require_once __DIR__ . '/../includes/auth.php';
         showStep(currentStep - 1);
     }
 
+    function toggleDeposit() {
+        const btn = document.getElementById('depositToggleBtn');
+        const knob = document.getElementById('depositToggleKnob');
+        const field = document.getElementById('depositField');
+        const statusLabel = document.getElementById('depositStatusLabel');
+        const isOn = btn.classList.contains('bg-blue-600');
+        
+        if (isOn) {
+            btn.classList.remove('bg-blue-600');
+            btn.classList.add('bg-slate-300');
+            knob.classList.remove('translate-x-9');
+            knob.classList.add('translate-x-1');
+            field.classList.add('hidden');
+            document.getElementById('tenantDeposit').value = 0;
+            statusLabel.textContent = 'OFF';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide';
+        } else {
+            btn.classList.remove('bg-slate-300');
+            btn.classList.add('bg-blue-600');
+            knob.classList.remove('translate-x-1');
+            knob.classList.add('translate-x-9');
+            field.classList.remove('hidden');
+            statusLabel.textContent = 'ON';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-blue-600 uppercase tracking-wide';
+        }
+    }
+
     // ==================== LOAD TENANTS TABLE ====================
     async function loadTenants() {
+        const tbody = document.getElementById('tenantsTable');
         try {
-            const res = await fetch(`${API}/tenants`, { headers });
-            const data = await res.json();
+            // Show loading spinner
+            tbody.innerHTML = '<tr id="loadingRow"><td colspan="7" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading tenants...</span></div></td></tr>';
+            
+            const data = await apiRequest(`${API}/tenants`);
+            console.log('Tenants API Response:', data);
+            console.log('First tenant encoded_id:', data.tenants && data.tenants[0] ? data.tenants[0].encoded_id : 'NOT FOUND');
             tenantsCache = data.tenants || [];
-            const tbody = document.getElementById('tenantsTable');
-            if (!res.ok) throw new Error(data.error || 'Failed to load');
             if (data.tenants && data.tenants.length) {
                 tbody.innerHTML = data.tenants.map(t => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
-                        <td class="px-6 py-4"><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">${escapeHtml(initials(t.name))}</div><div><p class="text-sm font-medium text-slate-900">${escapeHtml(t.name || 'N/A')}</p><p class="text-xs text-slate-400">${escapeHtml(t.email || '')}</p></div></div></td>
+                        <td class="px-6 py-4"><a href="<?php echo $basePath; ?>/tenant-details?id=${encodeURIComponent(t.encoded_id ?? t.id)}" class="flex items-center gap-2 text-inherit hover:text-inherit"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold overflow-hidden">${t.profile_picture ? '<img src="' + escapeHtml(t.profile_picture) + '" class="w-full h-full object-cover" alt="">' : escapeHtml(initials(t.name))}</div><div><p class="text-sm font-medium text-slate-900">${escapeHtml(t.name || 'N/A')}</p><p class="text-xs text-slate-400">${escapeHtml(t.email || '')}</p></div></a></td>
                         <td class="px-6 py-4 text-sm text-slate-600">${escapeHtml(t.property_name || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm font-medium text-slate-900">${escapeHtml(t.house_unit || 'N/A')}</td>
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(t.phone || 'N/A')}</td>
@@ -601,9 +674,10 @@ require_once __DIR__ . '/../includes/auth.php';
                         <td class="px-6 py-4 text-sm text-slate-500">${escapeHtml(formatDate(t.lease_end))}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center gap-2">
-                                <button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label="View tenant details"><i class="fas fa-eye"></i></button>
+                                <a href="<?php echo $basePath; ?>/tenant-details?id=${encodeURIComponent(t.encoded_id ?? t.id)}" class="p-1.5 text-slate-400 hover:text-blue-600 transition-colors inline-flex items-center justify-center" aria-label="View tenant details"><i class="fas fa-eye"></i></a>
+                                <button onclick="openTenantDetails(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Edit tenant"><i class="fas fa-pen"></i></button>
                                 ${t.status === 'pending_termination' ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Pending</span>` : ''}
-                                <?php if ($role === 'owner' || $role === 'caretaker'): ?>
+                                <?php if ($role === 'owner'): ?>
                                 ${t.status !== 'terminated' && t.status !== 'pending_termination' ? `<button onclick="openTerminateModal(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-red-600 transition-colors" aria-label="Terminate tenancy"><i class="fas fa-door-open"></i></button>` : ''}
                                 ${t.status === 'pending_termination' ? `<button onclick="openApproveTerminationModal(${Number(t.id)||0})" class="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors" aria-label="Approve termination"><i class="fas fa-check"></i></button>` : ''}
                                 <?php endif; ?>
@@ -617,51 +691,71 @@ require_once __DIR__ . '/../includes/auth.php';
         } catch(e) {
             console.error('loadTenants error:', e);
             document.getElementById('tenantsTable').innerHTML = `<tr><td colspan="7" class="px-6 py-12 text-center text-red-400">Error: ${escapeHtml(e.message)}</td></tr>`;
-            if (e.message.includes('401')) window.location.href = '/signin';
         }
     }
 
     // ==================== LOAD PROPERTIES ====================
     async function loadProperties() {
+        const select = document.getElementById('tenantProperty');
         try {
-            const res = await fetch(`${API}/properties`, { headers });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed');
-            const select = document.getElementById('tenantProperty');
+            // Show loading state
+            select.innerHTML = '<option value="">Loading properties...</option>';
+            select.disabled = true;
+            
+            const data = await apiRequest(`${API}/properties`);
             if (data.properties && data.properties.length) {
                 select.innerHTML = '<option value="">Select property...</option>' + data.properties.map(p => `<option value="${Number(p.id)||0}">${escapeHtml(p.name)} (${Number(p.units)||0} units)</option>`).join('');
             } else {
                 select.innerHTML = '<option value="">No properties available</option>';
             }
-        } catch(e) { console.error('loadProperties:', e); toast('Could not load properties: ' + e.message, 'error'); }
+        } catch(e) { 
+            console.error('loadProperties:', e); 
+            select.innerHTML = '<option value="">Failed to load</option>';
+            toast('Could not load properties: ' + e.message, 'error'); 
+        } finally {
+            select.disabled = false;
+        }
     }
 
     // ==================== LOAD HOUSES (on property change) ====================
-    document.getElementById('tenantProperty').addEventListener('change', async function() {
-        const propId = this.value;
+    async function loadHousesForProperty(propId, selectedHouseId = null) {
         const houseSelect = document.getElementById('tenantHouse');
         const housePreview = document.getElementById('housePreview');
         const houseList = document.getElementById('houseList');
-        
+
         if (!propId) {
             houseSelect.innerHTML = '<option value="">Select house...</option>';
             housePreview.classList.add('hidden');
             return;
         }
-        
+
         houseSelect.innerHTML = '<option value="">Loading...</option>';
+        houseSelect.disabled = true;
         try {
-            const res = await fetch(`${API}/houses/available?property_id=${propId}`, { headers });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed');
-            
-            if (data.houses && data.houses.length) {
-                houseSelect.innerHTML = '<option value="">Select house...</option>' + data.houses.map(h => 
+            const data = await apiRequest(`${API}/houses/available?property_id=${propId}`);
+            let houses = Array.isArray(data.houses) ? data.houses.slice() : [];
+
+            if (selectedHouseId) {
+                const selectedId = Number(selectedHouseId);
+                const alreadyPresent = houses.some(h => Number(h.id) === selectedId);
+                if (!alreadyPresent) {
+                    try {
+                        const selectedData = await apiRequest(`${API}/houses/${selectedId}`);
+                        if (selectedData.house && Number(selectedData.house.property_id) === Number(propId)) {
+                            houses.unshift(selectedData.house);
+                        }
+                    } catch (innerErr) {
+                        console.warn('Could not load current tenant house details:', innerErr);
+                    }
+                }
+            }
+
+            if (houses.length) {
+                houseSelect.innerHTML = '<option value="">Select house...</option>' + houses.map(h => 
                     `<option value="${Number(h.id)||0}" data-rent="${Number(h.rent)||0}" data-unit="${escapeHtml(h.unit || '')}" data-type="${escapeHtml(h.type || '')}">${escapeHtml(h.unit)} - ${escapeHtml(h.type)} (KES ${formatMoney(h.rent)})</option>`
                 ).join('');
-                // Show preview
                 housePreview.classList.remove('hidden');
-                houseList.innerHTML = data.houses.map(h => `
+                houseList.innerHTML = houses.map(h => `
                     <div class="house-option flex items-center justify-between p-2 rounded-lg border border-blue-100 bg-white text-sm cursor-pointer hover:bg-blue-50" onclick="selectHouseFromList(${Number(h.id)||0}, event)">
                         <div class="flex items-center gap-2">
                             <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center"><i class="fas fa-door-open text-xs text-blue-500"></i></div>
@@ -671,11 +765,31 @@ require_once __DIR__ . '/../includes/auth.php';
                         <span class="text-sm font-semibold text-slate-900">KES ${formatMoney(h.rent)}</span>
                     </div>
                 `).join('');
+                if (selectedHouseId) {
+                    houseSelect.value = selectedHouseId;
+                    const selected = houseSelect.options[houseSelect.selectedIndex];
+                    if (selected?.dataset.rent) {
+                        document.getElementById('tenantRent').value = Number(selected.dataset.rent) || 0;
+                    }
+                }
             } else {
                 houseSelect.innerHTML = '<option value="">No vacant units available</option>';
                 housePreview.classList.add('hidden');
             }
-        } catch(e) { console.error(e); }
+        } catch(e) {
+            console.error(e);
+            houseSelect.innerHTML = '<option value="">Failed to load</option>';
+        } finally {
+            houseSelect.disabled = false;
+        }
+    }
+
+    async function handlePropertyChange(propId, selectedHouseId = null) {
+        await loadHousesForProperty(propId, selectedHouseId);
+    }
+
+    document.getElementById('tenantProperty').addEventListener('change', async function() {
+        await handlePropertyChange(this.value);
     });
 
     function selectHouseFromList(id, clickEvent) {
@@ -686,112 +800,126 @@ require_once __DIR__ . '/../includes/auth.php';
         const rent = Number(selected?.dataset.rent) || 0;
         document.getElementById('tenantRent').value = rent || 0;
         toast(`Selected ${unit}${type ? ' - ' + type : ''} (KES ${formatMoney(rent)})`, 'info');
-        // Highlight in dropdown
         document.querySelectorAll('.house-option').forEach(el => el.classList.remove('selected', 'bg-blue-50', 'border-blue-300'));
         clickEvent.currentTarget.classList.add('selected', 'bg-blue-50', 'border-blue-300');
     }
 
-    // ==================== AUTO-FILL RENT ====================
+    // ==================== AUTO-FILL RENT & DEPOSIT ====================
     document.getElementById('tenantHouse').addEventListener('change', function() {
         const selected = this.options[this.selectedIndex];
         const rent = selected ? selected.dataset.rent : 0;
-        if (rent) document.getElementById('tenantRent').value = rent;
+        if (rent) {
+            document.getElementById('tenantRent').value = rent;
+            // Auto-fill deposit with same amount as rent only if toggle is ON and deposit is empty
+            const depositEl = document.getElementById('tenantDeposit');
+            const currentDeposit = parseFloat(depositEl.value) || 0;
+            const toggleBtn = document.getElementById('depositToggleBtn');
+            const isToggleOn = toggleBtn.classList.contains('bg-blue-600');
+            if (isToggleOn && (!currentDeposit || currentDeposit === 0)) {
+                depositEl.value = rent;
+            }
+        }
     });
 
-    // ==================== FILE UPLOAD ====================
-    async function handleFileUpload(files) {
-        for (const file of files) {
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            // Show uploading indicator
-            const container = document.getElementById('uploadedFiles');
-            const uploadId = 'upload-' + Date.now();
-            container.innerHTML += `<div id="${uploadId}" class="flex items-center gap-2 text-sm text-slate-500"><i class="fas fa-spinner fa-spin text-blue-400"></i> Uploading ${escapeHtml(file.name)}...</div>`;
-            
-            try {
-                const res = await fetch(`${API}/upload`, {
-                    method: 'POST',
-                    headers: {'Authorization': 'Bearer ' + token},
-                    body: formData
-                });
-                const data = await res.json();
-                document.getElementById(uploadId)?.remove();
-                if (!res.ok) throw new Error(data.error || 'Upload failed');
-                uploadedDocs.push(data.file);
-                renderUploadedFiles();
-                toast(`${file.name} uploaded successfully`, 'success');
-            } catch(err) {
-                document.getElementById(uploadId)?.remove();
-                toast(err.message, 'error');
-            }
+    // ==================== FILE UPLOAD HELPERS ====================
+    async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const url = `${API}/upload`;
+        const authHeader = headers.Authorization ? { Authorization: headers.Authorization } : {};
+        const res = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: authHeader
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { data = {}; }
+        if (!res.ok) {
+            const errMsg = (data && data.error) ? data.error : text || 'Request failed';
+            throw new Error(errMsg);
+        }
+        return data;
+    }
+
+    async function handleIdUpload(files) {
+        const status = document.getElementById('idFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            tenantIdDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + tenantIdDoc.name;
+            toast('ID document uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
         }
     }
 
-    // Drag and drop support
-    const uploadZone = document.getElementById('uploadZone');
-    uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-    uploadZone.addEventListener('dragleave', () => { uploadZone.classList.remove('dragover'); });
-    uploadZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length) handleFileUpload(e.dataTransfer.files);
-    });
+    async function handleKraUpload(files) {
+        const status = document.getElementById('kraFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            tenantKraDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + tenantKraDoc.name;
+            toast('KRA document uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
+    async function handleKinIdUpload(files) {
+        const status = document.getElementById('kinIdFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            kinIdDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + kinIdDoc.name;
+            toast('Next of kin ID uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
+    async function handleKinKraUpload(files) {
+        const status = document.getElementById('kinKraFileStatus');
+        try {
+            status.textContent = 'Uploading...';
+            kinKraDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + kinKraDoc.name;
+            toast('Next of kin KRA uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
+
+    async function handleProfilePicUpload(files) {
+        const status = document.getElementById('profilePicStatus');
+        const preview = document.getElementById('profilePreview');
+        try {
+            status.textContent = 'Uploading...';
+            profilePicDoc = (await uploadFile(files[0])).file;
+            status.textContent = 'Uploaded: ' + profilePicDoc.name;
+            preview.innerHTML = `<img src="${profilePicDoc.url}" class="w-full h-full object-cover" alt="Profile">`;
+            preview.classList.add('bg-white');
+            toast('Profile picture uploaded', 'success');
+        } catch(err) {
+            status.textContent = '';
+            toast(err.message, 'error');
+        }
+    }
 
     function renderUploadedFiles() {
-        const container = document.getElementById('uploadedFiles');
-        // Clear current files display
-        container.innerHTML = '';
-        
-        if (uploadedDocs.length === 0) {
-            return;
-        }
-        
-        container.innerHTML = uploadedDocs.map((f, i) => `
-            <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-blue-100 shadow-sm">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <i class="fas ${f.type && f.type.includes('pdf') ? 'fa-file-pdf text-red-400' : 'fa-file-image text-blue-400'} text-lg"></i>
-                    <div class="min-w-0">
-                        <p class="text-sm font-medium text-slate-700 truncate">${escapeHtml(f.name)}</p>
-                        <p class="text-xs text-slate-400">${f.size ? (f.size/1024).toFixed(1) + ' KB' : ''}</p>
-                    </div>
-                </div>
-                <button type="button" onclick="removeFile(${i})" class="ml-2 p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"><i class="fas fa-times-circle"></i></button>
-            </div>
-        `).join('');
+        // No-op: docs tab removed; individual file statuses are shown per input
     }
 
     function removeFile(index) {
-        uploadedDocs.splice(index, 1);
-        renderUploadedFiles();
-        toast('File removed', 'info');
+        // No-op: docs tab removed
     }
 
-    // ==================== SUMMARY ====================
-    function updateSummary() {
-        document.getElementById('sumName').textContent = document.getElementById('tenantName').value || '-';
-        document.getElementById('sumEmail').textContent = document.getElementById('tenantEmail').value || '-';
-        document.getElementById('sumPhone').textContent = document.getElementById('tenantPhone').value || '-';
-        const idType = document.getElementById('tenantIdType').value;
-        const idNum = document.getElementById('tenantIdNumber').value;
-        document.getElementById('sumId').textContent = idNum ? `${idType}: ${idNum}` : '-';
-        
-        const houseSelect = document.getElementById('tenantHouse');
-        const selectedHouse = houseSelect.options[houseSelect.selectedIndex];
-        document.getElementById('sumUnit').textContent = selectedHouse && selectedHouse.value ? selectedHouse.text.split(' (KES')[0] : '-';
-        
-        document.getElementById('sumNextOfKin').textContent = document.getElementById('nextOfKinName').value || '-';
-        document.getElementById('sumNextOfKinPhone').textContent = document.getElementById('nextOfKinPhone').value || '-';
-        
-        const rent = parseFloat(document.getElementById('tenantRent').value) || 0;
-        const deposit = parseFloat(document.getElementById('tenantDeposit').value) || 0;
-        document.getElementById('sumRent').textContent = 'KES ' + rent.toLocaleString();
-        document.getElementById('sumDeposit').textContent = deposit ? 'KES ' + deposit.toLocaleString() : 'KES 0';
-        
-        const start = document.getElementById('tenantLeaseStart').value;
-        const end = document.getElementById('tenantLeaseEnd').value;
-        document.getElementById('sumLease').textContent = start ? (end ? `${start} to ${end}` : `${start} - Open`) : 'Not set';
-    }
+    // Summary UI removed; keeping function as harmless no-op in case it's referenced elsewhere
+    function updateSummary() {}
 
     // ==================== MODAL CONTROL ====================
     function openTenantModal() {
@@ -806,9 +934,28 @@ require_once __DIR__ . '/../includes/auth.php';
         // Reset form
         document.getElementById('tenantForm').reset();
         uploadedDocs = [];
-        renderUploadedFiles();
+        tenantIdDoc = null;
+        tenantKraDoc = null;
+        kinIdDoc = null;
+        kinKraDoc = null;
         document.getElementById('housePreview').classList.add('hidden');
         document.getElementById('tenantHouse').innerHTML = '<option value="">Select house...</option>';
+        document.getElementById('idFileStatus').textContent = '';
+        document.getElementById('kraFileStatus').textContent = '';
+        document.getElementById('kinIdFileStatus').textContent = '';
+        document.getElementById('kinKraFileStatus').textContent = '';
+        // Reset deposit toggle
+        const btn = document.getElementById('depositToggleBtn');
+        const knob = document.getElementById('depositToggleKnob');
+        const statusLabel = document.getElementById('depositStatusLabel');
+        btn.classList.remove('bg-blue-600');
+        btn.classList.add('bg-slate-300');
+        knob.classList.remove('translate-x-9');
+        knob.classList.add('translate-x-1');
+        document.getElementById('depositField').classList.add('hidden');
+        document.getElementById('tenantDeposit').value = 0;
+        statusLabel.textContent = 'OFF';
+        statusLabel.className = 'ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide';
     }
     
     function closeTenantModal() {
@@ -816,7 +963,7 @@ require_once __DIR__ . '/../includes/auth.php';
         editingTenantId = null;
     }
 
-    function openTenantDetails(id) {
+    async function openTenantDetails(id) {
         const tenant = tenantsCache.find(t => Number(t.id) === Number(id));
         if (!tenant) {
             toast('Tenant details are not available right now.', 'error');
@@ -838,47 +985,77 @@ require_once __DIR__ . '/../includes/auth.php';
         document.getElementById('tenantPhone').value = tenant.phone || '';
         document.getElementById('tenantIdType').value = tenant.id_type || 'National ID';
         document.getElementById('tenantIdNumber').value = tenant.id_number || '';
-        document.getElementById('tenantEmergency').value = tenant.emergency_contact || '';
         document.getElementById('nextOfKinName').value = tenant.next_of_kin_name || '';
         document.getElementById('nextOfKinPhone').value = tenant.next_of_kin_phone || '';
         document.getElementById('nextOfKinEmail').value = tenant.next_of_kin_email || '';
         document.getElementById('tenantLeaseStart').value = tenant.lease_start || '';
         document.getElementById('tenantLeaseEnd').value = tenant.lease_end || '';
         document.getElementById('tenantRent').value = tenant.rent || 0;
-        document.getElementById('tenantDeposit').value = tenant.deposit || 0;
-        document.getElementById('tenantBalance').value = tenant.balance || 0;
+        const depositAmount = tenant.deposit || 0;
+        document.getElementById('tenantDeposit').value = depositAmount;
         
-        // Load documents if any
-        if (tenant.documents) {
-            try {
-                uploadedDocs = JSON.parse(tenant.documents);
-                renderUploadedFiles();
-            } catch(e) {
-                uploadedDocs = [];
-                renderUploadedFiles();
-            }
+        // Set deposit toggle state
+        const btn = document.getElementById('depositToggleBtn');
+        const knob = document.getElementById('depositToggleKnob');
+        const depositField = document.getElementById('depositField');
+        const statusLabel = document.getElementById('depositStatusLabel');
+        if (depositAmount > 0) {
+            btn.classList.remove('bg-slate-300');
+            btn.classList.add('bg-blue-600');
+            knob.classList.remove('translate-x-1');
+            knob.classList.add('translate-x-9');
+            depositField.classList.remove('hidden');
+            statusLabel.textContent = 'ON';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-blue-600 uppercase tracking-wide';
         } else {
-            uploadedDocs = [];
-            renderUploadedFiles();
+            btn.classList.remove('bg-blue-600');
+            btn.classList.add('bg-slate-300');
+            knob.classList.remove('translate-x-9');
+            knob.classList.add('translate-x-1');
+            depositField.classList.add('hidden');
+            statusLabel.textContent = 'OFF';
+            statusLabel.className = 'ml-3 text-xs font-semibold text-slate-500 uppercase tracking-wide';
         }
         
-        // Load properties first, then set house after a short delay
-        document.getElementById('tenantModal').classList.remove('hidden');
-        loadProperties();
+        document.getElementById('tenantBalance').value = tenant.balance || 0;
         
-        // Set property and house after properties load
-        if (tenant.property_id) {
-            setTimeout(() => {
-                document.getElementById('tenantProperty').value = tenant.property_id;
-                // Trigger house load
-                document.getElementById('tenantProperty').dispatchEvent(new Event('change'));
-                // Set house after houses load
-                setTimeout(() => {
-                    if (tenant.house_id) {
-                        document.getElementById('tenantHouse').value = tenant.house_id;
-                    }
-                }, 500);
-            }, 100);
+        // Store original property and house IDs for consistency
+        window._editingPropertyId = tenant.property_id;
+        window._editingHouseId = tenant.house_id;
+        
+        // Reset document uploads
+        tenantIdDoc = null;
+        tenantKraDoc = null;
+        kinIdDoc = null;
+        kinKraDoc = null;
+        uploadedDocs = [];
+        if (tenant.documents) {
+            try {
+                const docs = JSON.parse(tenant.documents);
+                if (Array.isArray(docs)) uploadedDocs = docs;
+            } catch(e) {
+                uploadedDocs = [];
+            }
+        }
+        renderUploadedFiles();
+        document.getElementById('idFileStatus').textContent = '';
+        document.getElementById('kraFileStatus').textContent = '';
+        document.getElementById('kinIdFileStatus').textContent = '';
+        document.getElementById('kinKraFileStatus').textContent = '';
+        
+        // Show modal and load properties
+        document.getElementById('tenantModal').classList.remove('hidden');
+        await loadProperties();
+        
+        // Restore property and house selections
+        if (window._editingPropertyId) {
+            const propertySelect = document.getElementById('tenantProperty');
+            propertySelect.value = window._editingPropertyId;
+            await handlePropertyChange(window._editingPropertyId, window._editingHouseId);
+            
+            // Clear editing state
+            window._editingPropertyId = null;
+            window._editingHouseId = null;
         }
     }
 
@@ -903,16 +1080,23 @@ require_once __DIR__ . '/../includes/auth.php';
             return;
         }
         
-        const data = {
+            const docs = [...uploadedDocs];
+            if (tenantIdDoc) docs.push(tenantIdDoc);
+            if (tenantKraDoc) docs.push(tenantKraDoc);
+            if (kinIdDoc) docs.push(kinIdDoc);
+            if (kinKraDoc) docs.push(kinKraDoc);
+
+            const data = {
             name: document.getElementById('tenantName').value.trim(),
             email: sanitizedEmail,
             phone: document.getElementById('tenantPhone').value.trim(),
             id_type: document.getElementById('tenantIdType').value,
             id_number: document.getElementById('tenantIdNumber').value.trim(),
+            id_kra_pin: document.getElementById('tenantKraPin').value.trim() || null,
+            profile_picture: profilePicDoc ? profilePicDoc.url : null,
             next_of_kin_name: document.getElementById('nextOfKinName').value.trim() || null,
             next_of_kin_phone: document.getElementById('nextOfKinPhone').value.trim() || null,
             next_of_kin_email: sanitizedKinEmail,
-            emergency_contact: document.getElementById('tenantEmergency').value.trim() || null,
             property_id: parseInt(document.getElementById('tenantProperty').value) || null,
             house_id: parseInt(houseSelect.value) || null,
             lease_start: document.getElementById('tenantLeaseStart').value || null,
@@ -920,7 +1104,7 @@ require_once __DIR__ . '/../includes/auth.php';
             rent: parseFloat(document.getElementById('tenantRent').value) || 0,
             deposit: parseFloat(document.getElementById('tenantDeposit').value) || 0,
             balance: parseFloat(document.getElementById('tenantBalance').value) || 0,
-            documents: uploadedDocs.length ? JSON.stringify(uploadedDocs) : null,
+            documents: docs.length ? JSON.stringify(docs) : null,
         };
 
         // Final validation
@@ -936,15 +1120,10 @@ require_once __DIR__ . '/../includes/auth.php';
             const url = editingTenantId ? `${API}/tenants/${editingTenantId}` : `${API}/tenants`;
             const method = editingTenantId ? 'PUT' : 'POST';
             
-            const res = await fetch(url, {
-                method: method,
-                headers,
+            const result = await apiRequest(url, {
+                method,
                 body: JSON.stringify(data)
             });
-            const text = await res.text();
-            let result;
-            try { result = JSON.parse(text); } catch(e) { throw new Error('Server error: ' + text.substring(0, 200)); }
-            if (!res.ok) throw new Error(result.error || (editingTenantId ? 'Failed to update tenant' : 'Failed to register tenant'));
             
             toast(editingTenantId ? 'Tenant updated successfully!' : 'Tenant registered successfully! Unit assigned and bill generated.', 'success');
             closeTenantModal();
@@ -972,12 +1151,9 @@ require_once __DIR__ . '/../includes/auth.php';
         }
         
         try {
-            const res = await fetch(`${API}/tenants/${editingTenantId}`, {
-                method: 'DELETE',
-                headers
+            const result = await apiRequest(`${API}/tenants/${editingTenantId}`, {
+                method: 'DELETE'
             });
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'Failed to delete tenant');
             
             toast('Tenant deleted successfully', 'success');
             closeTenantModal();
@@ -988,8 +1164,58 @@ require_once __DIR__ . '/../includes/auth.php';
         }
     }
 
+    // ==================== DAMAGE ROW HELPERS ====================
+    let damageRowCount = 0;
+
+    function addDamageRow() {
+        damageRowCount++;
+        const container = document.getElementById('damagesContainer');
+        const div = document.createElement('div');
+        div.className = 'damage-row grid grid-cols-1 sm:grid-cols-5 gap-2 p-3 rounded-lg border border-amber-100 bg-amber-50/30 mb-2';
+        div.id = 'damageRow_' + damageRowCount;
+        div.innerHTML = `
+            <div class="sm:col-span-2"><input type="text" class="damage-title w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Damage title*"></div>
+            <div class="sm:col-span-1"><input type="text" class="damage-desc w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Description"></div>
+            <div class="sm:col-span-1"><div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">KES</span><input type="number" class="damage-cost w-full pl-10 pr-2 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Cost" min="0" step="0.01" oninput="updateDamageTotal()"></div></div>
+            <div class="sm:col-span-1 flex items-center gap-1"><input type="text" class="damage-vendor w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none" placeholder="Vendor"><button type="button" onclick="this.closest('.damage-row').remove(); updateDamageTotal();" class="text-red-400 hover:text-red-600 p-1"><i class="fas fa-times"></i></button></div>
+        `;
+        container.appendChild(div);
+        document.getElementById('damagesTotal').classList.remove('hidden');
+        updateDamageTotal();
+    }
+
+    function updateDamageTotal() {
+        let total = 0;
+        document.querySelectorAll('.damage-cost').forEach(input => {
+            total += parseFloat(input.value) || 0;
+        });
+        document.getElementById('damageCostTotal').textContent = total.toLocaleString('en-KE', {minimumFractionDigits: 2});
+    }
+
+    function getDamagesData() {
+        const damages = [];
+        document.querySelectorAll('.damage-row').forEach(row => {
+            const title = row.querySelector('.damage-title')?.value?.trim();
+            if (title) {
+                damages.push({
+                    title: title,
+                    description: row.querySelector('.damage-desc')?.value?.trim() || '',
+                    cost: parseFloat(row.querySelector('.damage-cost')?.value) || 0,
+                    vendor_name: row.querySelector('.damage-vendor')?.value?.trim() || '',
+                    priority: 'medium'
+                });
+            }
+        });
+        return damages;
+    }
+
     // ==================== TERMINATION HANDLERS ====================
     function openTerminateModal(tenantId) {
+        // Clear damage rows
+        document.getElementById('damagesContainer').innerHTML = '';
+        document.getElementById('damagesTotal').classList.add('hidden');
+        damageRowCount = 0;
+        
         document.getElementById('terminateTenantId').value = tenantId;
         const d = new Date();
         d.setDate(d.getDate() + 1); // Default tomorrow
@@ -1007,18 +1233,16 @@ require_once __DIR__ . '/../includes/auth.php';
         const tenantId = document.getElementById('terminateTenantId').value;
         const reason = document.getElementById('terminateReason').value.trim();
         const effectiveDate = document.getElementById('terminateDate').value;
+        const damages = getDamagesData();
         const btn = event.target.querySelector('button[type="submit"]');
         btn.disabled = true;
         btn.textContent = 'Terminating...';
         
         try {
-            const response = await fetch(`${API}/tenants/${tenantId}/terminate`, {
+            const result = await apiRequest(`${API}/tenants/${tenantId}/terminate`, {
                 method: 'POST',
-                headers,
-                body: JSON.stringify({ reason, effective_date: effectiveDate })
+                body: JSON.stringify({ reason, effective_date: effectiveDate, damages })
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed');
             toast('Tenancy terminated successfully. House is now vacant.', 'success');
             closeTerminateModal();
             loadTenants();
@@ -1051,13 +1275,10 @@ require_once __DIR__ . '/../includes/auth.php';
         btn.textContent = 'Approving...';
         
         try {
-            const response = await fetch(`${API}/tenants/${tenantId}/terminate`, {
+            const result = await apiRequest(`${API}/tenants/${tenantId}/terminate`, {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({ reason, effective_date: effectiveDate })
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed');
             toast('Termination approved. Tenant notified via email.', 'success');
             closeApproveTerminationModal();
             loadTenants();

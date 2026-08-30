@@ -1,28 +1,105 @@
 <?php
-session_start();
-$token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
-require_once __DIR__ . '/../../backend/app/Core/JWT.php';
-$jwt = new \App\Core\JWT();
-$user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
-$_SESSION['rf_user'] = $user;
-$role = $user['role'] ?? 'tenant';
-if ($role !== 'tenant') { header('Location: /signin'); exit; }
+// Force no-cache BEFORE any output
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
+
+require_once __DIR__ . '/../includes/auth.php';
+if (($userRole ?? 'tenant') !== 'tenant') {
+    header('Location: ' . $basePath . '/signin');
+    exit;
+}
+
+$hasConsent = !empty($user['data_protection_consent_at']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Dashboard - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>My Dashboard - RentaFlow</title>
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="<?php echo $basePath; ?>/js/base-path.js?v=2"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 via-white to-blue-50/30 min-h-screen font-sans text-slate-800 flex flex-col lg:flex-row">
+
+<!-- Data Protection Consent Modal -->
+<?php if (!$hasConsent): ?>
+<div id="consentModal" class="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <style>
+        /* Consent modal responsive adjustments */
+        #consentModal .consent-content { max-width: 680px; width: 100%; max-height: calc(100vh - 4rem); overflow-y: auto; -webkit-overflow-scrolling: touch; border-radius: 18px; }
+        @media (max-width: 640px) {
+            #consentModal .consent-content { max-width: 100%; max-height: calc(100vh - 3rem); padding: 18px; }
+            #consentModal .consent-actions { position: sticky; bottom: 0; left: 0; right: 0; padding: 12px; background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff 40%); }
+        }
+        /* Make modal content easier to read */
+        #consentModal .consent-content p, #consentModal .consent-content li { font-size: 15px; line-height: 1.5; }
+    </style>
+    <div class="bg-white consent-content shadow-2xl w-full p-8">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-shield-alt text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-900 mb-2">Data Protection Consent</h2>
+            <p class="text-sm text-slate-500">We value your privacy and are committed to protecting your personal data</p>
+        </div>
+        
+        <div class="space-y-3 mb-6">
+            <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Why We Collect Your Data</h3>
+            <p class="text-sm text-slate-600 leading-relaxed">To provide you with the best rental experience, we collect and process the following personal information:</p>
+            <ul class="space-y-2 text-sm text-slate-600 ml-4">
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Identity & Contact:</strong> Name, phone number, email, and ID details for account verification and communication</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Payment Processing:</strong> Payment history, balances, and billing information for rent and service charges</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Property Management:</strong> Unit assignments, lease terms, maintenance requests, and service improvements to manage your tenancy</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Documents:</strong> Signed lease agreements, ID copies, proof of income, references, and supporting paperwork to verify eligibility, comply with legal requirements, prevent fraud, and improve service delivery based on your tenancy history</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Communication:</strong> Sending important notices, reminders, and updates about your tenancy</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <i class="fas fa-check-circle text-blue-500 mt-0.5"></i>
+                    <span><strong>Service Improvement:</strong> Analyzing trends and feedback to enhance property management services, response times, and overall tenant satisfaction</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
+            <p class="text-xs text-slate-600 leading-relaxed">
+                <i class="fas fa-lock text-blue-600 mr-1"></i>
+                <strong>Your Data is Safe:</strong> We use industry-standard security measures to protect your information. Your data will never be shared with third parties without your explicit consent, except where required by law.
+            </p>
+        </div>
+
+                <div class="consent-actions flex gap-3 mt-4">
+                    <button id="consentDecline" onclick="declineConsent()" class="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-all">
+                        Cancel
+                    </button>
+                    <button id="consentAccept" onclick="acceptConsent()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg">
+                        I Agree
+                    </button>
+                </div>
+    </div>
+</div>
+<?php endif; ?>
+
     <?php include __DIR__ . '/../public/components/sidebar.php'; ?>
     <div class="flex-1 flex flex-col min-h-screen">
         <?php include __DIR__ . '/../public/components/header.php'; ?>
@@ -98,6 +175,22 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 </div>
             </div>
 
+            <!-- Emergency Contacts Section -->
+            <div class="mb-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-50 to-rose-100 flex items-center justify-center"><i class="fas fa-phone-alt text-rose-600"></i></div>
+                        <div>
+                            <h3 class="font-semibold text-slate-900">Emergency Contacts</h3>
+                            <p class="text-xs text-slate-500">Property management contacts for your unit</p>
+                        </div>
+                    </div>
+                    <div id="contactsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="py-4 text-center text-slate-400 col-span-full"><i class="fas fa-spinner fa-spin mr-2"></i>Loading contacts...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Management Notices Section -->
             <div class="mb-6" id="noticesSection">
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
@@ -121,7 +214,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                                 <th class="pb-3 pr-4">Date</th><th class="pb-3 pr-4">Amount</th><th class="pb-3 pr-4">Method</th><th class="pb-3">Status</th>
                             </tr></thead>
                             <tbody class="divide-y divide-blue-50" id="myPayments">
-                                <tr><td colspan="4" class="py-8 text-center text-slate-400">Loading...</td></tr>
+                                <tr><td colspan="4" class="py-8 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading payments...</span></div></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -129,7 +222,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
                     <h3 class="font-semibold text-slate-900 mb-4">My Complaints</h3>
                     <div class="space-y-3" id="myComplaints">
-                        <div class="py-8 text-center text-slate-400">Loading...</div>
+                        <div class="py-8 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading complaints...</span></div></div>
                     </div>
                 </div>
             </div>
@@ -137,9 +230,41 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
+    // Get token from cookie (same as auth.php)
+    const cookies = document.cookie.split(';');
+    let token = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { token = decodeURIComponent(v); break; }
+    }
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                // Clear cookie
+                document.cookie = 'rf_token=; path=/; max-age=0';
+                window.location.href = '<?php echo $basePath; ?>/signin';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
 
@@ -160,10 +285,11 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         const payTbody = document.getElementById('myPayments');
         try {
             // Load tenant profile
-            const tenantRes = await fetch(`${API}/tenants`, { headers });
-            const tenantData = await tenantRes.json();
+            const tenantData = await apiRequest(`${API}/tenants`);
+            let tenantId = null;
             if (tenantData.tenants && tenantData.tenants.length > 0) {
                 const me = tenantData.tenants[0];
+                tenantId = me.id;
                 document.getElementById('myUnit').textContent = me.house_unit || '-';
                 document.getElementById('myBalance').textContent = 'KES ' + (me.balance || 0).toLocaleString();
                 
@@ -175,9 +301,8 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
                 }
             }
 
-            // Load payments
-            const payRes = await fetch(`${API}/payments`, { headers });
-            const payData = await payRes.json();
+            // Load payments for this tenant
+            const payData = await apiRequest(`${API}/payments?tenant_id=${tenantId}`);
             if (payData.payments && payData.payments.length) {
                 payTbody.innerHTML = payData.payments.slice(0,5).map(p => `
                     <tr class="hover:bg-blue-50/30 transition-colors">
@@ -192,11 +317,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             }
 
             // Load all complaints/notices and filter client-side
-            const allRes = await fetch(`${API}/complaints`, { headers });
-            const allData = await allRes.json();
-            if (!allRes.ok) {
-                throw new Error(allData.error || 'Failed to load communications');
-            }
+            const allData = await apiRequest(`${API}/complaints`);
             const list = allData.complaints || [];
             const notices = list.filter(c => (c.sender_role || 'tenant') !== 'tenant');
             const myComplaints = list.filter(c => (c.sender_role || 'tenant') === 'tenant');
@@ -235,7 +356,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             }
         } catch(e) {
             console.error(e);
-            if (e.message.includes('401')) window.location.href = '/signin';
+            if (e.message.includes('401')) window.location.href = BASE + '/signin';
             noticesList.innerHTML = '<div class="py-6 text-center text-red-400">Failed to load notices. Please try again later.</div>';
             compDiv.innerHTML = '<div class="py-8 text-center text-red-400">Failed to load complaints. Please try again later.</div>';
         }
@@ -243,9 +364,7 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
 
     async function viewNotice(complaintId) {
         try {
-            const res = await fetch(`${API}/complaints/${complaintId}`, { headers });
-            if (!res.ok) throw new Error('Not found');
-            const data = await res.json();
+            const data = await apiRequest(`${API}/complaints/${complaintId}`);
             const c = data.complaint;
             const html = `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -260,7 +379,8 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
             `;
             const w = window.open('', '_blank');
             if (w) {
-                w.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(c.title)}</title><link rel="stylesheet" href="/css/output.css"></head><body class="bg-slate-50 p-4 sm:p-8">${html}</body></html>`);
+                const cssPath = BASE + '/css/output.css';
+            w.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(c.title)}</title><link rel="stylesheet" href="${cssPath}"></head><body class="bg-slate-50 p-4 sm:p-8">${html}</body></html>`);
                 w.document.close();
             } else {
                 toast('Please allow popups to view notice details', 'info');
@@ -296,26 +416,17 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         btn.textContent = 'Submitting...';
         
         try {
-            const response = await fetch(`${API}/tenants/request-termination`, {
+            const result = await apiRequest(`${API}/tenants/request-termination`, {
                 method: 'POST',
-                headers: headers,
                 body: JSON.stringify({
                     reason: reason,
                     effective_date: effectiveDate
                 })
             });
             
-            const result = await response.json();
-            
-            if (response.ok) {
-                toast(result.message || 'Termination request submitted', 'success');
-                hideTerminationModal();
-                setTimeout(() => location.reload(), 2000);
-            } else {
-                toast(result.error || 'Failed to submit request', 'error');
-                btn.disabled = false;
-                btn.textContent = 'Submit Request';
-            }
+            toast(result.message || 'Termination request submitted', 'success');
+            hideTerminationModal();
+            setTimeout(() => location.reload(), 2000);
         } catch (e) {
             console.error(e);
             toast('An error occurred. Please try again.', 'error');
@@ -324,7 +435,157 @@ if ($role !== 'tenant') { header('Location: /signin'); exit; }
         }
     }
 
+    async function loadEmergencyContacts() {
+        const container = document.getElementById('contactsContainer');
+        try {
+            const data = await apiRequest(`${API}/tenants/property-contact`);
+            const contacts = data.contacts;
+            
+            if (!contacts || (!contacts.owner && !contacts.caretaker)) {
+                container.innerHTML = '<div class="py-8 text-center text-slate-400 col-span-full"><i class="fas fa-info-circle mr-2"></i>Contact information not available for your property yet.</div>';
+                return;
+            }
+            
+            let cards = '';
+            
+            if (contacts.owner) {
+                cards += `
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl p-4 border border-blue-100/80">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center text-sm font-bold">${escapeHtml(initials(contacts.owner.name))}</div>
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Property Owner</p>
+                                <p class="text-xs text-slate-500">${escapeHtml(contacts.owner.name)}</p>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5 text-xs">
+                            ${contacts.owner.phone ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-phone w-4 text-blue-500"></i><a href="tel:${escapeHtml(contacts.owner.phone)}" class="hover:text-blue-600">${escapeHtml(contacts.owner.phone)}</a></p>` : ''}
+                            ${contacts.owner.email ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-envelope w-4 text-blue-500"></i><a href="mailto:${escapeHtml(contacts.owner.email)}" class="hover:text-blue-600 truncate">${escapeHtml(contacts.owner.email)}</a></p>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (contacts.caretaker) {
+                cards += `
+                    <div class="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl p-4 border border-emerald-100/80">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center text-sm font-bold">${escapeHtml(initials(contacts.caretaker.name))}</div>
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">Caretaker</p>
+                                <p class="text-xs text-slate-500">${escapeHtml(contacts.caretaker.name)}</p>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5 text-xs">
+                            ${contacts.caretaker.phone ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-phone w-4 text-emerald-500"></i><a href="tel:${escapeHtml(contacts.caretaker.phone)}" class="hover:text-emerald-600">${escapeHtml(contacts.caretaker.phone)}</a></p>` : ''}
+                            ${contacts.caretaker.email ? `<p class="flex items-center gap-2 text-slate-600"><i class="fas fa-envelope w-4 text-emerald-500"></i><a href="mailto:${escapeHtml(contacts.caretaker.email)}" class="hover:text-emerald-600 truncate">${escapeHtml(contacts.caretaker.email)}</a></p>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = cards || '<div class="py-8 text-center text-slate-400 col-span-full">No contacts available</div>';
+        } catch(e) {
+            console.error('loadEmergencyContacts error:', e);
+            container.innerHTML = '<div class="py-8 text-center text-red-400 col-span-full">Failed to load contacts</div>';
+        }
+    }
+
+    function initials(name, fallback = '??') {
+        const text = String(name || '').trim();
+        if (!text) return fallback;
+        return text.split(/\s+/).map(s => s[0]).join('').substring(0, 2).toUpperCase();
+    }
+
+    async function acceptConsent() {
+        try {
+            await apiRequest(`${API}/tenants/consent-data-protection`, {
+                method: 'POST'
+            });
+            
+            // Persist consent locally so it never reappears this session
+            try { localStorage.setItem('rf_consent', '1'); } catch (e) {}
+            
+            toast('Thank you for accepting. Welcome to your dashboard!', 'success');
+            // Restore page interactivity before reload
+            try { restoreConsentBlocking(); } catch(e){}
+            setTimeout(function(){ location.reload(); }, 600);
+        } catch (e) {
+            console.error(e);
+            toast('Failed to record consent. Please try again.', 'error');
+        }
+    }
+
+    function declineConsent() {
+        // Clear auth cookie and redirect to login
+        document.cookie = 'rf_token=; path=/; max-age=0';
+        window.location.href = '<?php echo $basePath; ?>/signin';
+    }
+
+    /* Consent blocking helpers: prevent background interaction while modal visible */
+    function applyConsentBlocking() {
+        try {
+            // prevent body scroll
+            document.body.style.overflow = 'hidden';
+            // blur and disable interactive regions if present
+            var selectors = ['header', '.sidebar', 'nav', 'aside', '.header'];
+            var stored = [];
+            selectors.forEach(function(s){
+                var els = document.querySelectorAll(s);
+                els.forEach(function(el){
+                    // save current inline pointerEvents to restore
+                    el.dataset._pointerEvents = el.style.pointerEvents || '';
+                    el.dataset._ariaHidden = el.getAttribute('aria-hidden') || '';
+                    el.style.pointerEvents = 'none';
+                    el.setAttribute('aria-hidden','true');
+                    el.style.filter = 'blur(1px)';
+                    stored.push(el);
+                });
+            });
+            // focus the accept button for accessibility
+            var acceptBtn = document.getElementById('consentAccept');
+            if (acceptBtn) acceptBtn.focus();
+            // store a marker
+            document.documentElement.dataset.consentActive = '1';
+        } catch(e){ console.error('applyConsentBlocking error', e); }
+    }
+
+    function restoreConsentBlocking() {
+        try {
+            document.body.style.overflow = '';
+            var selectors = ['header', '.sidebar', 'nav', 'aside', '.header'];
+            selectors.forEach(function(s){
+                var els = document.querySelectorAll(s);
+                els.forEach(function(el){
+                    if (el.dataset._pointerEvents !== undefined) el.style.pointerEvents = el.dataset._pointerEvents || '';
+                    if (el.dataset._ariaHidden !== undefined) {
+                        if (el.dataset._ariaHidden === '') el.removeAttribute('aria-hidden'); else el.setAttribute('aria-hidden', el.dataset._ariaHidden);
+                    }
+                    el.style.filter = '';
+                    delete el.dataset._pointerEvents;
+                    delete el.dataset._ariaHidden;
+                });
+            });
+            delete document.documentElement.dataset.consentActive;
+        } catch(e){ console.error('restoreConsentBlocking error', e); }
+    }
+
+    // Apply consent blocking if modal is visible
+    (function(){
+        var modal = document.getElementById('consentModal');
+        try {
+            // If consent already accepted in this browser, hide modal
+            if (localStorage.getItem('rf_consent') === '1') {
+                if (modal) modal.style.display = 'none';
+            } else {
+                // block background interaction while modal is visible
+                if (modal) applyConsentBlocking();
+            }
+        } catch (e) { console.error('consent init error', e); }
+    })();
+
     loadTenantDashboard();
+    loadEmergencyContacts();
     </script>
 </body>
 </html>

@@ -1,8 +1,5 @@
 <?php
-/**
- * Bot Protection Middleware
- * Detects and blocks suspicious bot activity
- */
+
 namespace App\Middleware;
 
 use App\Core\Database;
@@ -27,8 +24,8 @@ class BotProtectionMiddleware
         // Path traversal
         '\.\.\/',
         '\.\.\\',
-        '/etc/passwd',
-        '/proc\/',
+        '\/etc\/passwd',
+        '\/proc\/',
         // XSS patterns
         '<iframe',
         '<svg\s+on',
@@ -39,14 +36,24 @@ class BotProtectionMiddleware
 
     public static function check(): void
     {
-        $db = Database::getInstance();
+        try {
+            $db = Database::getInstance();
+        } catch (\Throwable $e) {
+            error_log('Bot protection DB error: ' . $e->getMessage());
+            return;
+        }
         $ip = self::getClientIP();
 
         // Check if IP is blocked
-        $blocked = $db->fetchOne(
-            "SELECT reason, blocked_until FROM blocked_ips WHERE ip_address = ? AND blocked_until > NOW()",
-            [$ip]
-        );
+        try {
+            $blocked = $db->fetchOne(
+                "SELECT reason, blocked_until FROM blocked_ips WHERE ip_address = ? AND blocked_until > NOW()",
+                [$ip]
+            );
+        } catch (\Throwable $e) {
+            error_log('Bot protection blocked_ips query error: ' . $e->getMessage());
+            $blocked = null;
+        }
         
         if ($blocked) {
             Router::jsonResponse([
@@ -60,14 +67,20 @@ class BotProtectionMiddleware
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
         $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
         $queryString = $_SERVER['QUERY_STRING'] ?? '';
-        $requestBody = file_get_contents('php://input');
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        $requestBody = '';
+        if (stripos($contentType, 'multipart/form-data') === false) {
+            // Use Router's cached body to avoid exhausting php://input
+            Router::cacheRawBody();
+            $requestBody = '';
+        }
         
         // Combine all data for scanning
         $allData = strtolower($userAgent . ' ' . $queryString . ' ' . $requestBody);
         
         // Check for suspicious patterns
         foreach (self::$suspiciousPatterns as $pattern) {
-            if (preg_match('/' . $pattern . '/i', $allData)) {
+            if (@preg_match('~' . $pattern . '~i', $allData)) {
                 self::blockIP($ip, 'Suspicious pattern detected: ' . $pattern);
                 Router::jsonResponse(['error' => 'Invalid request detected'], 400);
             }

@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Core\Router;
+use App\Services\BillingService;
 use App\Services\EmailService;
 use App\Core\Pagination;
 
@@ -115,59 +116,35 @@ class PaymentController
             'tenant_confirmed' => $isTenantSelfPay ? 1 : 0,
         ]);
 
-        // Update tenant balance and carry over overpayment to next month
-        if (($data['type'] ?? 'Rent') === 'Rent' && ($data['status'] ?? 'completed') === 'completed') {
-            $current = $db->fetchOne("SELECT balance FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
-            $currentBalance = $current ? (float)$current['balance'] : 0;
-            $newBalance = $currentBalance - (float)$data['amount'];
-            
-            // Update tenant balance (can be negative = overpayment)
-            $db->update('tenants', ['balance' => $newBalance], 'id = ?', [(int) $data['tenant_id']]);
-            
-            // If overpaid (negative balance), apply to next month's bill
-            if ($newBalance < 0) {
-                $currentMonth = $data['month'] ?? date('Y-m');
-                $nextMonth = date('Y-m', strtotime($currentMonth . ' +1 month'));
-                
-                // Find next month's rent bill
-                $nextBill = $db->fetchOne(
-                    "SELECT id, total FROM bills WHERE house_id = ? AND month = ? AND type = 'Rent'",
-                    [$tenant['house_id'], $nextMonth]
-                );
-                
-                if ($nextBill) {
-                    // Apply overpayment to next month (reduce the bill total)
-                    $overpayment = abs($newBalance);
-                    $newTotal = max(0, (float)$nextBill['total'] - $overpayment);
-                    $db->update('bills', ['total' => $newTotal], 'id = ?', [$nextBill['id']]);
-                    
-                    // Reset tenant balance to 0 since overpayment was applied
-                    $db->update('tenants', ['balance' => 0], 'id = ?', [(int) $data['tenant_id']]);
-                }
-            }
+        $billingService = new BillingService();
+        $bill = $db->fetchOne(
+            "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
+            [$ownerId, (int)$data['tenant_id'], $data['month'] ?? date('Y-m')]
+        );
+
+        if ($bill) {
+            $billingService->allocatePayment(
+                $paymentId,
+                (int)$bill['id'],
+                (float)$data['amount'],
+                $data['type'] ?? 'Mixed'
+            );
+
+            $billTotals = $billingService->getBillTotals((int)$bill['id']);
+            $newStatus = $billTotals['paid'] >= $billTotals['total'] ? 'paid' : ($billTotals['paid'] > 0 ? 'partial' : 'pending');
+            $db->update('bills', ['status' => $newStatus], 'id = ?', [$bill['id']]);
         }
 
-        // Update bill status
-        if ($tenant['house_id'] && !empty($data['month'])) {
-            $houseId = $tenant['house_id'];
-            $paidTotal = $db->fetchOne(
-                "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE house_id = ? AND owner_id = ? AND status = 'completed' AND month = ?",
-                [$houseId, $ownerId, $data['month']]
-            );
-            $bill = $db->fetchOne(
-                "SELECT total FROM bills WHERE house_id = ? AND month = ?",
-                [$houseId, $data['month']]
-            );
-            if ($bill) {
-                $newStatus = ($paidTotal['total'] >= $bill['total']) ? 'paid' : 'partial';
-                $db->update('bills', ['status' => $newStatus], 'house_id = ? AND month = ?', [$houseId, $data['month']]);
-            }
+        $paymentStatus = $isTenantSelfPay ? 'confirmed' : 'completed';
+        if (in_array($paymentStatus, ['confirmed', 'completed', 'paid'], true)) {
+            $billingService->recalcTenantCreditAndBalance((int) $data['tenant_id']);
         }
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
         
         // Send payment confirmation email to tenant and next of kin when owner records
         $emailSent = false;
+        $nokEmailSent = false;
         if (!$isTenantSelfPay) {
             try {
                 $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [(int) $data['tenant_id']]);
@@ -176,8 +153,8 @@ class PaymentController
                     
                     // Find the bill ID for this payment to generate invoice link
                     $bill = $db->fetchOne(
-                        "SELECT b.id FROM bills b WHERE b.house_id = ? AND b.month = ? AND b.owner_id = ? LIMIT 1",
-                        [$tenant['house_id'], $payment['month'], $ownerId]
+                        "SELECT b.id FROM bills b WHERE b.owner_id = ? AND b.tenant_id = ? AND b.month = ? ORDER BY b.id LIMIT 1",
+                        [$ownerId, $tenant['id'], $payment['month']]
                     );
                     
                     // Generate JWT token for invoice access
@@ -194,15 +171,45 @@ class PaymentController
                         ? (getenv('APP_URL') ?: $_ENV['APP_URL'] ?? 'http://localhost') . "/api/bills/{$bill['id']}/invoice?token={$invoiceToken}"
                         : null;
                     
+                    // Include arrears/rent info in payment data for email
+                    $house = $db->fetchOne("SELECT rent FROM houses WHERE id = ?", [$tenant['house_id']]);
+                    $payment['monthly_rent'] = $house ? $house['rent'] : 0;
+                    $payment['balance_after'] = $newBalance ?? 0;
+                    
                     $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
+                    
+                    // Send notification to next of kin if they have an email
+                    if (!empty($tenant['next_of_kin_email'])) {
+                        try {
+                            $emailService->sendTemplate(
+                                'Payment Receipt - ' . $tenant['name'],
+                                $ownerId,
+                                $tenant['next_of_kin_email'],
+                                $tenant['next_of_kin_name'] ?? 'Next of Kin',
+                                [
+                                    'tenant_name' => $tenant['name'],
+                                    'amount' => number_format((float)$payment['amount'], 2),
+                                    'balance' => number_format($newBalance ?? 0, 2),
+                                    'property' => '',
+                                    'unit' => '',
+                                    'receipt' => $payment['receipt'],
+                                    'date' => $payment['date'],
+                                ]
+                            );
+                            $nokEmailSent = true;
+                        } catch (\Exception $nokErr) {
+                            error_log('Failed to send next of kin payment email: ' . $nokErr->getMessage());
+                        }
+                    }
                 }
             } catch (\Exception $e) {
                 error_log('Failed to send payment confirmation email: ' . $e->getMessage());
             }
         }
         
-        $emailMsg = $emailSent ? '& confirmation email sent' : ($isTenantSelfPay ? '' : '& notification saved');
-        Router::jsonResponse(['message' => "Payment recorded{$emailMsg}", 'payment' => $payment, 'email_sent' => $emailSent], 201);
+        $emailMsg = $emailSent ? ' & confirmation email sent' : '';
+        $nokMsg = $nokEmailSent ? ' & next of kin notified' : '';
+        Router::jsonResponse(['message' => "Payment recorded{$emailMsg}{$nokMsg}", 'payment' => $payment, 'email_sent' => $emailSent, 'nok_email_sent' => $nokEmailSent], 201);
     }
 
     public function show(array $params = []): void
@@ -227,8 +234,47 @@ class PaymentController
     }
 
     /**
-     * PUT /api/payments/{id}/confirm - Tenant confirms they received/reviewed a payment record
+     * GET /payments/tenant-finance/{id} - Return tenant financial info for payment form
      */
+    public function tenantFinance(array $params): void
+    {
+        $ownerId = Router::getAuthUserId();
+        $tenantId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        $tenant = $db->fetchOne(
+            "SELECT t.id, t.name, t.balance, t.credit, h.rent, h.unit, p.name as property_name
+             FROM tenants t
+             LEFT JOIN houses h ON t.house_id = h.id
+             LEFT JOIN properties p ON t.property_id = p.id
+             WHERE t.id = ? AND t.owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+
+        if (!$tenant) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        $balance = max(0.0, (float) ($tenant['balance'] ?? 0));
+        $credit = max(0.0, (float) ($tenant['credit'] ?? 0));
+        $rent = (float) ($tenant['rent'] ?? 0);
+        $arrears = $balance;
+        $overpaid = $credit;
+
+        Router::jsonResponse([
+            'tenant' => $tenant,
+            'monthly_rent' => $rent,
+            'balance' => $balance,
+            'credit' => $credit,
+            'arrears' => $arrears,
+            'overpaid' => $overpaid,
+            'suggested_payment' => $balance > 0 ? $balance : 0,
+        ]);
+    }
+
+    /**
+     * PUT /api/payments/{id}/confirm - Tenant confirms they received/reviewed a payment record
+      */
     public function confirm(array $params): void
     {
         $ownerId = Router::getAuthUserId();

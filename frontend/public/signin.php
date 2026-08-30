@@ -1,8 +1,27 @@
 <?php
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 $csrfToken = '';
+// For internal navigation, use absolute paths with base
+$signinPath = $basePath . '/signin';
+$signupPath = $basePath . '/signup';
+$forgotPath = $basePath . '/forgot-password';
+
+// Determine if we're in production/HTTPS environment
+$isProduction = ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?? 'production') === 'production';
+$isHttps = $isProduction || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') || 
+           (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+           (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+
 // Generate CSRF token
 if (session_status() === PHP_SESSION_NONE) {
+    // Set session cookie path to root so it works across all pages
+    session_set_cookie_params([
+        'path' => '/',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
     session_start();
 }
 if (empty($_SESSION['csrf_token'])) {
@@ -15,8 +34,9 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Sign In - RentaFlow</title>
+    <base href="<?php echo $basePath; ?>/">
+    <link rel="stylesheet" href="<?php echo $basePath; ?>/css/output.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -55,7 +75,7 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
             <div class="lg:w-7/12 p-6 sm:p-8 lg:p-12">
                 <div class="max-w-sm mx-auto">
                     <div class="text-center mb-6 sm:mb-8">
-                        <img src="/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
+                        <img src="<?php echo $basePath; ?>/images/rentalflow-logo.png" alt="RentalFlow" class="mx-auto h-14 w-auto mb-4" onerror="this.style.display='none'">
                         <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Welcome back</h2>
                         <p class="text-slate-500 mt-1 text-sm sm:text-base">Sign in to your account</p>
                     </div>
@@ -77,12 +97,12 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
                         </div>
                         <div class="flex items-center justify-between">
                             <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"><span class="text-sm text-slate-600">Remember me</span></label>
-                            <a href="<?php echo $basePath; ?>/forgot-password" class="text-sm font-medium text-blue-600 hover:text-blue-700">Forgot password?</a>
+                            <a href="<?php echo $forgotPath; ?>" class="text-sm font-medium text-blue-600 hover:text-blue-700">Forgot password?</a>
                         </div>
                         <button type="submit" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:from-blue-700 hover:to-blue-800 transition-all">Sign In</button>
                     </form>
                     <div class="mt-6 text-center">
-                        <p class="text-sm text-slate-500">Don't have an account? <a href="<?php echo $basePath; ?>/signup" class="font-medium text-blue-600 hover:text-blue-700">Sign up</a></p>
+                        <p class="text-sm text-slate-500">Don't have an account? <a href="<?php echo $signupPath; ?>" class="font-medium text-blue-600 hover:text-blue-700">Sign up</a></p>
                     </div>
                    
                 </div>
@@ -91,7 +111,9 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
     </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = window.location.pathname.replace(/\/[^\/]*$/, '') + '/api';
+   const BASE = '<?php echo $basePath; ?>';
+   const API = BASE + '/api';
+
     const CSRF_TOKEN = '<?php echo htmlspecialchars($csrfToken); ?>';
     function toast(msg, type='success') {
         const el = document.getElementById('toast');
@@ -144,28 +166,29 @@ $csrfToken = $_SESSION['csrf_token'] ?? '';
                 console.error('Non-JSON response:', text);
                 throw new Error('Server returned an invalid response. Please try again.');
             }
-            console.log('Login response:', data);
             
             if (!res.ok) {
                 throw new Error(data.error || 'Login failed');
             }
             
             // Store token in cookie only (primary auth method)
-            document.cookie = 'rf_token=' + encodeURIComponent(data.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Lax';
+            const cookieSecure = '<?php echo $isHttps ? '; Secure' : ''; ?>';
+            document.cookie = 'rf_token=' + encodeURIComponent(data.token) + '; path=/; max-age=' + (7*24*60*60) + '; SameSite=Strict' + cookieSecure;
             
             toast('Login successful! Redirecting...', 'success');
             
-            const base = window.location.pathname.replace(/\/[^\/]*$/, '');
+            // Clear form fields
+            document.getElementById('loginForm').reset();
+            
             const role = data.user.role || 'owner';
-            console.log('Redirecting to dashboard for role:', role);
             
             // Redirect WITHOUT token in URL - cookie handles auth now
             setTimeout(() => {
-                const dashboard = role === 'tenant' ? base + '/tenant-dashboard' : 
-                                  role === 'caretaker' ? base + '/caretaker-dashboard' : 
-                                  base + '/dashboard';
-                window.location.href = dashboard;
-            }, 500);
+                const dashboard = role === 'tenant' ? 'tenant-dashboard' :
+                                  role === 'caretaker' ? 'caretaker-dashboard' : 
+                                  'dashboard';
+                window.location.href = BASE + '/' + dashboard;
+            }, 1000);
         } catch(err) {
             console.error('Login error:', err);
             toast(err.message || 'Login failed', 'error');

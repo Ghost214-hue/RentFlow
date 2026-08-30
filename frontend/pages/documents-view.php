@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 require_once __DIR__ . '/../includes/auth.php';
 ?>
 <!DOCTYPE html>
@@ -6,8 +8,8 @@ require_once __DIR__ . '/../includes/auth.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Property Documents - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Property Documents - RentaFlow</title>
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -58,7 +60,14 @@ require_once __DIR__ . '/../includes/auth.php';
 
     <script>
     const API = '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     let currentDocumentId = null;
 
@@ -106,7 +115,7 @@ require_once __DIR__ . '/../includes/auth.php';
             }
         } catch(e) {
             console.error('Failed to load documents:', e);
-            if (e.message.includes('401')) window.location.href = '/signin';
+            if (e.message.includes('401')) window.location.href = BASE + '/signin';
         }
     }
 

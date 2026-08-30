@@ -3,8 +3,10 @@
 namespace App\Controllers;
 
 use App\Core\Database;
+use App\Core\IdEncoder;
 use App\Core\Router;
 use App\Core\Pagination;
+use App\Services\BillingService;
 use App\Services\EmailService;
 
 class TenantController
@@ -62,6 +64,12 @@ class TenantController
         $queryParams[] = $page['limit'];
 
         $tenants = $db->fetchAll($sql, $queryParams);
+        $tenants = array_map(function ($tenant) {
+            if (isset($tenant['id'])) {
+                $tenant['encoded_id'] = IdEncoder::encode((int) $tenant['id']);
+            }
+            return $tenant;
+        }, $tenants);
 
         $totalRow = $db->fetchOne($sqlCount, $countParams);
         $total = (int) ($totalRow['total'] ?? 0);
@@ -72,47 +80,91 @@ class TenantController
     
     public function show(array $params): void
     {
-        $ownerId = Router::getAuthUserId();
-        $role = Router::getAuthRole();
-        $tenantId = (int) ($params['id'] ?? 0);
-        $db = Database::getInstance();
+        try {
+            $ownerId = Router::getAuthUserId();
+            $role = Router::getAuthRole();
+            $tenantId = (int) ($params['id'] ?? 0);
+            $db = Database::getInstance();
 
-        $sql = "SELECT t.*, p.name as property_name, h.unit as house_unit
-             FROM tenants t
-             LEFT JOIN properties p ON t.property_id = p.id
-             LEFT JOIN houses h ON t.house_id = h.id
-             WHERE t.id = ? AND t.owner_id = ?";
-        $queryParams = [$tenantId, $ownerId];
-        if ($role === 'tenant') {
-            $sql .= " AND t.id = ?";
-            $queryParams[] = Router::getAuthTenantId();
-        } elseif ($role === 'caretaker') {
-            $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) Router::jsonResponse(['error' => 'Tenant not found'], 404);
-            $sql .= " AND t.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
-            $queryParams = array_merge($queryParams, $propertyIds);
+            $sql = "SELECT t.*, p.name as property_name, h.unit as house_unit
+                 FROM tenants t
+                 LEFT JOIN properties p ON t.property_id = p.id
+                 LEFT JOIN houses h ON t.house_id = h.id
+                 WHERE t.id = ? AND t.owner_id = ?";
+            $queryParams = [$tenantId, $ownerId];
+            if ($role === 'tenant') {
+                $sql .= " AND t.id = ?";
+                $queryParams[] = Router::getAuthTenantId();
+            } elseif ($role === 'caretaker') {
+                $propertyIds = Router::getCaretakerPropertyIds($db);
+                if (!$propertyIds) Router::jsonResponse(['error' => 'Tenant not found'], 404);
+                $sql .= " AND t.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
+                $queryParams = array_merge($queryParams, $propertyIds);
+            }
+            $tenant = $db->fetchOne($sql, $queryParams);
+
+            if (!$tenant) {
+                Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            }
+
+            if (isset($tenant['id'])) {
+                $tenant['encoded_id'] = IdEncoder::encode((int) $tenant['id']);
+            }
+
+            // Get payment history
+            $payments = [];
+            try {
+                $payments = $db->fetchAll(
+                    "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant payments: ' . $e->getMessage());
+            }
+
+            // Get complaints
+            $complaints = [];
+            try {
+                $complaints = $db->fetchAll(
+                    "SELECT * FROM complaints WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant complaints: ' . $e->getMessage());
+            }
+
+            // Get maintenance records (damages, repairs) for this tenant
+            $maintenance = [];
+            try {
+                $maintenance = $db->fetchAll(
+                    "SELECT * FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant maintenance: ' . $e->getMessage());
+            }
+
+            // Calculate total damage cost
+            $damageTotal = ['total' => 0];
+            try {
+                $damageTotal = $db->fetchOne(
+                    "SELECT SUM(cost) as total FROM maintenance_records WHERE tenant_id = ? AND owner_id = ? AND category = 'Damage'",
+                    [$tenantId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load tenant damage total: ' . $e->getMessage());
+            }
+
+            $tenant['payments'] = $payments;
+            $tenant['complaints'] = $complaints;
+            $tenant['maintenance'] = $maintenance;
+            $tenant['damage_total'] = (float)($damageTotal['total'] ?? 0);
+            $tenant['documents'] = json_decode($tenant['documents'] ?? '[]', true) ?: [];
+            Router::jsonResponse(['tenant' => $tenant]);
+        } catch (\Throwable $e) {
+            error_log('Tenant show error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to load tenant details', 'detail' => $e->getMessage()], 500);
         }
-        $tenant = $db->fetchOne($sql, $queryParams);
-
-        if (!$tenant) {
-            Router::jsonResponse(['error' => 'Tenant not found'], 404);
-        }
-
-        // Get payment history
-        $payments = $db->fetchAll(
-            "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
-            [$tenantId, $ownerId]
-        );
-
-        // Get complaints
-        $complaints = $db->fetchAll(
-            "SELECT * FROM complaints WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at DESC",
-            [$tenantId, $ownerId]
-        );
-
-        $tenant['payments'] = $payments;
-        $tenant['complaints'] = $complaints;
-        Router::jsonResponse(['tenant' => $tenant]);
     }
 
     /**
@@ -120,11 +172,20 @@ class TenantController
      */
     public function store(array $params = []): void
     {
-        Router::requireOwner();
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
-        $data = Router::getRequestBody();
+        $role = Router::getAuthRole();
         $db = Database::getInstance();
+        $caretakerPropertyIds = [];
 
+        if ($role === 'caretaker') {
+            $caretakerPropertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$caretakerPropertyIds) {
+                Router::jsonResponse(['error' => 'You are not assigned to any properties'], 403);
+            }
+        }
+
+        $data = Router::getRequestBody();
         $data['name'] = trim((string) ($data['name'] ?? ''));
         $data['email'] = trim((string) ($data['email'] ?? ''));
         $data['phone'] = trim((string) ($data['phone'] ?? ''));
@@ -149,57 +210,80 @@ class TenantController
             Router::jsonResponse(['error' => 'Tenant national ID is required for default credentials'], 400);
         }
 
-        // If house_id provided, verify it belongs to owner
+        // If caretaker, ensure assigned property access is enforced
+        if (!empty($data['property_id']) && $role === 'caretaker') {
+            if (!in_array((int) $data['property_id'], $caretakerPropertyIds, true)) {
+                Router::jsonResponse(['error' => 'You may only assign tenants to properties you manage'], 403);
+            }
+        }
+
+        // If house_id provided, verify it belongs to owner and assigned caretaker properties
         if (!empty($data['house_id'])) {
-            $house = $db->fetchOne(
-                "SELECT id, property_id, status FROM houses WHERE id = ? AND owner_id = ?",
-                [$data['house_id'], $ownerId]
-            );
+            $houseQuery = "SELECT id, property_id, status FROM houses WHERE id = ? AND owner_id = ?";
+            $params = [(int) $data['house_id'], $ownerId];
+            if ($role === 'caretaker') {
+                $placeholders = implode(',', array_fill(0, count($caretakerPropertyIds), '?'));
+                $houseQuery .= " AND property_id IN ($placeholders)";
+                $params = array_merge($params, $caretakerPropertyIds);
+            }
+            if (!empty($data['property_id'])) {
+                $houseQuery .= " AND property_id = ?";
+                $params[] = (int) $data['property_id'];
+            }
+
+            $house = $db->fetchOne($houseQuery, $params);
             if (!$house) {
-                Router::jsonResponse(['error' => 'House not found'], 404);
+                Router::jsonResponse(['error' => 'House not found or not available for your assigned properties'], 404);
             }
             if ($house['status'] === 'occupied') {
                 Router::jsonResponse(['error' => 'House is already occupied'], 400);
             }
-        }
-
-        // If house_id provided, auto-set property_id from the house
-        if (!empty($data['house_id'])) {
-            $data['property_id'] = $house['property_id'] ?? null;
+            $data['property_id'] = $house['property_id'] ?? $data['property_id'];
         }
 
         try {
             $db->beginTransaction();
 
-            $tenantId = $db->insert('tenants', [
-                'owner_id'             => $ownerId,
-                'property_id'          => !empty($data['property_id']) ? (int) $data['property_id'] : null,
-                'house_id'             => !empty($data['house_id']) ? (int) $data['house_id'] : null,
-                'name'                 => $data['name'],
-                'email'                => $data['email'] !== '' ? $data['email'] : null,
-                'password'             => password_hash($data['password'] ?? $data['id_number'], PASSWORD_BCRYPT),
-                'phone'                => $data['phone'],
-                'id_number'            => $data['id_number'] !== '' ? $data['id_number'] : null,
-                'id_type'              => $data['id_type'] ?? 'National ID',
-                'next_of_kin_name'     => $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null,
-                'next_of_kin_phone'    => $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null,
-                'next_of_kin_email'    => $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null,
-                'emergency_contact'    => $data['emergency_contact'] ?? null,
-                'lease_start'          => $data['lease_start'] ?? null,
-                'lease_end'            => $data['lease_end'] ?? null,
-                'deposit'              => $data['deposit'] ?? 0,
-                'balance'              => $data['balance'] ?? 0,
-                'water_balance'        => $data['water_balance'] ?? 0,
-                'elec_balance'         => $data['elec_balance'] ?? 0,
-                'documents'            => $data['documents'] ?? null,
-            ]);
+            // Only insert columns that actually exist in the tenants table
+            $existingColumns = array_column($db->fetchAll("SHOW COLUMNS FROM tenants WHERE Field IN ('owner_id','property_id','house_id','name','email','password','phone','id_number','id_type','id_kra_pin','profile_picture','next_of_kin_name','next_of_kin_phone','next_of_kin_email','lease_start','lease_end','deposit','balance','credit','water_balance','elec_balance','documents')"), 'Field');
+            
+            $insertData = [
+                'owner_id'    => $ownerId,
+                'name'        => $data['name'],
+                'email'       => $data['email'] !== '' ? $data['email'] : null,
+                'password'    => password_hash($data['password'] ?? $data['id_number'], PASSWORD_BCRYPT),
+                'phone'       => $data['phone'],
+                'id_number'   => $data['id_number'] !== '' ? $data['id_number'] : null,
+                'id_type'     => $data['id_type'] ?? 'National ID',
+            ];
+            
+            if (!empty($data['property_id'])) $insertData['property_id'] = (int) $data['property_id'];
+            if (!empty($data['house_id'])) $insertData['house_id'] = (int) $data['house_id'];
+            if (isset($data['id_kra_pin']) && in_array('id_kra_pin', $existingColumns, true)) $insertData['id_kra_pin'] = $data['id_kra_pin'];
+            if (isset($data['profile_picture']) && in_array('profile_picture', $existingColumns, true)) $insertData['profile_picture'] = $data['profile_picture'];
+            if (isset($data['next_of_kin_name']) && in_array('next_of_kin_name', $existingColumns, true)) $insertData['next_of_kin_name'] = $data['next_of_kin_name'] !== '' ? $data['next_of_kin_name'] : null;
+            if (isset($data['next_of_kin_phone']) && in_array('next_of_kin_phone', $existingColumns, true)) $insertData['next_of_kin_phone'] = $data['next_of_kin_phone'] !== '' ? $data['next_of_kin_phone'] : null;
+            if (isset($data['next_of_kin_email']) && in_array('next_of_kin_email', $existingColumns, true)) $insertData['next_of_kin_email'] = $data['next_of_kin_email'] !== '' ? $data['next_of_kin_email'] : null;
+            if (isset($data['lease_start']) && in_array('lease_start', $existingColumns, true)) $insertData['lease_start'] = $data['lease_start'];
+            if (isset($data['lease_end']) && in_array('lease_end', $existingColumns, true)) $insertData['lease_end'] = $data['lease_end'];
+            if (isset($data['deposit']) && in_array('deposit', $existingColumns, true)) $insertData['deposit'] = $data['deposit'] ?? 0;
+            if (isset($data['balance']) && in_array('balance', $existingColumns, true)) $insertData['balance'] = $data['balance'] ?? 0;
+            if (isset($data['water_balance']) && in_array('water_balance', $existingColumns, true)) $insertData['water_balance'] = $data['water_balance'] ?? 0;
+            if (isset($data['elec_balance']) && in_array('elec_balance', $existingColumns, true)) $insertData['elec_balance'] = $data['elec_balance'] ?? 0;
+            if (isset($data['documents']) && in_array('documents', $existingColumns, true)) $insertData['documents'] = $data['documents'];
+            
+            $tenantId = $db->insert('tenants', $insertData);
 
             // If house assigned, atomically claim it while it is still vacant.
             if (!empty($data['house_id'])) {
-                $updated = $db->update('houses', [
+                $houseUpdate = [
                     'status'    => 'occupied',
                     'tenant_id' => $tenantId,
-                ], 'id = ? AND owner_id = ? AND status = ?', [(int) $data['house_id'], $ownerId, 'vacant']);
+                ];
+                if (isset($data['rent']) && (float)$data['rent'] > 0) {
+                    $houseUpdate['rent'] = (float)$data['rent'];
+                }
+                $updated = $db->update('houses', $houseUpdate, 'id = ? AND owner_id = ? AND status = ?', [(int) $data['house_id'], $ownerId, 'vacant']);
 
                 if ($updated < 1) {
                     throw new \RuntimeException('House is already occupied');
@@ -216,27 +300,39 @@ class TenantController
                 }
             }
 
-            // Generate initial bill for the month
+            // Generate initial bill for the month with rent + optional deposit
+            // Deposit is included in the initial bill only if amount > 0
             if (!empty($data['house_id']) && !empty($data['rent'])) {
                 $month = date('Y-m');
                 $existing = $db->fetchOne(
-                    "SELECT id FROM bills WHERE house_id = ? AND month = ?",
-                    [(int) $data['house_id'], $month]
+                    "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
+                    [$ownerId, $tenantId, $month]
                 );
                 if (!$existing) {
-                    $db->insert('bills', [
-                        'owner_id' => $ownerId,
-                        'house_id' => (int) $data['house_id'],
-                        'month'    => $month,
-                        'rent'     => $data['rent'],
-                        'total'    => $data['rent'],
-                        'status'   => 'pending',
-                        'due_date' => date('Y-m-05'),
-                    ]);
+                    $billingService = new BillingService();
+                    $depositAmount = (float) ($data['deposit'] ?? 0);
+                    $chargeItems = [
+                        ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => (float)$data['rent']],
+                    ];
+                    if ($depositAmount > 0) {
+                        $chargeItems[] = ['type' => 'Deposit', 'description' => 'Security Deposit', 'amount' => $depositAmount];
+                    }
+
+                    $billingService->createBillWithItems(
+                        $ownerId,
+                        (int) $data['house_id'],
+                        $tenantId,
+                        $month,
+                        date('Y-m-05'),
+                        $chargeItems
+                    );
                 }
             }
 
             $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
+            if (isset($tenant['id'])) {
+                $tenant['encoded_id'] = IdEncoder::encode((int) $tenant['id']);
+            }
             $db->commit();
             
             // Send welcome email to tenant
@@ -255,12 +351,13 @@ class TenantController
                 error_log('Failed to send tenant welcome email: ' . $e->getMessage());
             }
         } catch (\Throwable $e) {
-            if ($db->inTransaction()) $db->rollback();
-            Router::jsonResponse(['error' => $e->getMessage()], 400);
+            try { $db->rollback(); } catch (\Throwable $t) { /* no active transaction */ }
+            error_log('Tenant registration error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to register tenant', 'detail' => $e->getMessage()], 400);
         }
 
         $emailMsg = $emailSent ? '& welcome email sent' : '& but welcome email could not be sent';
-        Router::jsonResponse(['message' => "Tenant registered {$emailMsg}", 'tenant' => $tenant, 'email_sent' => $emailSent], 201);
+            Router::jsonResponse(['message' => "Tenant registered {$emailMsg}", 'tenant' => $tenant, 'email_sent' => $emailSent], 201);
     }
 
     /**
@@ -268,71 +365,90 @@ class TenantController
       */
      public function update(array $params): void
      {
-         $role = Router::getAuthRole();
-         $actorId = Router::getAuthUserId();
-         $tenantId = (int) ($params['id'] ?? 0);
-         $data = Router::getRequestBody();
-         $db = Database::getInstance();
+         try {
+             $role = Router::getAuthRole();
+             $actorId = Router::getAuthUserId();
+             $tenantId = (int) ($params['id'] ?? 0);
+             $data = Router::getRequestBody();
+             $db = Database::getInstance();
  
-         // Verify tenant exists and get owner_id
-         $existing = $db->fetchOne(
-             "SELECT id, owner_id FROM tenants WHERE id = ?",
-             [$tenantId]
-         );
-         
-         if (!$existing) {
-             Router::jsonResponse(['error' => 'Tenant not found'], 404);
-         }
-         
-         $ownerId = $existing['owner_id'];
-         
-         // Check authorization: owner can update any of their tenants, tenant can update themselves
-         if ($role === 'owner') {
-             // Owner is updating - verify tenant belongs to them
-             if ($existing['owner_id'] != $actorId) {
+             // Verify tenant exists and get owner_id
+             $existing = $db->fetchOne(
+                 "SELECT id, owner_id, property_id FROM tenants WHERE id = ?",
+                 [$tenantId]
+             );
+             
+             if (!$existing) {
+                 Router::jsonResponse(['error' => 'Tenant not found'], 404);
+             }
+             
+             $ownerId = $existing['owner_id'];
+             
+             // Check authorization: owner can update any of their tenants, tenant can update themselves
+             if ($role === 'owner') {
+                 // Owner is updating - verify tenant belongs to them
+                 if ($existing['owner_id'] != $actorId) {
+                     Router::jsonResponse(['error' => 'Not authorized'], 403);
+                 }
+             } elseif ($role === 'caretaker') {
+                 // Caretaker is updating - verify tenant is in one of their assigned properties
+                 $caretakerPropertyIds = Router::getCaretakerPropertyIds($db);
+                 if (!$caretakerPropertyIds || !in_array((int) $existing['property_id'], $caretakerPropertyIds, true)) {
+                     Router::jsonResponse(['error' => 'Not authorized'], 403);
+                 }
+             } elseif ($role === 'tenant') {
+                 // Tenant is updating - verify it's their own record
+                 $authTenantId = Router::getAuthTenantId();
+                 if ($tenantId !== $authTenantId) {
+                     Router::jsonResponse(['error' => 'Only owners can perform this action'], 403);
+                 }
+             } else {
                  Router::jsonResponse(['error' => 'Not authorized'], 403);
              }
-         } elseif ($role === 'tenant') {
-             // Tenant is updating - verify it's their own record
-             $authTenantId = Router::getAuthTenantId();
-             if ($tenantId !== $authTenantId) {
-                 Router::jsonResponse(['error' => 'Only owners can perform this action'], 403);
+ 
+             $updateData = [];
+             
+              // Define allowed fields based on role
+              if ($role === 'owner' || $role === 'caretaker') {
+                  // Owners and caretakers can update all fields
+                  $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'id_kra_pin', 'profile_picture', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email',
+                           'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
+              } else {
+                  // Tenants can only update phone, email and profile picture
+                  $allowed = ['phone', 'email', 'profile_picture'];
+              }
+             
+             foreach ($allowed as $field) {
+                 if (isset($data[$field])) {
+                     $updateData[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
+                 }
              }
-         } else {
-             Router::jsonResponse(['error' => 'Not authorized'], 403);
-         }
  
-         $updateData = [];
-         
-         // Define allowed fields based on role
-         if ($role === 'owner') {
-             // Owners can update all fields
-             $allowed = ['name', 'email', 'phone', 'id_number', 'id_type', 'next_of_kin_name', 'next_of_kin_phone', 'next_of_kin_email', 'emergency_contact',
-                      'lease_start', 'lease_end', 'deposit', 'balance', 'water_balance', 'elec_balance'];
-         } else {
-             // Tenants can only update phone and email
-             $allowed = ['phone', 'email'];
-         }
-         
-         foreach ($allowed as $field) {
-             if (isset($data[$field])) {
-                 $updateData[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
+             if (isset($updateData['name']) && $updateData['name'] === '') {
+                 Router::jsonResponse(['error' => 'Tenant name is required'], 400);
              }
-         }
+             if (!empty($updateData['email']) && !filter_var($updateData['email'], FILTER_VALIDATE_EMAIL)) {
+                 Router::jsonResponse(['error' => 'Invalid email format'], 400);
+             }
+  
+             if (!empty($updateData)) {
+                // Only update columns that actually exist in the tenants table
+                $existingColumns = array_column($db->fetchAll("SHOW COLUMNS FROM tenants WHERE Field IN (" . implode(',', array_fill(0, count($updateData), '?')) . ")", array_keys($updateData)), 'Field');
+                $safeUpdate = array_intersect_key($updateData, array_flip($existingColumns));
+                if (!empty($safeUpdate)) {
+                    $db->update('tenants', $safeUpdate, 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
+                }
+            }
  
-         if (isset($updateData['name']) && $updateData['name'] === '') {
-             Router::jsonResponse(['error' => 'Tenant name is required'], 400);
+            $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ? AND owner_id = ?", [$tenantId, $ownerId]);
+            if (isset($tenant['id'])) {
+                $tenant['encoded_id'] = IdEncoder::encode((int) $tenant['id']);
+            }
+            Router::jsonResponse(['message' => 'Tenant updated', 'tenant' => $tenant]);
+         } catch (\Throwable $e) {
+             error_log('Tenant update error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+             Router::jsonResponse(['error' => 'Failed to update tenant', 'detail' => $e->getMessage()], 500);
          }
-         if (!empty($updateData['email']) && !filter_var($updateData['email'], FILTER_VALIDATE_EMAIL)) {
-             Router::jsonResponse(['error' => 'Invalid email format'], 400);
-         }
- 
-         if (!empty($updateData)) {
-             $db->update('tenants', $updateData, 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
-         }
- 
-         $tenant = $db->fetchOne("SELECT * FROM tenants WHERE id = ? AND owner_id = ?", [$tenantId, $ownerId]);
-         Router::jsonResponse(['message' => 'Tenant updated', 'tenant' => $tenant]);
      }
 
     /**
@@ -486,6 +602,34 @@ class TenantController
         try {
             $db->beginTransaction();
 
+            // Process damages if provided - create maintenance records
+            $damages = $data['damages'] ?? [];
+            $damageTotal = 0;
+            if (is_array($damages) && !empty($damages)) {
+                foreach ($damages as $damage) {
+                    if (empty($damage['title'])) continue;
+                    $damageCost = !empty($damage['cost']) ? (float)$damage['cost'] : 0;
+                    $damageTotal += $damageCost;
+                    $db->insert('maintenance_records', [
+                        'owner_id'       => $ownerId,
+                        'property_id'    => $tenant['property_id'],
+                        'house_id'       => $tenant['house_id'],
+                        'tenant_id'      => $tenantId,
+                        'title'          => $damage['title'],
+                        'description'    => $damage['description'] ?? '',
+                        'category'       => 'Damage',
+                        'priority'       => $damage['priority'] ?? 'medium',
+                        'status'         => 'completed',
+                        'cost'           => $damageCost,
+                        'vendor_name'    => $damage['vendor_name'] ?? '',
+                        'notes'          => 'Recorded during tenancy termination',
+                        'completed_date' => date('Y-m-d'),
+                        'recipient_type' => 'individual',
+                        'recipient_ids'  => json_encode([$tenantId]),
+                    ]);
+                }
+            }
+
             // Release the house if occupied
             if (!empty($tenant['house_id'])) {
                 $db->update('houses', [
@@ -494,12 +638,17 @@ class TenantController
                 ], 'id = ? AND owner_id = ?', [$tenant['house_id'], $ownerId]);
             }
 
-            // Update tenant record
+            // Update tenant record - clear sensitive/personal data but keep house/property for history
+            // Preserve house_id and property_id so past tenants can be tracked per house
             $db->update('tenants', [
-                'house_id' => null,
-                'property_id' => null,
                 'lease_end' => $effectiveDate,
                 'status' => 'terminated',
+                'documents' => null,
+                'profile_picture' => null,
+                'password' => null,
+                'next_of_kin_name' => null,
+                'next_of_kin_phone' => null,
+                'next_of_kin_email' => null,
             ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
 
             // Update property occupied count
@@ -651,10 +800,9 @@ class TenantController
                 'tenant_id' => null,
             ], 'id = ? AND owner_id = ?', [$tenant['house_id'], $ownerId]);
 
-            // Clear tenant house and property references and mark as terminated
+            // Mark tenant as terminated and set lease end date
+            // Preserve house_id and property_id so past tenants remain traceable per unit
             $db->update('tenants', [
-                'house_id' => null,
-                'property_id' => null,
                 'lease_end' => $effectiveDate,
                 'status' => 'terminated',
             ], 'id = ? AND owner_id = ?', [$tenantId, $ownerId]);
@@ -720,10 +868,97 @@ class TenantController
     }
 
     /**
-     * DELETE /api/tenants/{id}
+     * GET /api/tenants/property-contact - Owner & caretaker emergency contact for tenant's property
      */
-    public function destroy(array $params): void
+    public function propertyContact(array $params = []): void
     {
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $db = Database::getInstance();
+
+        if ($role !== 'tenant') {
+            Router::jsonResponse(['error' => 'Only tenants can access this'], 403);
+        }
+
+        $tenantId = Router::getAuthTenantId();
+        if (!$tenantId) {
+            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+        }
+
+        $tenant = $db->fetchOne(
+            "SELECT property_id FROM tenants WHERE id = ? AND owner_id = ?",
+            [$tenantId, $ownerId]
+        );
+
+        if (!$tenant || !$tenant['property_id']) {
+            Router::jsonResponse(['contacts' => null], 200);
+        }
+
+        $propertyId = (int) $tenant['property_id'];
+
+        // Get owner contact info
+        $owner = $db->fetchOne(
+            "SELECT name, email, phone FROM owners WHERE id = ?",
+            [$ownerId]
+        );
+
+        // Get caretaker assigned to this property
+        $caretaker = $db->fetchOne(
+            "SELECT name, email, phone FROM caretakers 
+             WHERE owner_id = ? AND assigned_properties LIKE ?",
+            [$ownerId, '%' . $propertyId . '%']
+        );
+
+        Router::jsonResponse([
+            'contacts' => [
+                'owner' => $owner ? [
+                    'name'  => $owner['name'],
+                    'email' => $owner['email'],
+                    'phone' => $owner['phone'] ?? '',
+                ] : null,
+                'caretaker' => $caretaker ? [
+                    'name'  => $caretaker['name'],
+                    'email' => $caretaker['email'],
+                    'phone' => $caretaker['phone'] ?? '',
+                ] : null,
+            ]
+        ]);
+    }
+
+    /**
+      * POST /api/tenants/consent-data-protection
+      * Record tenant consent to data collection/protection
+      */
+     public function consentDataProtection(): void
+     {
+         $ownerId = Router::getAuthUserId();
+         $role = Router::getAuthRole();
+         $db = Database::getInstance();
+
+         if ($role !== 'tenant') {
+             Router::jsonResponse(['error' => 'Only tenants can do this'], 403);
+         }
+
+         $tenantId = Router::getAuthTenantId();
+         if (!$tenantId) {
+             Router::jsonResponse(['error' => 'Tenant not found'], 404);
+         }
+
+         $db->update(
+             'tenants',
+             ['data_protection_consent_at' => date('Y-m-d H:i:s')],
+             'id = ? AND owner_id = ?',
+             [$tenantId, $ownerId]
+         );
+
+         Router::jsonResponse(['message' => 'Consent recorded']);
+     }
+
+     /**
+      * DELETE /api/tenants/{id}
+      */
+     public function destroy(array $params): void
+     {
         Router::requireOwner();
         $ownerId = Router::getAuthUserId();
         $tenantId = (int) ($params['id'] ?? 0);

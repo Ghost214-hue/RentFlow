@@ -1,4 +1,4 @@
--- RentFlow Database Schema
+-- RentaFlow Database Schema
 -- Multi-tenant property management system
 -- Each table has owner_id for data isolation
 

@@ -1,13 +1,21 @@
 <?php
+require_once __DIR__ . '/../../backend/app/Core/Env.php';
+// Load correct .env for localhost vs production
+$isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) ||
+               str_starts_with($_SERVER['HTTP_HOST'] ?? '', 'localhost:');
+$envPath = $isLocalhost
+    ? __DIR__ . '/../../.env'
+    : (file_exists(__DIR__ . '/../../.env.production') ? __DIR__ . '/../../.env.production' : __DIR__ . '/../../.env');
+\App\Core\Env::load($envPath);
+require_once __DIR__ . '/../includes/base-path-fix.php';
+$basePath = getBasePath();
 session_start();
 $token = $_COOKIE['rf_token'] ?? $_SESSION['rf_token'] ?? null;
-if (!$token) { header('Location: /signin'); exit; }
-require_once __DIR__ . '/../../backend/app/Core/Env.php';
-\App\Core\Env::load();
+if (!$token) { header('Location: ../public/signin.php'); exit; }
 require_once __DIR__ . '/../../backend/app/Core/JWT.php';
 $jwt = new \App\Core\JWT();
 $user = $jwt->decode($token);
-if (!$user) { header('Location: /signin'); exit; }
+if (!$user) { header('Location: ../public/signin.php'); exit; }
 $_SESSION['rf_user'] = $user;
 $role = $user['role'] ?? 'owner';
 ?>
@@ -16,8 +24,8 @@ $role = $user['role'] ?? 'owner';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Complaints - RentFlow</title>
-    <link rel="stylesheet" href="/css/output.css">
+    <title>Complaints - RentaFlow</title>
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($basePath); ?>/css/output.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -31,7 +39,7 @@ $role = $user['role'] ?? 'owner';
                 <button onclick="openModal()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2"><i class="fas fa-plus"></i>New <?php echo $role === 'tenant' ? 'Complaint' : 'Notice'; ?></button>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="complaintsGrid">
-                <div class="col-span-full py-12 text-center text-slate-400">Loading...</div>
+                <div class="col-span-full py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading complaints...</span></div></div>
             </div>
         </main>
     </div>
@@ -97,10 +105,42 @@ $role = $user['role'] ?? 'owner';
 
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
-    const API = '/api';
-    const token = localStorage.getItem('rf_token') || '<?php echo $token; ?>';
+    // Calculate base path - navigate up from /frontend/pages/ to project root
+    let BASE = window.location.pathname;
+    const frontendPagesIndex = BASE.indexOf('/frontend/pages/');
+    if (frontendPagesIndex !== -1) {
+        BASE = BASE.substring(0, frontendPagesIndex);
+    } else {
+        // Fallback: remove last path segment
+        BASE = BASE.replace(/\/[^\/]*$/, '');
+    }
+    const API = BASE + '/api';
+    // Get token from cookie (primary auth method) or localStorage (fallback)
+    const cookies = document.cookie.split(';');
+    let cookieToken = '';
+    for (let c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'rf_token') { cookieToken = decodeURIComponent(v); break; }
+    }
+    const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
     const userRole = '<?php echo $role; ?>';
+
+    async function apiRequest(url, options = {}) {
+        const res = await fetch(url, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch(e) { throw new Error('Server error'); }
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                localStorage.removeItem('rf_token');
+                window.location.href = BASE + '/signin';
+            }
+            throw new Error(data.error || 'Request failed');
+        }
+        return data;
+    }
 
     function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#039;'}[c])); }
 
@@ -116,21 +156,22 @@ $role = $user['role'] ?? 'owner';
 
     async function loadComplaints() {
         try {
-            const res = await fetch(`${API}/complaints`, { headers });
-            const data = await res.json();
+            const data = await apiRequest(`${API}/complaints`);
             const grid = document.getElementById('complaintsGrid');
-            if (!res.ok) throw new Error(data.error || 'Failed');
             if (data.complaints && data.complaints.length) {
                 grid.innerHTML = data.complaints.map(c => {
                     const isUnread = c.is_unread ? '<span class="ml-2 px-2 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white">NEW</span>' : '';
                     const senderLabel = c.sender_role === 'tenant' ? (c.tenant_name || 'Tenant') : (c.sender_role === 'caretaker' ? (c.caretaker_name || 'Manager') : (c.owner_name || 'Owner'));
-                    return `<div class="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5 hover:shadow-md transition-shadow cursor-pointer ${c.is_unread ? 'border-l-4 border-l-blue-500' : ''}" onclick="viewComplaintDetail(${c.id})">
+                    const isCaretakerPending = c.sender_role === 'caretaker' && c.status === 'pending_approval';
+                    const statusLabel = c.status === 'pending_approval' ? 'Pending Approval' : c.status === 'rejected' ? 'Rejected' : c.status;
+                    const statusClass = c.status==='pending_approval'?'bg-amber-100 text-amber-700':c.status==='rejected'?'bg-red-100 text-red-700':c.status==='open'?'bg-red-100 text-red-700':c.status==='in-progress'?'bg-blue-100 text-blue-700':'bg-emerald-100 text-emerald-700';
+                    return `<div class="bg-white rounded-2xl shadow-sm border ${isCaretakerPending ? 'border-amber-200' : 'border-blue-100/50'} p-5 hover:shadow-md transition-shadow cursor-pointer ${c.is_unread ? 'border-l-4 border-l-blue-500' : ''}" onclick="viewComplaintDetail(${c.id})">
                         <div class="flex items-start justify-between mb-3">
                             <div class="flex items-center gap-3">
                                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600 flex items-center justify-center"><i class="fas fa-${c.sender_role === 'tenant' ? 'wrench' : 'bullhorn'}"></i></div>
                                 <div><h3 class="font-medium text-slate-900">${escapeHtml(c.title)}${isUnread}</h3><p class="text-xs text-slate-500">${c.category||'Other'} • ${c.property_name||''} ${c.unit||''}</p></div>
                             </div>
-                            <span class="px-2 py-1 rounded-full text-xs font-medium ${c.status==='open'?'bg-red-100 text-red-700':c.status==='in-progress'?'bg-blue-100 text-blue-700':'bg-emerald-100 text-emerald-700'}">${c.status}</span>
+                            <span class="px-2 py-1 rounded-full text-xs font-medium ${statusClass}">${statusLabel}</span>
                         </div>
                         <p class="text-sm text-slate-600 mb-4 line-clamp-2">${escapeHtml(c.description || '')}</p>
                         <div class="flex items-center justify-between pt-3 border-t border-blue-50">
@@ -142,35 +183,68 @@ $role = $user['role'] ?? 'owner';
             } else {
                 grid.innerHTML = '<div class="col-span-full py-12 text-center text-slate-400">No complaints or notices found</div>';
             }
-        } catch(e) { console.error(e); if (e.message.includes('401')) window.location.href = '/signin'; }
+        } catch(e) { console.error(e); }
     }
 
     async function viewComplaintDetail(complaintId) {
         try {
-            const res = await fetch(`${API}/complaints/${complaintId}`, { headers });
-            if (!res.ok) throw new Error('Not found');
-            const data = await res.json();
+            const data = await apiRequest(`${API}/complaints/${complaintId}`);
             const c = data.complaint;
             const senderLabel = c.sender_role === 'tenant' ? (c.tenant_name || 'Tenant') : (c.sender_role === 'caretaker' ? (c.caretaker_name || 'Manager') : (c.owner_name || 'Owner'));
             document.getElementById('detailTitle').textContent = c.title || 'Untitled';
             document.getElementById('detailMeta').textContent = `${c.category||'Other'} • ${c.property_name||''} ${c.unit||''} • ${c.date ? new Date(c.date).toLocaleDateString('en-GB') : ''}`;
             document.getElementById('detailDescription').textContent = c.description || 'No description';
-            document.getElementById('replySection').classList.toggle('hidden', userRole === 'tenant');
+            document.getElementById('replySection').classList.toggle('hidden', false);
             let html = '<div class="space-y-3">';
-            html += '<div class="bg-slate-50 rounded-lg p-3 border-l-4 border-blue-500"><div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold text-slate-700">Original Message</span><span class="text-xs text-slate-400">From: ' + escapeHtml(senderLabel) + '</span></div><p class="text-sm text-slate-600">' + escapeHtml(c.description || 'No description') + '</p></div>';
-            html += '<div class="border-t border-slate-200 pt-3 mt-3"><h5 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">All Updates</h5>';
+            html += '<div class="border-t border-slate-200 pt-3"><h5 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">All Updates</h5>';
             let comments = [];
             try {
                 const raw = c.comments || [];
                 comments = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
             } catch(e) { html += '<p class="text-sm text-red-400">Error loading updates</p>'; }
+            // Filter out any comment that is essentially the same as the description from the same sender
+            comments = comments.filter(comment => {
+                if (!comment.text || !c.description) return true;
+                const commentText = comment.text.replace(/\s+/g, ' ').trim();
+                const descriptionText = c.description.replace(/\s+/g, ' ').trim();
+                const commentSender = (comment.user || '').trim();
+                const descriptionSender = (senderLabel || '').trim();
+                return !(commentText === descriptionText && commentSender === descriptionSender);
+            });
             if (!comments.length) { html += '<p class="text-sm text-slate-400 italic">No updates yet</p>'; }
             else { comments.forEach(comment => { const isOwner = comment.role === 'owner' || comment.role === 'caretaker'; html += '<div class="' + (isOwner ? 'bg-blue-50' : 'bg-amber-50') + ' rounded-lg p-3 mt-2"><div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold text-slate-700">' + escapeHtml(comment.user || 'Unknown') + ' <span class="text-slate-400 font-normal">(' + comment.role + ')</span></span><span class="text-xs text-slate-400">' + (comment.date || '') + '</span></div><p class="text-sm text-slate-600">' + escapeHtml(comment.text || '') + '</p></div>'; }); }
             html += '</div></div>';
+            // Add approve/reject buttons for owner if caretaker complaint is pending
+            if (userRole === 'owner' && c.sender_role === 'caretaker' && c.status === 'pending_approval') {
+                html += '<div class="border-t border-slate-200 pt-4 mt-4 flex gap-3">';
+                html += '<button onclick="approveComplaint(' + c.id + ')" class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transition-all">Approve</button>';
+                html += '<button onclick="rejectComplaint(' + c.id + ')" class="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/30 hover:shadow-red-500/40 transition-all">Reject</button>';
+                html += '</div>';
+            }
             document.getElementById('detailTimeline').innerHTML = html;
             document.getElementById('complaintDetailModal').classList.remove('hidden');
             window.currentDetailComplaintId = complaintId;
         } catch(e) { console.error(e); toast('Error: ' + e.message, 'error'); }
+    }
+
+    async function approveComplaint(complaintId) {
+        if (!confirm('Approve this complaint? It will be visible to tenants.')) return;
+        try {
+            await apiRequest(`${API}/complaints/${complaintId}/approve`, { method:'POST' });
+            toast('Complaint approved');
+            viewComplaintDetail(complaintId);
+            loadComplaints();
+        } catch(err) { toast(err.message, 'error'); }
+    }
+
+    async function rejectComplaint(complaintId) {
+        if (!confirm('Reject this complaint? It will not be sent to tenants.')) return;
+        try {
+            await apiRequest(`${API}/complaints/${complaintId}/reject`, { method:'POST' });
+            toast('Complaint rejected');
+            viewComplaintDetail(complaintId);
+            loadComplaints();
+        } catch(err) { toast(err.message, 'error'); }
     }
 
     function closeComplaintDetailModal() { document.getElementById('complaintDetailModal').classList.add('hidden'); window.currentDetailComplaintId = null; }
@@ -187,10 +261,10 @@ $role = $user['role'] ?? 'owner';
     async function loadSelectOptions() {
         if (userRole === 'tenant') return;
         try {
-            const tRes = await fetch(`${API}/tenants`, { headers }); const tData = await tRes.json();
+            const tData = await apiRequest(`${API}/tenants`);
             const tSelect = document.getElementById('compTenant');
             if (tSelect && tData.tenants) { tSelect.innerHTML = '<option value="">Select tenant...</option>' + tData.tenants.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${t.house_unit || 'No unit'})</option>`).join(''); }
-            const pRes = await fetch(`${API}/properties`, { headers }); const pData = await pRes.json();
+            const pData = await apiRequest(`${API}/properties`);
             const pSelect = document.getElementById('compProperty');
             if (pSelect && pData.properties) { pSelect.innerHTML = '<option value="">Select property...</option>' + pData.properties.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(''); }
         } catch(e) { console.error('Failed to load select options', e); }
@@ -214,9 +288,7 @@ $role = $user['role'] ?? 'owner';
             if (data.recipient_type === 'property') data.property_id = document.getElementById('compProperty').value;
         }
         try {
-            const res = await fetch(`${API}/complaints`, { method:'POST', headers, body:JSON.stringify(data) });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            const result = await apiRequest(`${API}/complaints`, { method:'POST', body:JSON.stringify(data) });
             toast('Submitted successfully!');
             closeModal();
             loadComplaints();
@@ -232,14 +304,25 @@ $role = $user['role'] ?? 'owner';
         if (!window.currentDetailComplaintId) return;
         const commentText = document.getElementById('detailReplyText').value.trim();
         if (!commentText) { toast('Please enter a reply', 'error'); return; }
+        const btn = e.target.querySelector('button[type="submit"]');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
         try {
-            const res = await fetch(`${API}/complaints/${window.currentDetailComplaintId}`, { method:'PUT', headers, body: JSON.stringify({ status:'in-progress', comments:commentText, comment_user:'<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>' }) });
-            const result = await res.json();
-            if(!res.ok) throw new Error(result.error || 'Failed');
+            const payload = { comments: commentText, comment_user: '<?php echo htmlspecialchars($user['name'] ?? 'User'); ?>' };
+            if (userRole === 'tenant') {
+                payload.status = 'in-progress';
+            }
+            const result = await apiRequest(`${API}/complaints/${window.currentDetailComplaintId}`, { method:'PUT', body: JSON.stringify(payload) });
             toast('Reply sent!');
-            closeComplaintDetailModal();
+            document.getElementById('detailReplyText').value = '';
+            viewComplaintDetail(window.currentDetailComplaintId);
             loadComplaints();
         } catch(err) { toast(err.message, 'error'); }
+        finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
     });
 
     loadComplaints();

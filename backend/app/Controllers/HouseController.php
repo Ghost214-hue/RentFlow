@@ -5,6 +5,7 @@
 namespace App\Controllers;
 
 use App\Core\Database;
+use App\Core\IdEncoder;
 use App\Core\Router;
 use App\Core\Pagination;
 
@@ -15,7 +16,7 @@ class HouseController
      */
     public function index(array $params = []): void
     {
-        Router::requireOwner();
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
@@ -55,11 +56,22 @@ class HouseController
             $countParams = array_merge($countParams, $propertyIds);
         }
 
-        $sql .= " ORDER BY h.created_at DESC LIMIT ?, ?";
+        // Order houses chronologically/naturally by unit within each property,
+        // e.g. A1, A2 ... A10 then B1, B2 ... B10 then C1, C2 ... C10
+        $sql .= " ORDER BY p.name ASC,
+                  CAST(REGEXP_REPLACE(h.unit, '[0-9]+$', '') AS CHAR) ASC,
+                  CAST(REGEXP_REPLACE(h.unit, '^[^0-9]*', '') AS UNSIGNED) ASC
+                  LIMIT ?, ?";
         $queryParams[] = $page['offset'];
         $queryParams[] = $page['limit'];
 
         $houses = $db->fetchAll($sql, $queryParams);
+        $houses = array_map(function ($house) {
+            if (isset($house['id'])) {
+                $house['encoded_id'] = IdEncoder::encode((int) $house['id']);
+            }
+            return $house;
+        }, $houses);
 
         $totalRow = $db->fetchOne($countSql, $countParams);
         $total = (int) ($totalRow['total'] ?? 0);
@@ -73,7 +85,7 @@ class HouseController
      */
     public function available(array $params = []): void
     {
-        Router::requireOwner();
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
 
@@ -92,8 +104,25 @@ class HouseController
             $queryParams[] = $propertyId;
         }
 
+        if (Router::getAuthRole() === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!$propertyIds) {
+                Router::jsonResponse(['houses' => []]);
+                return;
+            }
+            $placeholders = implode(',', array_fill(0, count($propertyIds), '?'));
+            $sql .= " AND h.property_id IN ($placeholders)";
+            $queryParams = array_merge($queryParams, $propertyIds);
+        }
+
         $sql .= " ORDER BY p.name ASC, h.unit ASC";
         $houses = $db->fetchAll($sql, $queryParams);
+        $houses = array_map(function ($house) {
+            if (isset($house['id'])) {
+                $house['encoded_id'] = IdEncoder::encode((int) $house['id']);
+            }
+            return $house;
+        }, $houses);
 
         Router::jsonResponse(['houses' => $houses]);
     }
@@ -178,8 +207,111 @@ class HouseController
     }
 
     /**
-     * DELETE /api/houses/{id}
+     * GET /api/houses/{id}
      */
+    public function show(array $params): void
+    {
+        try {
+            Router::requireOwnerOrCaretaker();
+            $ownerId = Router::getAuthUserId();
+            $role = Router::getAuthRole();
+            $houseId = (int) ($params['id'] ?? 0);
+            $db = Database::getInstance();
+
+            $house = $db->fetchOne(
+                "SELECT h.*, p.name as property_name
+                 FROM houses h
+                 LEFT JOIN properties p ON h.property_id = p.id
+                 WHERE h.id = ? AND h.owner_id = ?",
+                [$houseId, $ownerId]
+            );
+
+            if (!$house) {
+                Router::jsonResponse(['error' => 'House not found'], 404);
+            }
+
+            // Current tenant
+            $currentTenant = null;
+            if (!empty($house['tenant_id'])) {
+                $currentTenant = $db->fetchOne(
+                    "SELECT id, name, email, phone, lease_start, lease_end, status
+                     FROM tenants
+                     WHERE id = ? AND owner_id = ?",
+                    [$house['tenant_id'], $ownerId]
+                );                if ($currentTenant && isset($currentTenant['id'])) {
+                    $currentTenant['encoded_id'] = IdEncoder::encode((int) $currentTenant['id']);
+                }            }
+
+            // Past tenants who lived in this house
+            $pastTenants = [];
+            try {
+                $pastTenants = $db->fetchAll(
+                    "SELECT t.name, t.email, t.phone, t.lease_start, t.lease_end, t.status, p.name as property_name, h.unit
+                     FROM tenants t
+                     LEFT JOIN houses h ON t.house_id = h.id
+                     LEFT JOIN properties p ON t.property_id = p.id
+                     WHERE t.owner_id = ? AND t.house_id = ?
+                     ORDER BY t.lease_start DESC",
+                    [$ownerId, $houseId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load house past tenants: ' . $e->getMessage());
+            }
+
+            // Revenue from payments for this house
+            $revenue = [];
+            try {
+                $revenue = $db->fetchAll(
+                    "SELECT amount, date, method, status FROM payments WHERE house_id = ? AND owner_id = ? ORDER BY date DESC",
+                    [$houseId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load house payments: ' . $e->getMessage());
+            }
+
+            // All maintenance records for this house
+            $maintenance = [];
+            try {
+                $maintenance = $db->fetchAll(
+                    "SELECT m.*, t.name as tenant_name
+                     FROM maintenance_records m
+                     LEFT JOIN tenants t ON m.tenant_id = t.id
+                     WHERE m.house_id = ? AND m.owner_id = ?
+                     ORDER BY m.created_at DESC",
+                    [$houseId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load house maintenance: ' . $e->getMessage());
+            }
+
+            // Total maintenance cost for this house
+            $damageCost = ['total' => 0];
+            try {
+                $damageCost = $db->fetchOne(
+                    "SELECT SUM(cost) as total FROM maintenance_records WHERE house_id = ? AND owner_id = ? AND category = 'Damage'",
+                    [$houseId, $ownerId]
+                );
+            } catch (\Throwable $e) {
+                error_log('Failed to load house damage cost: ' . $e->getMessage());
+            }
+
+            Router::jsonResponse([
+                'house' => $house,
+                'current_tenant' => $currentTenant,
+                'past_tenants' => $pastTenants,
+                'payments' => $revenue,
+                'maintenance' => $maintenance,
+                'damage_cost' => (float)($damageCost['total'] ?? 0),
+            ]);
+        } catch (\Throwable $e) {
+            error_log('House show error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to load house details', 'detail' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/houses/{id}
+      */
     public function destroy(array $params): void
     {
         Router::requireOwner();

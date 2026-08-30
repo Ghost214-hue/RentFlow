@@ -12,23 +12,24 @@ class ComplaintController
 {
     public function index(array $params = []): void
     {
-        $ownerId = Router::getAuthUserId();
-        $role = Router::getAuthRole();
-        $db = Database::getInstance();
+        try {
+            $ownerId = Router::getAuthUserId();
+            $role = Router::getAuthRole();
+            $db = Database::getInstance();
 
-        $status = $_GET['status'] ?? '';
-        $direction = $_GET['direction'] ?? 'all'; // 'received', 'sent', 'all'
+            $status = $_GET['status'] ?? '';
+            $direction = $_GET['direction'] ?? 'all'; // 'received', 'sent', 'all'
 
-        $sql = "SELECT c.*, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email,
-                       h.unit, p.name as property_name,
-                       o.name as owner_name, ct.name as caretaker_name
-                FROM complaints c
-                LEFT JOIN tenants t ON c.tenant_id = t.id
-                LEFT JOIN houses h ON c.house_id = h.id
-                LEFT JOIN properties p ON h.property_id = p.id
-                LEFT JOIN owners o ON c.owner_id = o.id
-                LEFT JOIN caretakers ct ON c.owner_id = ct.owner_id
-                WHERE c.owner_id = ?";
+            $sql = "SELECT SQL_CALC_FOUND_ROWS c.*, t.name as tenant_name, t.phone as tenant_phone, t.email as tenant_email,
+                           h.unit, p.name as property_name,
+                           o.name as owner_name, ct.name as caretaker_name
+                    FROM complaints c
+                    LEFT JOIN tenants t ON c.tenant_id = t.id
+                    LEFT JOIN houses h ON c.house_id = h.id
+                    LEFT JOIN properties p ON h.property_id = p.id
+                    LEFT JOIN owners o ON c.owner_id = o.id
+                    LEFT JOIN caretakers ct ON c.owner_id = ct.owner_id AND c.sender_role = 'caretaker'
+                    WHERE c.owner_id = ?";
         $params = [$ownerId];
 
         if ($role === 'tenant') {
@@ -38,20 +39,22 @@ class ComplaintController
                 Router::jsonResponse(['complaints' => []]);
             }
             if (!empty($actorId)) {
-                $sql .= " AND (c.tenant_id = ? OR c.recipient_ids LIKE CONCAT('%', ?, '%'))";
+                // Tenants only see complaints sent to them that are approved (not pending_approval)
+                $sql .= " AND (c.tenant_id = ? OR c.recipient_ids LIKE CONCAT('%', ?, '%')) AND c.status != 'pending_approval'";
                 $params[] = $actorId;
                 $params[] = (string)$actorId;
             } else {
                 $sql .= " AND 0=1";
             }
         } elseif ($role === 'caretaker') {
-            // Caretakers see complaints for their assigned properties
+            // Caretakers see their own complaints regardless of status, plus approved owner/tenant complaints
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            if (!$propertyIds) {
-                Router::jsonResponse(['complaints' => []]);
+            if ($propertyIds) {
+                $sql .= " AND ((h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") AND c.status != 'pending_approval') OR c.sender_role = 'caretaker')";
+                $params = array_merge($params, $propertyIds);
+            } else {
+                $sql .= " AND 0=1";
             }
-            $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
-            $params = array_merge($params, $propertyIds);
         } else {
             // Owner sees all, with optional direction filter
             if ($direction === 'sent') {
@@ -90,12 +93,17 @@ class ComplaintController
         }
 
         Router::jsonResponse(['complaints' => $complaints]);
+        } catch (\Exception $e) {
+            error_log('Complaint index error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to load complaints', 'details' => $e->getMessage()], 500);
+        }
     }
 
     public function store(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
+        $actorId = Router::getAuthActorId();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
 
@@ -168,8 +176,13 @@ class ComplaintController
                 }
                 $targetPropertyId = $propertyId;
                 // Get all tenant IDs in this property
-                $tenants = $db->fetchAll("SELECT id FROM tenants WHERE property_id = ? AND owner_id = ? AND status = 'active'", [$propertyId, $ownerId]);
+                $tenants = $db->fetchAll("SELECT id, house_id FROM tenants WHERE property_id = ? AND owner_id = ? AND status = 'active'", [$propertyId, $ownerId]);
                 $recipientIds = json_encode(array_column($tenants, 'id'));
+                // Use first tenant for required tenant_id and house_id fields
+                if ($tenants[0]) {
+                    $targetTenantId = $tenants[0]['id'];
+                    $targetHouseId = $tenants[0]['house_id'];
+                }
             } elseif ($recipientType === 'all') {
                 // All managed tenants
                 if ($role === 'caretaker') {
@@ -188,6 +201,7 @@ class ComplaintController
                 $recipientIds = json_encode(array_column($tenants, 'id'));
                 // Use first tenant's house/property for the complaint record
                 if ($tenants[0]) {
+                    $targetTenantId = $tenants[0]['id'];
                     $targetHouseId = $tenants[0]['house_id'];
                     $targetPropertyId = $tenants[0]['property_id'];
                 }
@@ -198,7 +212,7 @@ class ComplaintController
             ['date' => date('Y-m-d H:i:s'), 'status' => ucfirst($senderRole) . ' Sent', 'note' => ucfirst($senderRole) . ' created this ' . ($recipientType === 'all' ? 'announcement' : ($recipientType === 'property' ? 'property notice' : 'message'))]
         ]);
 
-        $complaintId = $db->insert('complaints', [
+        $insertData = [
             'owner_id'       => $ownerId,
             'tenant_id'      => $targetTenantId,
             'house_id'       => $targetHouseId,
@@ -206,7 +220,7 @@ class ComplaintController
             'title'          => $data['title'],
             'category'       => $data['category'] ?? 'Notice',
             'priority'       => $data['priority'] ?? 'medium',
-            'status'         => 'open',
+            'status'         => $role === 'caretaker' ? 'pending_approval' : 'open',
             'date'           => date('Y-m-d'),
             'description'    => $data['description'],
             'sender_role'    => $senderRole,
@@ -214,42 +228,71 @@ class ComplaintController
             'recipient_ids'  => $recipientIds,
             'timeline'       => $timeline,
             'comments'       => '[]',
-        ]);
+        ];
+        // Only include sender_id if column exists
+        $columns = $db->fetchOne("SHOW COLUMNS FROM complaints WHERE Field = 'sender_id'");
+        if ($columns) {
+            $insertData['sender_id'] = $actorId;
+        }
+        $complaintId = $db->insert('complaints', $insertData);
 
         $complaint = $db->fetchOne("SELECT * FROM complaints WHERE id = ?", [$complaintId]);
 
-        // Send email notifications to recipient tenants
-        $emailSent = false;
+        // Always notify owner when any complaint/notice is created
+        $ownerNotified = false;
         try {
-            $recipientTenantIds = json_decode($recipientIds, true) ?: [];
-            $actorName = '';
-            if ($role === 'owner') {
-                $owner = $db->fetchOne("SELECT name FROM owners WHERE id = ?", [$ownerId]);
-                $actorName = $owner['name'] ?? 'Property Owner';
-            } else {
-                $caretaker = $db->fetchOne("SELECT name FROM caretakers WHERE id = ?", [$ownerId]);
-                $actorName = $caretaker['name'] ?? 'Property Manager';
-            }
-
-            foreach ($recipientTenantIds as $tid) {
-                $tenant = $db->fetchOne("SELECT name, email FROM tenants WHERE id = ?", [$tid]);
-                if ($tenant && !empty($tenant['email'])) {
-                    $emailService = new EmailService();
-                    $emailSent = $emailService->sendTemplate('Management Notice', $ownerId, $tenant['email'], $tenant['name'], [
-                        'tenant_name' => $tenant['name'],
-                        'property' => $targetPropertyId ? ($db->fetchOne("SELECT name FROM properties WHERE id = ?", [$targetPropertyId])['name'] ?? 'N/A') : 'N/A',
-                        'house' => $targetHouseId ? ($db->fetchOne("SELECT unit FROM houses WHERE id = ?", [$targetHouseId])['unit'] ?? 'N/A') : 'N/A',
-                        'date' => date('Y-m-d'),
-                        'category' => $data['category'] ?? 'Notice',
-                        'priority' => $data['priority'] ?? 'medium',
-                        'title' => $data['title'],
-                        'description' => $data['description'],
-                        'sender_name' => $actorName,
-                    ]) || $emailSent;
-                }
+            $owner = $db->fetchOne("SELECT name, email FROM owners WHERE id = ?", [$ownerId]);
+            if ($owner && !empty($owner['email'])) {
+                $emailService = new EmailService();
+                $subject = $role === 'caretaker' ? 'Caretaker complaint pending approval' : ($role === 'tenant' ? 'New complaint received' : 'New notice created');
+                $category = $data['category'] ?? 'Notice';
+                $priority = $data['priority'] ?? 'medium';
+                $body = $role === 'caretaker' 
+                    ? "A caretaker has submitted a complaint that requires your approval before it is sent to tenants.\n\nTitle: {$data['title']}\nDescription: {$data['description']}\nCategory: {$category}\nPriority: {$priority}"
+                    : ($role === 'tenant'
+                        ? "A tenant has submitted a complaint.\n\nTitle: {$data['title']}\nDescription: {$data['description']}\nCategory: {$category}\nPriority: {$priority}"
+                        : "You created a new notice.\n\nTitle: {$data['title']}\nDescription: {$data['description']}\nCategory: {$category}\nPriority: {$priority}");
+                $ownerNotified = $emailService->send($owner['email'], $owner['name'], $subject, $body);
             }
         } catch (\Exception $e) {
-            error_log('Failed to send notice email: ' . $e->getMessage());
+            error_log('Failed to send owner notification: ' . $e->getMessage());
+        }
+
+        // For non-caretaker complaints or caretaker complaints that are already open, notify tenants
+        $emailSent = false;
+        $complaintStatus = $role === 'caretaker' ? 'pending_approval' : 'open';
+        if ($role !== 'caretaker' || $complaintStatus === 'open') {
+            try {
+                $recipientTenantIds = json_decode($recipientIds, true) ?: [];
+                $actorName = '';
+                if ($role === 'owner') {
+                    $owner = $db->fetchOne("SELECT name FROM owners WHERE id = ?", [$ownerId]);
+                    $actorName = $owner['name'] ?? 'Property Owner';
+                } elseif ($role === 'caretaker') {
+                    $caretaker = $db->fetchOne("SELECT name FROM caretakers WHERE id = ?", [$actorId]);
+                    $actorName = $caretaker['name'] ?? 'Property Manager';
+                }
+
+                foreach ($recipientTenantIds as $tid) {
+                    $tenant = $db->fetchOne("SELECT name, email FROM tenants WHERE id = ?", [$tid]);
+                    if ($tenant && !empty($tenant['email'])) {
+                        $emailService = new EmailService();
+                        $emailSent = $emailService->sendTemplate('Management Notice', $ownerId, $tenant['email'], $tenant['name'], [
+                            'tenant_name' => $tenant['name'],
+                            'property' => $targetPropertyId ? ($db->fetchOne("SELECT name FROM properties WHERE id = ?", [$targetPropertyId])['name'] ?? 'N/A') : 'N/A',
+                            'house' => $targetHouseId ? ($db->fetchOne("SELECT unit FROM houses WHERE id = ?", [$targetHouseId])['unit'] ?? 'N/A') : 'N/A',
+                            'date' => date('Y-m-d'),
+                            'category' => $data['category'] ?? 'Notice',
+                            'priority' => $data['priority'] ?? 'medium',
+                            'title' => $data['title'],
+                            'description' => $data['description'],
+                            'sender_name' => $actorName,
+                        ]) || $emailSent;
+                    }
+                }
+            } catch (\Exception $e) {
+                error_log('Failed to send notice email: ' . $e->getMessage());
+            }
         }
 
         $msg = $role === 'tenant' ? 'Complaint submitted' : 'Notice sent';
@@ -280,8 +323,10 @@ class ComplaintController
             $queryParams[] = (string)$actorId;
         } elseif ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
-            $queryParams = array_merge($queryParams, $propertyIds);
+            if ($propertyIds) {
+                $sql .= " AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')";
+                $queryParams = array_merge($queryParams, $propertyIds);
+            }
         }
 
         $complaint = $db->fetchOne($sql, $queryParams);
@@ -310,11 +355,13 @@ class ComplaintController
 
     public function update(array $params): void
     {
-        $ownerId = Router::getAuthUserId();
-        $role = Router::getAuthRole();
-        $complaintId = (int) ($params['id'] ?? 0);
-        $data = Router::getRequestBody();
-        $db = Database::getInstance();
+        try {
+            $ownerId = Router::getAuthUserId();
+            $role = Router::getAuthRole();
+            $actorId = Router::getAuthActorId();
+            $complaintId = (int) ($params['id'] ?? 0);
+            $data = Router::getRequestBody();
+            $db = Database::getInstance();
 
         $existing = $db->fetchOne("SELECT * FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
         if (!$existing) {
@@ -324,12 +371,14 @@ class ComplaintController
         // Authorization check for caretaker
         if ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
-            $allowed = $db->fetchOne(
-                "SELECT c.id FROM complaints c LEFT JOIN houses h ON c.house_id = h.id WHERE c.id = ? AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')",
-                array_merge([$complaintId], $propertyIds)
-            );
-            if (!$allowed) {
-                Router::jsonResponse(['error' => 'Not authorized'], 403);
+            if ($propertyIds) {
+                $allowed = $db->fetchOne(
+                    "SELECT c.id FROM complaints c LEFT JOIN houses h ON c.house_id = h.id WHERE c.id = ? AND (h.property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ") OR c.sender_role = 'caretaker')",
+                    array_merge([$complaintId], $propertyIds)
+                );
+                if (!$allowed) {
+                    Router::jsonResponse(['error' => 'Not authorized'], 403);
+                }
             }
         }
 
@@ -370,11 +419,17 @@ class ComplaintController
         $replyEmailSent = false;
         if (!empty($data['comments'])) {
             try {
-                $recipientIds = json_decode($complaint['recipient_ids'] ?? $complaint['tenant_id'], true);
-                $recipientTenantIds = is_array($recipientIds) ? $recipientIds : [$recipientIds];
-                $actorName = $role === 'owner' ? ($db->fetchOne("SELECT name FROM owners WHERE id = ?", [$ownerId])['name'] ?? 'Owner') : ($db->fetchOne("SELECT name FROM caretakers WHERE id = ?", [$ownerId])['name'] ?? 'Manager');
+                $recipientIds = json_decode($complaint['recipient_ids'] ?? '[]', true);
+                if (!is_array($recipientIds) || empty($recipientIds)) {
+                    // Fallback to tenant_id if recipient_ids is empty
+                    $recipientIds = $complaint['tenant_id'] ? [$complaint['tenant_id']] : [];
+                }
+                $ownerNameRow = $db->fetchOne("SELECT name FROM owners WHERE id = ?", [$ownerId]);
+                $caretakerNameRow = $db->fetchOne("SELECT name FROM caretakers WHERE id = ?", [$actorId]);
+                $actorName = $role === 'owner' ? ($ownerNameRow['name'] ?? 'Owner') : ($caretakerNameRow['name'] ?? 'Manager');
 
-                foreach ($recipientTenantIds as $tid) {
+                foreach ($recipientIds as $tid) {
+                    if (!$tid) continue;
                     $tenant = $db->fetchOne("SELECT name, email FROM tenants WHERE id = ?", [$tid]);
                     if ($tenant && !empty($tenant['email'])) {
                         $emailService = new EmailService();
@@ -387,6 +442,10 @@ class ComplaintController
         }
 
         Router::jsonResponse(['message' => 'Complaint updated', 'complaint' => $complaint, 'email_sent' => $replyEmailSent]);
+        } catch (\Exception $e) {
+            error_log('Complaint update error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            Router::jsonResponse(['error' => 'Failed to update complaint', 'details' => $e->getMessage()], 500);
+        }
     }
 
     public function destroy(array $params): void
@@ -396,12 +455,88 @@ class ComplaintController
         $complaintId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
-        $existing = $db->fetchOne("SELECT id FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
+        $existing = $db->fetchOne("SELECT id, sender_role FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
         if (!$existing) {
             Router::jsonResponse(['error' => 'Complaint not found'], 404);
         }
 
         $db->delete('complaints', 'id = ?', [$complaintId]);
         Router::jsonResponse(['message' => 'Complaint deleted']);
+    }
+
+    public function approve(array $params): void
+    {
+        Router::requireOwner();
+        $ownerId = Router::getAuthUserId();
+        $complaintId = (int) ($params['id'] ?? 0);
+        $data = Router::getRequestBody();
+        $db = Database::getInstance();
+
+        $complaint = $db->fetchOne("SELECT id, status, sender_role FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
+        if (!$complaint) {
+            Router::jsonResponse(['error' => 'Complaint not found'], 404);
+        }
+
+        if ($complaint['sender_role'] !== 'caretaker') {
+            Router::jsonResponse(['error' => 'Only caretaker complaints require approval'], 400);
+        }
+
+        if ($complaint['status'] !== 'pending_approval') {
+            Router::jsonResponse(['error' => 'This complaint is not pending approval'], 400);
+        }
+
+        $note = $data['note'] ?? 'Approved by owner';
+
+        $timeline = json_decode($complaint['timeline'] ?? '[]', true) ?: [];
+        $timeline[] = [
+            'date' => date('Y-m-d H:i:s'),
+            'status' => 'Approved',
+            'note' => $note
+        ];
+
+        $db->update('complaints', [
+            'status' => 'open',
+            'timeline' => json_encode($timeline)
+        ], 'id = ?', [$complaintId]);
+
+        Router::jsonResponse(['message' => 'Complaint approved', 'status' => 'open']);
+    }
+
+    public function reject(array $params): void
+    {
+        Router::requireOwner();
+        $ownerId = Router::getAuthUserId();
+        $complaintId = (int) ($params['id'] ?? 0);
+        $data = Router::getRequestBody();
+        $db = Database::getInstance();
+
+        $complaint = $db->fetchOne("SELECT id, status, sender_role FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
+        if (!$complaint) {
+            Router::jsonResponse(['error' => 'Complaint not found'], 404);
+        }
+
+        if ($complaint['sender_role'] !== 'caretaker') {
+            Router::jsonResponse(['error' => 'Only caretaker complaints require approval'], 400);
+        }
+
+        if ($complaint['status'] !== 'pending_approval') {
+            Router::jsonResponse(['error' => 'This complaint is not pending approval'], 400);
+        }
+
+        $note = $data['note'] ?? 'Rejected by owner';
+
+        $timeline = json_decode($complaint['timeline'] ?? '[]', true) ?: [];
+        $timeline[] = [
+            'date' => date('Y-m-d H:i:s'),
+            'status' => 'Rejected',
+            'note' => $note
+        ];
+
+        $db->update('complaints', [
+            'status' => 'rejected',
+            'timeline' => json_encode($timeline)
+        ], 'id = ?', [$complaintId]);
+
+        Router::jsonResponse(['message' => 'Complaint rejected', 'status' => 'rejected']);
     }
 }

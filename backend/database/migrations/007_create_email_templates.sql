@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS email_templates (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES owners(id) ON DELETE CASCADE,
     UNIQUE KEY unique_template (owner_id, name, type),
     INDEX idx_owner_id (owner_id),
     INDEX idx_name (name)

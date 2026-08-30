@@ -21,17 +21,27 @@ class RateLimitMiddleware
 
     public static function check(string $type = 'api'): void
     {
-        $db = Database::getInstance();
+        try {
+            $db = Database::getInstance();
+        } catch (\Throwable $e) {
+            error_log('Rate limit DB error: ' . $e->getMessage());
+            return;
+        }
         $ip = self::getClientIP();
         $limit = self::$limits[$type] ?? self::$limits['api'];
         
         $key = "rate_limit_{$type}_{$ip}";
         
         // Check current count
-        $record = $db->fetchOne(
-            "SELECT attempts, window_start FROM rate_limits WHERE ip_address = ? AND type = ?",
-            [$ip, $type]
-        );
+        try {
+            $record = $db->fetchOne(
+                "SELECT attempts, window_start FROM rate_limits WHERE ip_address = ? AND type = ?",
+                [$ip, $type]
+            );
+        } catch (\Throwable $e) {
+            error_log('Rate limit query error: ' . $e->getMessage());
+            return;
+        }
 
         $now = time();
         $windowStart = $record ? strtotime($record['window_start']) : $now;

@@ -1,8 +1,12 @@
 <?php
-$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 
-// Extract page name from URL (e.g. /RentFlow/dashboard -> dashboard)
+if (strpos($basePath, '/frontend/public') !== false) {
+    $basePath = dirname(dirname($basePath));
+}
+
+// Extract page name from URL (e.g. /dashboard -> dashboard)
 $pageName = trim(str_replace($basePath, '', $requestUri), '/');
 if (empty($pageName)) $pageName = 'signin';
 
@@ -24,6 +28,12 @@ if ($pageName === 'forgot-password') {
     exit;
 }
 
+// Handle setup-password page
+if ($pageName === 'setup-password') {
+    require __DIR__ . '/setup-password.php';
+    exit;
+}
+
 // Handle terms-and-conditions page
 if ($pageName === 'terms-and-conditions') {
     require __DIR__ . '/../pages/terms-and-conditions.php';
@@ -31,7 +41,7 @@ if ($pageName === 'terms-and-conditions') {
 }
 
 // Check if this is a valid authenticated page
-$validPages = ['dashboard', 'properties', 'houses', 'tenants', 'caretakers', 'bills', 'payments', 'complaints', 'communications', 'reports', 'tenant-dashboard', 'tenant-profile', 'settings'];
+$validPages = ['dashboard', 'properties', 'houses', 'tenants', 'caretakers', 'bills', 'payments', 'complaints', 'communications', 'reports', 'tenant-dashboard', 'caretaker-dashboard', 'tenant-profile', 'settings', 'maintenance', 'documents', 'email-logs'];
 $pageFile = __DIR__ . '/../pages/' . $pageName . '.php';
 
 if (in_array($pageName, $validPages) && file_exists($pageFile)) {
