@@ -49,7 +49,7 @@ $basePath = getBasePath();
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead><tr class="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-blue-50 bg-blue-50/50">
-                            <th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Unit</th><th class="px-6 py-4">Month</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Paid</th><th class="px-6 py-4">Balance</th><th class="px-6 py-4">Status</th>
+                            <th class="px-6 py-4">Tenant</th><th class="px-6 py-4">Unit</th><th class="px-6 py-4">Month</th><th class="px-6 py-4">Amount</th><th class="px-6 py-4">Paid</th><th class="px-6 py-4">Balance</th><th class="px-6 py-4">Status</th><th class="px-6 py-4">Actions</th>
                         </tr></thead>
                         <tbody class="divide-y divide-blue-50" id="billsTable">
                             <tr id="loadingRow"><td colspan="8" class="px-6 py-12 text-center text-slate-400"><div class="flex flex-col items-center gap-3"><i class="fas fa-spinner fa-spin text-3xl text-blue-400"></i><span>Loading bills...</span></div></td></tr>
@@ -103,6 +103,49 @@ $basePath = getBasePath();
             </form>
         </div>
     </div>
+<!-- Edit Bill Modal -->
+    <div id="editBillModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeEditBill()">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900" id="editBillTitle">Edit Bill</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Adjust line items to standardize the invoice. Paid amounts update automatically from recorded payments.</p>
+                </div>
+                <button onclick="closeEditBill()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div class="flex items-center gap-6 flex-wrap text-sm pb-3 border-b border-slate-100">
+                    <div><span class="text-slate-400">Tenant:</span> <span class="font-medium text-slate-800" id="editBillTenant">-</span></div>
+                    <div><span class="text-slate-400">Unit:</span> <span class="font-medium text-slate-800" id="editBillUnit">-</span></div>
+                    <div><span class="text-slate-400">Month:</span> <span class="font-medium text-slate-800" id="editBillMonth">-</span></div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm font-semibold text-slate-700">Line Items</label>
+                        <button type="button" onclick="addBillItemRow()" class="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all inline-flex items-center gap-1"><i class="fas fa-plus"></i> Add Item</button>
+                    </div>
+                    <div id="billItemsContainer" class="space-y-2"></div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-4 flex items-center justify-between border border-slate-100">
+                    <span class="text-sm font-semibold text-slate-700">Total</span>
+                    <div class="text-right">
+                        <div class="text-lg font-bold text-slate-900" id="editBillTotal">KES 0</div>
+                        <div class="text-xs text-slate-400">Paid to date: <span class="text-emerald-600 font-medium" id="editBillPaid">KES 0</span></div>
+                    </div>
+                </div>
+                <div class="bg-amber-50/70 rounded-xl p-3 border border-amber-100/70 flex items-start gap-2">
+                    <i class="fas fa-info-circle text-amber-500 mt-0.5"></i>
+                    <p class="text-xs text-slate-600">Items that already have payments allocated cannot be removed, but their amounts can be adjusted. Lowering an amount below what's been paid becomes an overpayment/credit.</p>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeEditBill()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all text-sm">Cancel</button>
+                    <button type="button" id="saveBillBtn" onclick="saveBill()" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all inline-flex items-center gap-2 text-sm">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-5 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2"></div>
     <script>
     // Calculate base path - navigate up from /frontend/pages/ to project root
@@ -124,6 +167,8 @@ $basePath = getBasePath();
     }
     const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    // Owners and caretakers can edit bill line items to standardize invoices
+    const canEditBill = ['owner','caretaker'].includes('<?php echo $role; ?>');
     const BILLS_PER_PAGE_KEY = 'rf_bills_per_page';
     const BILLS_PER_PAGE_DEFAULT = 25;
 
@@ -177,6 +222,10 @@ $basePath = getBasePath();
                         <td class="px-6 py-4 text-sm font-medium ${b.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}">KES ${(b.balance||0).toLocaleString()}</td>
                         <td class="px-6 py-4"><span class="px-2 py-1 rounded-full text-xs font-medium ${b.status==='paid'?'bg-emerald-100 text-emerald-700':b.status==='partial'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600'}">${b.status}</span></td>
                         <td class="px-6 py-4">
+                            ${canEditBill ? `
+                            <button onclick="openEditBill(${b.id})" class="text-slate-600 hover:text-slate-900 text-sm font-medium inline-flex items-center gap-1 mr-3">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>` : ''}
                             <button onclick="downloadInvoice(${b.id}, '${(b.tenant_name||'').replace(/'/g, "\\'")}', '${(b.month||'').replace(/'/g, "\\'")}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium inline-flex items-center gap-1">
                                 <i class="fas fa-download"></i> Invoice
                             </button>
@@ -184,7 +233,7 @@ $basePath = getBasePath();
                     </tr>
                 `).join('');
             } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400">No bills found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-12 text-center text-slate-400">No bills found</td></tr>';
             }
             // Render pagination if meta available
             if (data.meta) {
@@ -219,6 +268,116 @@ $basePath = getBasePath();
         const url = `${API}/bills/${id}/pdf?token=${encodeURIComponent(token)}`;
         const w = window.open(url, '_blank', 'width=900,height=700');
         if (!w) { toast('Popup blocked. Please allow popups for PDF export.', 'error'); }
+    }
+
+let currentEditBillId = null;
+    let currentEditBillPaid = 0;
+
+    // Escape user-provided text before interpolation into HTML
+    function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    function billItemRow(item) {
+        const itemId = item && item.id ? item.id : '';
+        const paid = item && item.paid ? item.paid : 0;
+        const type = item && item.type ? item.type : 'Rent';
+        const description = item && item.description ? item.description : '';
+        const amount = item && item.amount != null ? item.amount : (itemId ? 0 : '');
+        const locked = paid > 0;
+        const removeBtn = locked
+            ? '<span class="text-xs text-slate-300 px-2" title="Has payments allocated - cannot remove"><i class="fas fa-lock"></i></span>'
+            : '<button type="button" onclick="removeBillItemRow(this)" class="text-red-400 hover:text-red-600"><i class="fas fa-trash-alt"></i></button>';
+        const types = ['Rent','Water','Electricity','Deposit','Other'].map(t =>
+            `<option value="${t}" ${t===type?'selected':''}>${t}</option>`).join('');
+        return `
+        <div class="grid grid-cols-12 gap-2 items-center bill-item-row" data-id="${itemId}" data-paid="${paid}">
+            <select class="bill-item-type col-span-3 px-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none">${types}</select>
+            <input type="text" class="bill-item-desc col-span-4 px-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none" placeholder="Description" value="${esc(description)}">
+            <input type="number" min="0" step="0.01" class="bill-item-amount col-span-3 px-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none" placeholder="0.00" value="${amount === '' ? '' : esc(amount)}" oninput="updateBillSummary()">
+            <div class="col-span-2 flex items-center justify-end">${removeBtn}</div>
+        </div>`;
+    }
+
+    function updateBillSummary() {
+        let total = 0;
+        document.querySelectorAll('#billItemsContainer .bill-item-row').forEach(row => {
+            total += parseFloat(row.querySelector('.bill-item-amount').value) || 0;
+        });
+        document.getElementById('editBillTotal').textContent = 'KES ' + total.toLocaleString();
+        document.getElementById('editBillPaid').textContent = 'KES ' + (currentEditBillPaid||0).toLocaleString();
+    }
+
+    function addBillItemRow() {
+        const container = document.getElementById('billItemsContainer');
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = billItemRow(null);
+        container.appendChild(wrapper.firstElementChild);
+        updateBillSummary();
+    }
+
+    function removeBillItemRow(btn) {
+        btn.closest('.bill-item-row').remove();
+        updateBillSummary();
+    }
+
+    function closeEditBill() {
+        document.getElementById('editBillModal').classList.add('hidden');
+        currentEditBillId = null;
+        currentEditBillPaid = 0;
+    }
+
+    async function openEditBill(billId) {
+        try {
+            const data = await apiRequest(`${API}/bills/${billId}`);
+            const bill = data.bill;
+            if (!bill) { toast('Could not load bill', 'error'); return; }
+
+            currentEditBillId = bill.id;
+            currentEditBillPaid = 0;
+            document.getElementById('editBillTitle').textContent = 'Edit Bill #' + bill.id;
+            document.getElementById('editBillTenant').textContent = bill.tenant_name || 'N/A';
+            document.getElementById('editBillUnit').textContent = bill.unit || 'N/A';
+            document.getElementById('editBillMonth').textContent = bill.month || 'N/A';
+
+            const items = (bill.items && bill.items.length) ? bill.items : [{}];
+            document.getElementById('billItemsContainer').innerHTML = items.map(i => billItemRow(i)).join('');
+            (bill.items||[]).forEach(i => { currentEditBillPaid += (i.paid||0); });
+
+            updateBillSummary();
+            document.getElementById('editBillModal').classList.remove('hidden');
+        } catch(e) {
+            toast(e.message || 'Failed to load bill', 'error');
+            console.error(e);
+        }
+    }
+
+    async function saveBill() {
+        const rows = document.querySelectorAll('#billItemsContainer .bill-item-row');
+        const items = [];
+        let runningTotal = 0;
+        rows.forEach(row => {
+            const id = parseInt(row.dataset.id) || 0;
+            const type = row.querySelector('.bill-item-type').value;
+            const description = row.querySelector('.bill-item-desc').value.trim();
+            const amount = parseFloat(row.querySelector('.bill-item-amount').value) || 0;
+            runningTotal += amount;
+            items.push({ id, type, description, amount });
+        });
+        if (!runningTotal) { toast('Bill must have at least one item with an amount', 'error'); return; }
+
+        const btn = document.getElementById('saveBillBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        try {
+            await apiRequest(`${API}/bills/${currentEditBillId}`, { method:'PUT', body: JSON.stringify({ items }) });
+            toast('Bill updated! Paid & balance recalculated.', 'success');
+            closeEditBill();
+            loadBills();
+        } catch(e) {
+            toast(e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+        }
     }
 
     function openBillingModal() {

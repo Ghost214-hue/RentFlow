@@ -181,6 +181,8 @@ $router->put('/payments/{id}/confirm', ['App\Controllers\PaymentController', 'co
 // ==================== BILLS ====================
 $router->get('/bills', ['App\Controllers\BillController', 'index'], [fn() => AuthMiddleware::authenticate()]);
 $router->post('/bills/generate', ['App\Controllers\BillController', 'generate'], [fn() => AuthMiddleware::authenticate()]);
+$router->get('/bills/{id}', ['App\\Controllers\\BillController', 'show'], [fn() => AuthMiddleware::authenticate()]);
+$router->put('/bills/{id}', ['App\\Controllers\\BillController', 'update'], [fn() => AuthMiddleware::authenticate()]);
 $router->get('/bills/{id}/invoice', ['App\Controllers\BillController', 'invoice']);
 
 // ==================== COMPLAINTS ====================

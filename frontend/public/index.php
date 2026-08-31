@@ -45,6 +45,39 @@ $validPages = ['dashboard', 'properties', 'houses', 'tenants', 'caretakers', 'bi
 $pageFile = __DIR__ . '/../pages/' . $pageName . '.php';
 
 if (in_array($pageName, $validPages) && file_exists($pageFile)) {
+    // Load shared auth (also sets $userRole from the JWT) and enforce role access.
+    require_once __DIR__ . '/../includes/auth.php';
+
+    // ---------- Role-based page access control ----------
+    // Owner-only pages (management of staff).
+    $ownerOnlyPages = ['caretakers'];
+
+    // Owner + caretaker (admin) pages. Tenants are never allowed here.
+    $ownerOrCaretakerPages = ['dashboard', 'properties', 'houses', 'tenants', 'communications', 'reports', 'maintenance', 'email-logs', 'settings'];
+
+    // Tenant-only pages.
+    $tenantOnlyPages = ['tenant-dashboard', 'tenant-profile'];
+
+    // Shared pages (payments, bills, complaints, documents) are intentionally
+    // available to owners, caretakers AND tenants, so they are NOT restricted here.
+
+    $blocked = false;
+    if (in_array($pageName, $ownerOnlyPages, true)) {
+        $blocked = ($userRole !== 'owner');
+    } elseif (in_array($pageName, $ownerOrCaretakerPages, true)) {
+        $blocked = ($userRole !== 'owner' && $userRole !== 'caretaker');
+    } elseif (in_array($pageName, $tenantOnlyPages, true)) {
+        $blocked = ($userRole !== 'tenant');
+    }
+
+    if ($blocked) {
+        // Redirect to the dashboard appropriate to the user's role.
+        $target = ($userRole === 'tenant') ? 'tenant-dashboard'
+                : (($userRole === 'caretaker') ? 'caretaker-dashboard' : 'dashboard');
+        header('Location: ' . $basePath . '/' . $target);
+        exit;
+    }
+
     require $pageFile;
 } else {
     // Invalid page: redirect to signin

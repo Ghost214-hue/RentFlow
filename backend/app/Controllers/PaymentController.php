@@ -215,6 +215,7 @@ class PaymentController
     public function show(array $params = []): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $paymentId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
@@ -228,8 +229,24 @@ class PaymentController
         );
 
         if (!$payment) {
-            Router::jsonResponse(['error' => 'Payment not found'], 404);
+            \App\Core\AccessPolicy::assertResource(false, false, 'payment', $paymentId);
         }
+
+        // Role-specific scope: tenants only their own, caretakers only assigned.
+        $scopeAllowed = true;
+        if ($role === 'tenant') {
+            $scopeAllowed = ((int) $payment['tenant_id'] === (int) Router::getAuthTenantId());
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            $propId = 0;
+            if (!empty($payment['house_id'])) {
+                $row = $db->fetchOne("SELECT property_id FROM houses WHERE id = ?", [(int) $payment['house_id']]);
+                $propId = (int) ($row['property_id'] ?? 0);
+            }
+            $scopeAllowed = in_array($propId, $propertyIds, true);
+        }
+        \App\Core\AccessPolicy::assertResource(true, $scopeAllowed, 'payment', $paymentId);
+
         Router::jsonResponse(['payment' => $payment]);
     }
 
@@ -238,12 +255,13 @@ class PaymentController
      */
     public function tenantFinance(array $params): void
     {
+        \App\Core\AccessPolicy::ownerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $tenantId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
 
         $tenant = $db->fetchOne(
-            "SELECT t.id, t.name, t.balance, t.credit, h.rent, h.unit, p.name as property_name
+            "SELECT t.id, t.name, t.balance, t.credit, h.rent, h.unit, p.name as property_name, t.property_id
              FROM tenants t
              LEFT JOIN houses h ON t.house_id = h.id
              LEFT JOIN properties p ON t.property_id = p.id
@@ -252,7 +270,14 @@ class PaymentController
         );
 
         if (!$tenant) {
-            Router::jsonResponse(['error' => 'Tenant not found'], 404);
+            \App\Core\AccessPolicy::assertResource(false, false, 'tenant', $tenantId);
+        }
+
+        // Caretakers may only view finance for tenants in their assigned properties.
+        if (Router::getAuthRole() === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            $scopeAllowed = in_array((int) ($tenant['property_id'] ?? 0), $propertyIds, true);
+            \App\Core\AccessPolicy::assertResource(true, $scopeAllowed, 'tenant', $tenantId);
         }
 
         $balance = max(0.0, (float) ($tenant['balance'] ?? 0));

@@ -16,6 +16,8 @@ class ComplaintsReportController
      */
     public function index(array $params = []): void
     {
+        // Tenants must never access owner/caretaker analytics.
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
@@ -174,6 +176,8 @@ class ComplaintsReportController
      */
     public function summary(array $params = []): void
     {
+        // Tenants must never access owner/caretaker analytics.
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $role = Router::getAuthRole();
         $db = Database::getInstance();
