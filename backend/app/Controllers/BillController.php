@@ -351,12 +351,13 @@ class BillController
     public function show(array $params): void
     {
         $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
         $billId = (int) ($params['id'] ?? 0);
         $db = Database::getInstance();
         $billingService = new BillingService();
 
         $bill = $db->fetchOne(
-            "SELECT b.*, h.unit, p.name as property_name, t.name as tenant_name, t.phone as tenant_phone
+            "SELECT b.*, h.unit, h.property_id, p.name as property_name, t.name as tenant_name, t.phone as tenant_phone
              FROM bills b
              LEFT JOIN houses h ON b.house_id = h.id
              LEFT JOIN properties p ON h.property_id = p.id
@@ -366,8 +367,18 @@ class BillController
         );
 
         if (!$bill) {
-            Router::jsonResponse(['error' => 'Bill not found'], 404);
+            \App\Core\AccessPolicy::assertResource(false, false, 'bill', $billId);
         }
+
+        // Role-specific scope: tenants only their own bills, caretakers only assigned.
+        $scopeAllowed = true;
+        if ($role === 'tenant') {
+            $scopeAllowed = ((int) $bill['tenant_id'] === (int) Router::getAuthTenantId());
+        } elseif ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            $scopeAllowed = in_array((int) ($bill['property_id'] ?? 0), $propertyIds, true);
+        }
+        \App\Core\AccessPolicy::assertResource(true, $scopeAllowed, 'bill', $billId);
 
         // Ensure tenant name/phone are present for single invoices
         if (empty($bill['tenant_name'])) {

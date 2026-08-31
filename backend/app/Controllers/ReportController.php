@@ -11,6 +11,8 @@ class ReportController
 {
     public function index(array $params = []): void
     {
+        // Tenants must never access owner/caretaker analytics.
+        Router::requireOwnerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
 

@@ -214,6 +214,7 @@ class MaintenanceController
     public function update(array $params): void
     {
         try {
+            \App\Core\AccessPolicy::ownerOrCaretaker();
             $ownerId = Router::getAuthUserId();
             $role = Router::getAuthRole();
             $recordId = (int) ($params['id'] ?? 0);
@@ -222,7 +223,14 @@ class MaintenanceController
 
             $existing = $db->fetchOne("SELECT * FROM maintenance_records WHERE id = ? AND owner_id = ?", [$recordId, $ownerId]);
             if (!$existing) {
-                Router::jsonResponse(['error' => 'Maintenance record not found'], 404);
+                \App\Core\AccessPolicy::assertResource(false, false, 'maintenance', $recordId);
+            }
+
+            // Caretakers may only update maintenance in their assigned properties.
+            if ($role === 'caretaker') {
+                $propertyIds = Router::getCaretakerPropertyIds($db);
+                $scopeAllowed = (empty($existing['property_id'])) || in_array((int) $existing['property_id'], $propertyIds, true);
+                \App\Core\AccessPolicy::assertResource(true, $scopeAllowed, 'maintenance', $recordId);
             }
 
             $updateData = [];
@@ -281,6 +289,7 @@ class MaintenanceController
     public function stats(array $params = []): void
     {
         try {
+            \App\Core\AccessPolicy::ownerOrCaretaker();
             $ownerId = Router::getAuthUserId();
             $role = Router::getAuthRole();
             $db = Database::getInstance();

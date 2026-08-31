@@ -365,7 +365,19 @@ class ComplaintController
 
         $existing = $db->fetchOne("SELECT * FROM complaints WHERE id = ? AND owner_id = ?", [$complaintId, $ownerId]);
         if (!$existing) {
-            Router::jsonResponse(['error' => 'Complaint not found'], 404);
+            \App\Core\AccessPolicy::assertResource(false, false, 'complaint', $complaintId);
+        }
+
+        // Authorization check for tenant: may only update their own complaint
+        // (sent to them or authored by them) and may NOT change its status.
+        if ($role === 'tenant') {
+            $tenantId = (int) Router::getAuthTenantId();
+            $isOwn = ((int) $existing['tenant_id'] === $tenantId)
+                  || in_array($tenantId, json_decode($existing['recipient_ids'] ?? '[]', true) ?: [], true);
+            \App\Core\AccessPolicy::assertResource(true, $isOwn, 'complaint', $complaintId);
+            if (array_key_exists('status', $data)) {
+                \App\Core\AccessPolicy::deny('Tenants cannot change complaint status', 403, 'complaint', $complaintId, 'ROLE_NOT_ALLOWED');
+            }
         }
 
         // Authorization check for caretaker
