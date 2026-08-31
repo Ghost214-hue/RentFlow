@@ -410,6 +410,146 @@ class BillController
         Router::jsonResponse(['bill' => $bill]);
     }
 
+/**
+     * PUT /api/bills/{id} - Edit a bill's line items to standardize/adjust invoiced amounts.
+     * Owner or caretaker scoped. Keeps the bill in sync with payments:
+     *   - existing items are updated in place (their payment allocations stay intact)
+     *   - new items are added
+     *   - items that already have confirmed payments allocated cannot be removed
+     *   - each item's paid amount is recomputed from payment_allocations
+     *   - the bill total/status and the tenant credit/balance are recalculated
+     */
+    public function update(array $params): void
+    {
+        Router::requireOwnerOrCaretaker();
+        $ownerId = Router::getAuthUserId();
+        $role = Router::getAuthRole();
+        $billId = (int) ($params['id'] ?? 0);
+        $db = Database::getInstance();
+
+        $bill = $db->fetchOne(
+            "SELECT b.*, h.property_id
+             FROM bills b
+             LEFT JOIN houses h ON b.house_id = h.id
+             WHERE b.id = ? AND b.owner_id = ?",
+            [$billId, $ownerId]
+        );
+        if (!$bill) {
+            Router::jsonResponse(['error' => 'Bill not found'], 404);
+        }
+
+        // Caretakers can only edit bills within their assigned properties
+        if ($role === 'caretaker') {
+            $propertyIds = Router::getCaretakerPropertyIds($db);
+            if (!in_array((int)$bill['property_id'], $propertyIds, true)) {
+                Router::jsonResponse(['error' => 'You do not have access to this bill'], 403);
+            }
+        }
+
+        $data = Router::getRequestBody();
+        $items = $data['items'] ?? [];
+        if (!is_array($items) || empty($items)) {
+            Router::jsonResponse(['error' => 'At least one bill item is required'], 400);
+        }
+
+        $billingService = new BillingService();
+
+        // Current paid amount per item, from the allocations source of truth
+        $paidByItem = [];
+        $allocRows = $db->fetchAll(
+            "SELECT pa.bill_item_id AS item_id, COALESCE(SUM(pa.amount), 0) AS paid
+             FROM payment_allocations pa
+             JOIN payments p ON p.id = pa.payment_id
+             WHERE pa.bill_item_id IN (SELECT id FROM bill_items WHERE bill_id = ?)
+               AND p.status IN ('confirmed','completed','paid')
+             GROUP BY pa.bill_item_id",
+            [$billId]
+        );
+        foreach ($allocRows as $row) {
+            $paidByItem[(int)$row['item_id']] = (float)$row['paid'];
+        }
+
+        $db->beginTransaction();
+        try {
+            $existingItems = $billingService->getBillItems($billId);
+            $existingById = [];
+            foreach ($existingItems as $it) {
+                $existingById[(int)$it['id']] = $it;
+            }
+
+            $requestedIds = [];
+            foreach ($items as $item) {
+                $type = trim((string)($item['type'] ?? 'Other'));
+                $description = trim((string)($item['description'] ?? ''));
+                $amount = max(0.0, (float)($item['amount'] ?? 0));
+                $itemId = (int)($item['id'] ?? 0);
+
+                if ($itemId > 0 && isset($existingById[$itemId])) {
+                    $requestedIds[] = $itemId;
+                    // Amount threads through; paid reflects what has actually been
+                    // allocated to this line item from confirmed payments.
+                    $paid = (float)($paidByItem[$itemId] ?? 0);
+                    $status = $paid <= 0 ? 'pending' : ($paid >= $amount ? 'paid' : 'partial');
+                    $db->update('bill_items', [
+                        'type' => $type,
+                        'description' => $description,
+                        'amount' => $amount,
+                        'paid' => $paid,
+                        'status' => $status,
+                    ], 'id = ?', [$itemId]);
+                } else {
+                    // New line item
+                    $db->insert('bill_items', [
+                        'bill_id' => $billId,
+                        'type' => $type,
+                        'description' => $description ?: null,
+                        'amount' => $amount,
+                        'paid' => 0.00,
+                        'status' => $amount > 0 ? 'pending' : 'paid',
+                    ]);
+                }
+            }
+// Remove line items that are no longer present, as long as no confirmed
+            // payments are allocated to them. payment_allocations cascade on delete,
+            // so refusing when paid > 0 protects the accounting trail.
+            foreach ($existingItems as $it) {
+                $itemId = (int)$it['id'];
+                if (in_array($itemId, $requestedIds, true)) {
+                    continue;
+                }
+                $paid = (float)($paidByItem[$itemId] ?? 0);
+                if ($paid > 0) {
+                    $db->rollback();
+                    Router::jsonResponse([
+                        'error' => "Cannot remove the '" . $it['type'] . "' item because KES " . number_format($paid, 2) . " in payments have already been allocated to it. Adjust its amount instead.",
+                    ], 400);
+                }
+                $db->delete('bill_items', 'id = ? AND bill_id = ?', [$itemId, $billId]);
+            }
+
+            $billingService->recalculateBill($billId);
+
+            // Keep the tenant's standing balance/credit in sync with the edited bill
+            if (!empty($bill['tenant_id'])) {
+                $billingService->recalcTenantCreditAndBalance((int)$bill['tenant_id']);
+            }
+
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollback();
+            error_log('Bill update failed: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Could not update bill: ' . $e->getMessage()], 500);
+        }
+
+        $updatedBill = $billingService->getBillTotals($billId);
+        Router::jsonResponse([
+            'message' => 'Bill updated successfully',
+            'bill_id' => $billId,
+            'total' => $updatedBill['total'],
+            'paid' => $updatedBill['paid'],
+            'balance' => max(0.0, $updatedBill['total'] - $updatedBill['paid']),
+        ]);
+    }
     /**
      * GET /api/bills/{id}/invoice - Generate professional PDF invoice
      * Supports token via query param for new window opens
