@@ -51,13 +51,30 @@ class DashboardController
 
         $propertyFilter = '';
         $propertyParams = [];
+        $failClosed = false;
         if ($role === 'caretaker') {
             $propertyIds = Router::getCaretakerPropertyIds($db);
             if ($propertyIds) {
                 $propertyFilter = " AND property_id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
                 $propertyParams = $propertyIds;
+            } else {
+                // Fail closed: an unassigned caretaker must never see the
+                // owner's whole portfolio as a fallback.
+                $failClosed = true;
             }
-            // If no properties assigned, caretaker sees all data (fallback)
+        }
+
+        if ($failClosed) {
+            Router::jsonResponse([
+                'properties' => ['total' => 0, 'total_units' => 0, 'occupied' => 0],
+                'houses' => ['total' => 0, 'occupied' => 0, 'vacant' => 0],
+                'revenue' => 0.0,
+                'outstanding' => 0.0,
+                'tenants' => 0,
+                'recentPayments' => [],
+                'activeComplaints' => [],
+                'maintenance' => ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'total_cost' => 0.0],
+            ]);
         }
 
         // Properties count
