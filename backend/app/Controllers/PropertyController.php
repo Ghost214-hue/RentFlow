@@ -30,6 +30,9 @@ class PropertyController
             if ($propertyIds) {
                 $sql .= " AND p.id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
                 $queryParams = array_merge($queryParams, $propertyIds);
+            } else {
+                // Fail closed: unassigned caretakers see no properties.
+                Router::jsonResponse(['properties' => []]);
             }
         } elseif ($role === 'tenant') {
             $sql .= " AND p.id = (SELECT property_id FROM tenants WHERE id = ? AND owner_id = ?)";
@@ -60,6 +63,9 @@ class PropertyController
             if ($propertyIds) {
                 $sql .= " AND id IN (" . implode(',', array_fill(0, count($propertyIds), '?')) . ")";
                 $queryParams = array_merge($queryParams, $propertyIds);
+            } else {
+                // Fail closed: unassigned caretakers can fetch no property.
+                $sql .= " AND 1=0";
             }
         } elseif ($role === 'tenant') {
             $sql .= " AND id = (SELECT property_id FROM tenants WHERE id = ? AND owner_id = ?)";

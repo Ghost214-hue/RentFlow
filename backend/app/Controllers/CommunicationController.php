@@ -12,6 +12,7 @@ class CommunicationController
 {
     public function index(array $params = []): void
     {
+        \App\Core\AccessPolicy::ownerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
 
@@ -33,6 +34,7 @@ class CommunicationController
 
     public function store(array $params = []): void
     {
+        \App\Core\AccessPolicy::ownerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $data = Router::getRequestBody();
         $db = Database::getInstance();
@@ -84,6 +86,7 @@ class CommunicationController
 
     public function templates(array $params = []): void
     {
+        \App\Core\AccessPolicy::ownerOrCaretaker();
         $ownerId = Router::getAuthUserId();
         $db = Database::getInstance();
 
