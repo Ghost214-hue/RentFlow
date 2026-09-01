@@ -284,4 +284,42 @@ class BillingService
 
         $this->db->update('tenants', ['balance' => $balance, 'credit' => $credit], 'id = ?', [$tenantId]);
     }
+
+    public function getTenantCarryForward(int $tenantId, string $month): array
+    {
+        if ($tenantId <= 0 || empty($month)) {
+            return ['balance' => 0.0, 'credit' => 0.0];
+        }
+
+        $priorBillsRow = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(bi.amount), 0) as total
+             FROM bills b
+             JOIN bill_items bi ON bi.bill_id = b.id
+             WHERE b.tenant_id = ? AND b.month < ?",
+            [$tenantId, $month]
+        );
+
+        $priorAllocationsRow = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(pa.amount), 0) as total
+             FROM payment_allocations pa
+             JOIN payments p ON p.id = pa.payment_id
+             WHERE p.tenant_id = ?
+               AND p.status IN ('confirmed','completed','paid')
+               AND pa.bill_item_id IN (
+                   SELECT bi.id
+                   FROM bill_items bi
+                   JOIN bills b ON b.id = bi.bill_id
+                   WHERE b.tenant_id = ? AND b.month < ?
+               )",
+            [$tenantId, $tenantId, $month]
+        );
+
+        $priorBills = max(0.0, (float) ($priorBillsRow['total'] ?? 0));
+        $priorPaid = max(0.0, (float) ($priorAllocationsRow['total'] ?? 0));
+
+        $balance = max(0.0, $priorBills - $priorPaid);
+        $credit = max(0.0, $priorPaid - $priorBills);
+
+        return ['balance' => $balance, 'credit' => $credit];
+    }
 }
