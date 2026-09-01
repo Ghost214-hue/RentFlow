@@ -167,6 +167,54 @@ $basePath = getBasePath();
     }
     const token = cookieToken || localStorage.getItem('rf_token') || '<?php echo $token; ?>';
     const headers = token ? {'Authorization':'Bearer '+token, 'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+    // Populate month filter with only actual billed months, newest first.
+    async function loadAvailableMonths() {
+        const select = document.getElementById('monthFilter');
+        if (!select) return;
+
+        try {
+            const url = new URL(`${API}/bills/months`, window.location.origin);
+            const propertySelect = document.getElementById('propertyFilter');
+            if (propertySelect && propertySelect.value) {
+                url.searchParams.set('property_id', propertySelect.value);
+            }
+
+            const data = await apiRequest(url.pathname + url.search);
+            const months = Array.isArray(data.months) ? data.months : [];
+            select.innerHTML = '';
+
+            if (!months.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No billed months';
+                select.appendChild(opt);
+                loadBills();
+                return;
+            }
+
+            months.forEach((month) => {
+                const opt = document.createElement('option');
+                opt.value = month;
+                opt.textContent = new Date(month + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
+                select.appendChild(opt);
+            });
+
+            const latestMonth = months[0];
+            if (latestMonth) {
+                select.value = latestMonth;
+            }
+
+            loadBills();
+        } catch (e) {
+            console.error('Failed to load billed months', e);
+            const opt = document.createElement('option');
+            opt.value = new Date().toISOString().substring(0, 7);
+            opt.textContent = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+            select.innerHTML = '';
+            select.appendChild(opt);
+            loadBills();
+        }
+    }
     // Owners and caretakers can edit bill line items to standardize invoices
     const canEditBill = ['owner','caretaker'].includes('<?php echo $role; ?>');
     const BILLS_PER_PAGE_KEY = 'rf_bills_per_page';
@@ -371,6 +419,7 @@ let currentEditBillId = null;
             await apiRequest(`${API}/bills/${currentEditBillId}`, { method:'PUT', body: JSON.stringify({ items }) });
             toast('Bill updated! Paid & balance recalculated.', 'success');
             closeEditBill();
+            await loadAvailableMonths();
             loadBills();
         } catch(e) {
             toast(e.message, 'error');
@@ -412,7 +461,7 @@ let currentEditBillId = null;
             closeBillingModal();
             const msg = result.message || (result.count > 0 ? 'Bills generated successfully!' : 'No new bills were created.');
             toast(msg, result.already_existed ? 'info' : 'success');
-            loadBills();
+            await loadAvailableMonths();
         } catch(err) { toast(err.message, 'error'); }
         finally {
             btn.disabled = false;
@@ -436,9 +485,11 @@ let currentEditBillId = null;
     }
 
     document.getElementById('monthFilter')?.addEventListener('change', loadBills);
-    document.getElementById('propertyFilter')?.addEventListener('change', loadBills);
+    document.getElementById('propertyFilter')?.addEventListener('change', async () => {
+        await loadAvailableMonths();
+    });
 
-    loadBills();
+    loadAvailableMonths();
     loadProperties();
     </script>
 </body>
