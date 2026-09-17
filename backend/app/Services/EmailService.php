@@ -103,7 +103,7 @@ class EmailService
         return null;
     }
     
-    public function replaceVariables(string $content, array $data): string
+    public static function replaceVariables(string $content, array $data): string
     {
         // Build invoice section if invoice_url is provided
         $invoiceSection = '';
@@ -141,12 +141,37 @@ class EmailService
             '{{next_of_kin_intro}}' => $data['next_of_kin_intro'] ?? '',
             '{{recipient_name}}' => $data['recipient_name'] ?? '',
             '{{recipient_note}}' => $data['recipient_note'] ?? '',
+            '{{amount_paid}}' => $data['amount_paid'] ?? '',
+            '{{outstanding_balance}}' => $data['outstanding_balance'] ?? '',
+
             '{{payment_instructions}}' => $data['payment_instructions'] ?? '',
             '{{invoice_section}}' => $invoiceSection,
             '{{invoice_url}}' => $data['invoice_url'] ?? '',
         ];
-        
+
         return str_replace(array_keys($replacements), array_values($replacements), $content);
+    }
+
+    /**
+     * Detect unresolved template placeholders (e.g. {{recipient_note}}, ${foo})
+     * that would otherwise be delivered verbatim to tenants.
+     */
+    public static function containsUnresolvedPlaceholders(string $content): bool
+    {
+        return (bool) preg_match('/\{\{\s*[a-zA-Z0-9_.\-]+\s*\}\}|\$\{[a-zA-Z0-9_.\-]+\}/', $content);
+    }
+
+    /**
+     * Safety net: strip any unresolved template placeholders so a production
+     * email can NEVER contain raw variables like {{recipient_note}}.
+     */
+    public static function stripUnresolvedPlaceholders(string $content): string
+    {
+        $content = preg_replace('/[ \t]*\{\{\s*[a-zA-Z0-9_.\-]+\s*\}\}[ \t]*/', '', $content);
+        $content = preg_replace('/\$\{[a-zA-Z0-9_.\-]+\}/', '', $content);
+        // Collapse any blank lines left behind by removed placeholder lines
+        $content = preg_replace("/\n{3,}/", "\n\n", $content);
+        return $content ?? '';
     }
     
     /**
@@ -160,6 +185,12 @@ class EmailService
             if ($template) {
                 $subject = $this->replaceVariables($template['subject'], $variables);
                 $body = $this->replaceVariables($template['body'], $variables);
+                // Never deliver unresolved template variables to tenants.
+                $subject = self::stripUnresolvedPlaceholders($subject);
+                $body = self::stripUnresolvedPlaceholders($body);
+                if (self::containsUnresolvedPlaceholders($subject . $body)) {
+                    error_log("sendTemplate: unresolved placeholders still present for $templateName to $toEmail (should not happen)");
+                }
                 $result = $this->send($toEmail, $toName, $subject, $body);
                 if ($result) return true;
                 error_log("sendTemplate: send() failed for $templateName to $toEmail");
@@ -193,8 +224,8 @@ class EmailService
             return false;
         }
 
-        $subject = $this->replaceVariables($template['subject'], $variables);
-        $body = $this->replaceVariables($template['body'], $variables);
+        $subject = self::stripUnresolvedPlaceholders($this->replaceVariables($template['subject'], $variables));
+        $body = self::stripUnresolvedPlaceholders($this->replaceVariables($template['body'], $variables));
 
         if ($this->queueEnabled) {
             $queued = $this->queueService->queue(
@@ -233,6 +264,11 @@ class EmailService
         $errorMsg = null;
         
         try {
+            // Final safety net: never deliver unresolved template variables,
+            // regardless of which code path produced the content.
+            $subject = self::stripUnresolvedPlaceholders($subject);
+            $body = self::stripUnresolvedPlaceholders($body);
+
             // Validate recipient up front rather than discovering it late in RCPT TO
             if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
                 error_log("EMAIL ERROR: Invalid recipient address: {$toEmail}");

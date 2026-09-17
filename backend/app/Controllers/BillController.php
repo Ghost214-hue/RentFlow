@@ -68,28 +68,19 @@ class BillController
         $bills = $db->fetchAll($sql, $queryParams);
         $billingService = new BillingService();
 
-        // Carry previous month arrears/credit into the selected bill month so
-        // August edits automatically affect the next month's billed amount.
+        // Authoritative financial snapshot: all displayed figures come from
+        // BillingService (persisted bill_items + payment_allocations +
+        // carry-forward). No independent recalculation here, and balances are
+        // never negative — overpayments are tenant credit, not negative debt.
         foreach ($bills as &$bill) {
-            $tenantId = (int) ($bill['tenant_id'] ?? 0);
-            $carryForward = $tenantId > 0 ? $billingService->getTenantCarryForward($tenantId, $bill['month']) : ['balance' => 0.0, 'credit' => 0.0];
-            $adjustedTotal = max(0.0, (float) $bill['total'] + (float) $carryForward['balance'] - (float) $carryForward['credit']);
-            $bill['opening_balance'] = (float) $carryForward['balance'];
-            $bill['credit_applied'] = (float) $carryForward['credit'];
-            $bill['amount'] = $adjustedTotal;
+            $snapshot = $billingService->getAuthoritativeSnapshot($bill);
 
-            $paid = $billingService->getBillPaidTotal($bill);
-
-            $bill['paid'] = $paid;
-            // Allow negative balance to represent overpayment/credit for next month
-            $bill['balance'] = (float)$adjustedTotal - (float)$paid;
-            if ($paid <= 0) {
-                $bill['status'] = 'pending';
-            } elseif ($paid >= $adjustedTotal) {
-                $bill['status'] = 'paid';
-            } else {
-                $bill['status'] = 'partial';
-            }
+            $bill['opening_balance'] = $snapshot['opening_balance'];
+            $bill['credit_applied']  = $snapshot['credit_applied'];
+            $bill['amount']          = $snapshot['total'];
+            $bill['paid']            = $snapshot['paid'];
+            $bill['balance']         = $snapshot['balance'];
+            $bill['status']          = $snapshot['display_status'];
         }
         unset($bill);
 
@@ -203,6 +194,12 @@ class BillController
         $newHouses = [];
         $billingService = new BillingService();
 
+        // Financial transaction: bill + bill items are created atomically. If
+        // anything fails mid-generation, everything rolls back — no partially
+        // created bills, and (because emails are sent after commit) no email
+        // can ever go out for a bill that failed to persist.
+        $db->beginTransaction();
+        try {
         foreach ($houses as $house) {
             $water = (float) ($data['water_charges'][$house['id']] ?? 0);
             $electricity = (float) ($data['elec_charges'][$house['id']] ?? 0);
@@ -266,6 +263,13 @@ class BillController
                 ];
             }
         }
+        } catch (\Throwable $e) {
+            $db->rollback();
+            error_log('Bill generation rolled back: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Bill generation failed and was rolled back: ' . $e->getMessage()], 500);
+            return;
+        }
+        $db->commit();
 
         // If there are no occupied units to bill, report that clearly.
         if (empty($houses)) {
@@ -331,9 +335,30 @@ class BillController
                         $emailFailed++;
                         continue;
                     }
-                    
-                    $totalBill = array_sum(array_column($tenantBills, 'total'));
-                    
+
+                    // AUTHORITATIVE EMAIL FIGURES: the email must show exactly
+                    // what the Bills page and the invoice PDF show. Use the
+                    // shared BillingService snapshot (persisted items +
+                    // allocations + carry-forward), never a re-derived total.
+                    $emailTotal = 0.0;
+                    $emailPaid = 0.0;
+                    $emailOpening = 0.0;
+                    $emailCredit = 0.0;
+                    foreach ($tenantBills as $tenantBill) {
+                        $snapshot = $billingService->getAuthoritativeSnapshot($tenantBill);
+                        $emailTotal   += $snapshot['total'];
+                        $emailPaid    += $snapshot['paid'];
+                        $emailOpening += $snapshot['opening_balance'];
+                        $emailCredit  += $snapshot['credit_applied'];
+                    }
+                    $emailFinancials = BillingService::finalizeFinancials(
+                        $emailTotal - $emailOpening + $emailCredit,
+                        $emailPaid,
+                        $emailOpening,
+                        $emailCredit
+                    );
+                    $emailBalance = $emailFinancials['balance'];
+
                     // Generate invoice token
                     $jwt = new JWT();
                     $invoiceToken = $jwt->encode([
@@ -350,11 +375,13 @@ class BillController
                         'tenant' => $tenant['name'],
                         'recipient_name' => $tenant['name'],
                         'recipient_note' => 'This is the monthly invoice for your tenancy at ' . ($house['property_name'] ?? 'our property') . ', unit ' . ($house['unit'] ?? '') . '.',
-                        'amount' => number_format($totalBill, 2),
+                        'amount' => number_format($emailFinancials['total'], 2),
                         'month' => date('F Y', strtotime($month . '-01')),
                         'property' => $house['property_name'] ?? '',
                         'house' => $house['unit'] ?? '',
-                        'balance' => number_format($totalBill, 2),
+                        'balance' => number_format($emailBalance, 2),
+                        'amount_paid' => number_format($emailFinancials['paid'], 2),
+                        'outstanding_balance' => number_format($emailBalance, 2),
                         'date' => date('Y-m-d'),
                         'invoice_url' => $invoiceUrl,
                         'owner_name' => $ownerName,
@@ -685,9 +712,11 @@ class BillController
             );
 
             $items = [];
-            $grandTotal = 0.0;
+            $itemsTotal = 0.0;
+            $billIds = [];
             foreach ($allBills as $monthlyBill) {
                 $billingService->ensureLegacyBillItems($monthlyBill);
+                $billIds[] = (int) $monthlyBill['id'];
                 $billItems = $billingService->getBillItems((int)$monthlyBill['id']);
                 foreach ($billItems as $item) {
                     $items[] = array_merge($item, [
@@ -695,104 +724,103 @@ class BillController
                         'bill_month' => $monthlyBill['month'],
                         'tenant_name' => $monthlyBill['tenant_name'] ?? $bill['tenant_name'] ?? null,
                     ]);
-                    $grandTotal += (float)$item['amount'];
+                    $itemsTotal += (float)$item['amount'];
                 }
             }
 
+            // AUTHORITATIVE READ: the invoice aggregates ONLY persisted bill
+            // items and payment allocations for the tenant's own bills this
+            // month. Opening balance / credit come from the tenant carry-
+            // forward ONCE (prior-month payments are already netted inside it,
+            // so summing cross-month allocations here would double-count them).
             $carryForward = $billingService->getTenantCarryForward((int)$tenantId, $bill['month']);
-            $openingBalance = (float)($carryForward['balance'] ?? 0.0);
-            $creditApplied = (float)($carryForward['credit'] ?? 0.0);
-            if ($openingBalance > 0) {
-                $items[] = [
+
+            $paymentRows = [];
+            $totalPaid = 0.0;
+            if (!empty($billIds)) {
+                $inClause = implode(',', array_fill(0, count($billIds), '?'));
+                $paymentRows = $db->fetchAll(
+                    "SELECT p.*, COALESCE(SUM(pa.amount), 0) as allocated_amount
+                     FROM payments p
+                     JOIN payment_allocations pa ON pa.payment_id = p.id
+                     WHERE pa.bill_item_id IN (SELECT id FROM bill_items WHERE bill_id IN ($inClause))
+                       AND p.status IN ('confirmed','completed','paid')
+                     GROUP BY p.id
+                     ORDER BY p.created_at DESC",
+                    $billIds
+                );
+                $totalPaid = array_sum(array_column($paymentRows, 'allocated_amount'));
+            }
+
+            $financials = \App\Services\BillingService::finalizeFinancials(
+                $itemsTotal,
+                $totalPaid,
+                (float)($carryForward['balance'] ?? 0.0),
+                (float)($carryForward['credit'] ?? 0.0)
+            );
+            // Display-only carry-forward line (exactly once, never persisted)
+            if ($financials['opening_balance'] > 0) {
+                array_splice($items, 1, 0, [[
                     'id' => 0,
                     'bill_id' => $bill['id'],
                     'type' => 'Opening Balance',
                     'description' => 'Previous Month Balance',
-                    'amount' => $openingBalance,
+                    'amount' => $financials['opening_balance'],
                     'paid' => 0.0,
                     'status' => 'pending',
                     'bill_month' => $bill['month'],
                     'tenant_name' => $bill['tenant_name'] ?? null,
-                ];
-                $grandTotal += $openingBalance;
+                ]]);
             }
-            if ($creditApplied > 0) {
-                $grandTotal = max(0.0, $grandTotal - $creditApplied);
-            }
-
-            $paymentRows = $db->fetchAll(
-                "SELECT DISTINCT p.*, COALESCE(SUM(pa.amount), 0) as allocated_amount
-                 FROM payments p
-                 JOIN payment_allocations pa ON pa.payment_id = p.id
-                 JOIN bill_items bi ON pa.bill_item_id = bi.id
-                 JOIN bills b ON bi.bill_id = b.id
-                 WHERE b.owner_id = ? AND b.tenant_id = ? AND b.month <= ? AND p.status IN ('confirmed','completed','paid')
-                 GROUP BY p.id
-                 ORDER BY p.created_at DESC",
-                [$ownerId, $tenantId, $bill['month']]
-            );
-
-            $allPayments = $paymentRows;
-            $totalPaid = array_sum(array_column($allPayments, 'allocated_amount'));
-            $balance = (float)$grandTotal - $totalPaid;  // Allow negative for overpayment/credit
-            $status = $totalPaid <= 0 ? 'PENDING' : ($totalPaid >= $grandTotal ? 'PAID' : 'PARTIAL');
 
             $bill['items'] = $items;
-            $bill['total'] = $grandTotal;
-            $this->generateInvoicePdf($bill, $items, $allPayments, $totalPaid, $balance, $status, true);
+            $bill['total'] = $financials['total'];
+            $this->generateInvoicePdf($bill, $items, $paymentRows, $financials['paid'], $financials['balance'], strtoupper($financials['status']), true);
             return;
         }
 
+        // AUTHORITATIVE READ: the invoice must never recalculate financials.
+        // It loads the bill's persisted items, this bill's payment allocations
+        // and the tenant carry-forward, then derives everything through the
+        // same BillingService helpers used by the Bills page, emails and the
+        // tenant portal — guaranteeing identical numbers everywhere.
         $billingService->ensureLegacyBillItems($bill);
         $items = $billingService->getBillItems($billId);
         $bill['items'] = $items;
 
-        $carryForward = $billingService->getTenantCarryForward((int)($bill['tenant_id'] ?? 0), $bill['month']);
-        $openingBalance = (float)($carryForward['balance'] ?? 0.0);
-        $creditApplied = (float)($carryForward['credit'] ?? 0.0);
-        if ($openingBalance > 0) {
-            $items[] = [
+        $snapshot = $billingService->getAuthoritativeSnapshot($bill);
+
+        // Display-only carry-forward line (exactly once, never persisted)
+        if ($snapshot['opening_balance'] > 0) {
+            array_splice($items, 1, 0, [[
                 'id' => 0,
                 'bill_id' => $billId,
                 'type' => 'Opening Balance',
                 'description' => 'Previous Month Balance',
-                'amount' => $openingBalance,
+                'amount' => $snapshot['opening_balance'],
                 'paid' => 0.0,
                 'status' => 'pending',
-            ];
+            ]]);
         }
-        $billTotal = array_sum(array_map(fn($item) => (float)($item['amount'] ?? 0), $items));
-        if ($creditApplied > 0) {
-            $billTotal = max(0.0, $billTotal - $creditApplied);
-        }
-        $bill['total'] = $billTotal;
 
+        $payments = [];
         if (!empty($items)) {
             $payments = $db->fetchAll(
-                "SELECT DISTINCT p.*, COALESCE(SUM(pa.amount), 0) as allocated_amount
+                "SELECT p.*, COALESCE(SUM(pa.amount), 0) as allocated_amount
                  FROM payments p
                  JOIN payment_allocations pa ON pa.payment_id = p.id
-                 JOIN bill_items bi ON pa.bill_item_id = bi.id
-                 JOIN bills b ON bi.bill_id = b.id
-                 WHERE b.tenant_id = ? AND b.owner_id = ? AND b.month <= ? AND p.status IN ('confirmed','completed','paid')
+                 WHERE pa.bill_item_id IN (SELECT id FROM bill_items WHERE bill_id = ?)
+                   AND p.status IN ('confirmed','completed','paid')
                  GROUP BY p.id
                  ORDER BY p.created_at DESC",
-                [(int)$bill['tenant_id'], $ownerId, $bill['month']]
+                [$billId]
             );
-            $totalPaid = array_sum(array_column($payments, 'allocated_amount'));
-        } else {
-            $payments = $db->fetchAll(
-                "SELECT * FROM payments WHERE tenant_id = ? AND owner_id = ? AND month <= ? AND status IN ('confirmed','completed','paid') ORDER BY created_at DESC",
-                [(int)$bill['tenant_id'], $ownerId, $bill['month']]
-            );
-            $totalPaid = array_sum(array_column($payments, 'amount'));
         }
 
-        $balance = (float)$bill['total'] - $totalPaid;  // Allow negative for overpayment/credit
-        $status = $totalPaid <= 0 ? 'PENDING' : ($totalPaid >= (float)$bill['total'] ? 'PAID' : 'PARTIAL');
+        $bill['total'] = $snapshot['total'];
 
         // Generate professional invoice PDF
-        $this->generateInvoicePdf($bill, $items, $payments, $totalPaid, $balance, $status, false);
+        $this->generateInvoicePdf($bill, $items, $payments, $snapshot['paid'], $snapshot['balance'], strtoupper($snapshot['status']), false);
     }
 
     /**

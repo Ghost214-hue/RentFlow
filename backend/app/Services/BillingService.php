@@ -322,4 +322,123 @@ class BillingService
 
         return ['balance' => $balance, 'credit' => $credit];
     }
+    // =====================================================================
+    // AUTHORITATIVE FINANCIAL DERIVATION (single source of truth)
+    // ---------------------------------------------------------------------
+    // Every consumer of financial figures — Bills list, single bill view,
+    // invoice PDF, billing email, tenant portal, reports — MUST derive its
+    // numbers through these helpers. No layer may recalculate rent, opening
+    // balances, payments or status independently.
+    // =====================================================================
+
+    /**
+     * Pure, side-effect-free derivation of the authoritative financial
+     * position of a bill from its components:
+     *
+     *   itemsTotal : sum of the bill's persisted bill_items amounts
+     *   paid       : sum of confirmed payment_allocations for this bill
+     *   opening    : prior-month outstanding balance (carry forward)
+     *   credit     : tenant credit applied to this bill
+     *
+     * Guarantees:
+     *   - balance is NEVER negative (overpayments become tenant credit via
+     *     recalcTenantCreditAndBalance, not a negative bill balance)
+     *   - status follows: PAID / PARTIAL / PENDING (OVERDUE derived at read
+     *     time from due_date via deriveStatusWithDueDate)
+     */
+    public static function finalizeFinancials(float $itemsTotal, float $paid, float $opening = 0.0, float $credit = 0.0): array
+    {
+        $itemsTotal = max(0.0, $itemsTotal);
+        $paid       = max(0.0, $paid);
+        $opening    = max(0.0, $opening);
+        $credit     = max(0.0, $credit);
+
+        $total   = max(0.0, $itemsTotal + $opening - $credit);
+        $balance = max(0.0, $total - $paid);
+
+        return [
+            'total'           => round($total, 2),
+            'paid'            => round(min($paid, $total), 2),
+            'balance'         => round($balance, 2),
+            'status'          => self::deriveStatus($total, $paid),
+            'items_total'     => round($itemsTotal, 2),
+            'opening_balance' => round($opening, 2),
+            'credit_applied'  => round($credit, 2),
+        ];
+    }
+
+    /**
+     * Derive bill status consistently across all surfaces.
+     */
+    public static function deriveStatus(float $total, float $paid): string
+    {
+        $total = max(0.0, $total);
+        $paid  = max(0.0, $paid);
+
+        if ($total <= 0.0) {
+            // A zero-total bill is nothing owed; any payment made against it
+            // is tenant credit, not a negative balance.
+            return 'paid';
+        }
+        if ($paid <= 0.0) {
+            return 'pending';
+        }
+        if ($paid + 0.001 >= $total) {
+            return 'paid';
+        }
+        return 'partial';
+    }
+
+    /**
+     * Status including the OVERDUE state once the due date has passed.
+     */
+    public static function deriveStatusWithDueDate(float $total, float $paid, ?string $dueDate): string
+    {
+        $status = self::deriveStatus($total, $paid);
+        if ($status === 'pending' && $dueDate && strtotime($dueDate) < time()) {
+            return 'overdue';
+        }
+        return $status;
+    }
+
+    /**
+     * Authoritative snapshot for one bill row, reading ONLY persisted data:
+     * bill_items, payment_allocations and the tenant carry-forward.
+     * Used by the bills list, invoice, email and tenant portal so that every
+     * surface reports identical numbers.
+     */
+    public function getAuthoritativeSnapshot(array $bill): array
+    {
+        $billId = (int) ($bill['id'] ?? 0);
+        $this->ensureLegacyBillItems($bill);
+
+        $itemsRow = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(amount), 0) AS item_total
+             FROM bill_items WHERE bill_id = ?",
+            [$billId]
+        );
+        $itemsTotal = max(0.0, (float) ($itemsRow['item_total'] ?? 0));
+
+        $paid = $this->getBillPaidTotal($bill);
+
+        $tenantId = (int) ($bill['tenant_id'] ?? 0);
+        $carry = $tenantId > 0
+            ? $this->getTenantCarryForward($tenantId, (string) ($bill['month'] ?? ''))
+            : ['balance' => 0.0, 'credit' => 0.0];
+
+        $snapshot = self::finalizeFinancials(
+            $itemsTotal,
+            $paid,
+            (float) $carry['balance'],
+            (float) $carry['credit']
+        );
+        $snapshot['due_date'] = $bill['due_date'] ?? null;
+        $snapshot['display_status'] = self::deriveStatusWithDueDate(
+            $snapshot['total'],
+            $snapshot['paid'],
+            $snapshot['due_date']
+        );
+        return $snapshot;
+    }
 }
+

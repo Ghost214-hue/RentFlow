@@ -109,7 +109,7 @@ $basePath = getBasePath();
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h3 class="text-lg font-bold text-slate-900" id="editBillTitle">Edit Bill</h3>
-                    <p class="text-xs text-slate-400 mt-0.5">Adjust line items to standardize the invoice. Paid amounts update automatically from recorded payments.</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Adjust line items — the balance and invoice update automatically. Paid amounts come from recorded payments.</p>
                 </div>
                 <button onclick="closeEditBill()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
             </div>
@@ -126,16 +126,37 @@ $basePath = getBasePath();
                     </div>
                     <div id="billItemsContainer" class="space-y-2"></div>
                 </div>
-                <div class="bg-slate-50 rounded-xl p-4 flex items-center justify-between border border-slate-100">
-                    <span class="text-sm font-semibold text-slate-700">Total</span>
-                    <div class="text-right">
-                        <div class="text-lg font-bold text-slate-900" id="editBillTotal">KES 0</div>
-                        <div class="text-xs text-slate-400">Paid to date: <span class="text-emerald-600 font-medium" id="editBillPaid">KES 0</span></div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                        <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Total</div>
+                        <div class="text-base font-bold text-slate-900 mt-1" id="editBillTotal">KES 0</div>
+                    </div>
+                    <div class="bg-emerald-50/70 rounded-xl p-3 border border-emerald-100/70 text-center">
+                        <div class="text-xs font-medium text-emerald-600 uppercase tracking-wide">Paid</div>
+                        <div class="text-base font-bold text-emerald-700 mt-1" id="editBillPaid">KES 0</div>
+                    </div>
+                    <div id="editBillBalanceCard" class="bg-amber-50 rounded-xl p-3 border border-amber-200/70 text-center">
+                        <div class="text-xs font-medium text-amber-600 uppercase tracking-wide">Balance</div>
+                        <div class="text-base font-bold text-amber-700 mt-1" id="editBillBalance">KES 0</div>
+                        <div class="text-[10px] font-medium mt-0.5" id="editBillBalanceStatus">Outstanding</div>
                     </div>
                 </div>
-                <div class="bg-amber-50/70 rounded-xl p-3 border border-amber-100/70 flex items-start gap-2">
+                <div id="editBillOverpayWarning" class="hidden bg-blue-50/70 rounded-xl p-3 border border-blue-200/70 flex items-start gap-2">
+                    <i class="fas fa-hand-holding-heart text-blue-500 mt-0.5"></i>
+                    <p class="text-xs text-slate-700"><span id="editBillOverpayText"></span></p>
+                </div>
+                <div class="flex items-center gap-3 bg-blue-50/50 rounded-xl p-3 border border-blue-100/70">
+                    <label class="text-xs font-semibold text-slate-700 whitespace-nowrap">Set balance to</label>
+                    <div class="relative flex-1 max-w-[160px]">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">KES</span>
+                        <input type="number" min="0" step="0.01" id="billTargetBalance" class="w-full pl-10 pr-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none" placeholder="0.00">
+                    </div>
+                    <button type="button" onclick="applyTargetBalance()" class="px-3 py-2 text-xs font-medium bg-white text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all inline-flex items-center gap-1 whitespace-nowrap"><i class="fas fa-bullseye"></i> Apply</button>
+                    <p class="text-xs text-slate-400 flex-1 min-w-0">Rescales the adjustable line items so the bill's balance equals this amount — saved as real line items, never a bare override.</p>
+                </div>
+                <div class="bg-amber-50/70 rounded-xl p-3 border border-amber-100/70 flex items-start gap-2" id="editBillHint">
                     <i class="fas fa-info-circle text-amber-500 mt-0.5"></i>
-                    <p class="text-xs text-slate-600">Items that already have payments allocated cannot be removed, but their amounts can be adjusted. Lowering an amount below what's been paid becomes an overpayment/credit.</p>
+                    <p class="text-xs text-slate-600">Items with payments allocated cannot be removed, but their amounts can be adjusted. Balance updates live as you edit.</p>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="closeEditBill()" class="px-5 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-xl font-medium hover:bg-blue-50 transition-all text-sm">Cancel</button>
@@ -326,7 +347,7 @@ let currentEditBillId = null;
 
     function billItemRow(item) {
         const itemId = item && item.id ? item.id : '';
-        const paid = item && item.paid ? item.paid : 0;
+        const paid = item && item.paid != null ? parseFloat(item.paid) : 0;
         const type = item && item.type ? item.type : 'Rent';
         const description = item && item.description ? item.description : '';
         const amount = item && item.amount != null ? item.amount : (itemId ? 0 : '');
@@ -350,8 +371,43 @@ let currentEditBillId = null;
         document.querySelectorAll('#billItemsContainer .bill-item-row').forEach(row => {
             total += parseFloat(row.querySelector('.bill-item-amount').value) || 0;
         });
-        document.getElementById('editBillTotal').textContent = 'KES ' + total.toLocaleString();
-        document.getElementById('editBillPaid').textContent = 'KES ' + (currentEditBillPaid||0).toLocaleString();
+        const paid = parseFloat(currentEditBillPaid) || 0;
+        const rawBalance = total - paid;
+        const balance = Math.max(0, rawBalance);
+        const overpay = Math.max(0, -rawBalance);
+
+        document.getElementById('editBillTotal').textContent = 'KES ' + total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('editBillPaid').textContent = 'KES ' + paid.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('editBillBalance').textContent = 'KES ' + balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        // Live status chip + color for the balance card
+        const card = document.getElementById('editBillBalanceCard');
+        const status = document.getElementById('editBillBalanceStatus');
+        const warning = document.getElementById('editBillOverpayWarning');
+        const setCard = (bg, border, text, label) => {
+            card.className = bg + ' rounded-xl p-3 border text-center ' + border;
+            document.querySelector('#editBillBalanceCard .text-xs').className = 'text-xs font-medium uppercase tracking-wide ' + text;
+            document.getElementById('editBillBalance').className = 'text-base font-bold mt-1 ' + text;
+            status.textContent = label;
+        };
+        if (total > 0 && paid >= total - 0.001) {
+            setCard('bg-emerald-50', 'border-emerald-200/70', 'text-emerald-700', 'Fully Settled');
+        } else if (total > 0 && paid > 0) {
+            setCard('bg-amber-50', 'border-amber-200/70', 'text-amber-700', 'Partially Paid');
+        } else {
+            setCard('bg-amber-50', 'border-amber-200/70', 'text-amber-700', 'Outstanding');
+        }
+
+        // Overpayment / credit warning when total is lowered below paid
+        if (overpay > 0) {
+            document.getElementById('editBillOverpayText').textContent =
+                'New total is KES ' + overpay.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
+                ' below what has been paid. The extra KES ' + overpay.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
+                ' becomes tenant credit applied to future bills, and the invoice will reflect the reduced total.';
+            warning.classList.remove('hidden');
+        } else {
+            warning.classList.add('hidden');
+        }
     }
 
     function addBillItemRow() {
@@ -360,6 +416,49 @@ let currentEditBillId = null;
         wrapper.innerHTML = billItemRow(null);
         container.appendChild(wrapper.firstElementChild);
         updateBillSummary();
+    }
+
+    // "Set balance to" helper: rescale the UNLOCKED line items (no payments
+    // allocated) proportionally so the bill's resulting balance equals the
+    // target. Locked items (with payments) are left untouched, so payment
+    // allocations always stay consistent with the amounts on the invoice.
+    function applyTargetBalance() {
+        const targetInput = document.getElementById('billTargetBalance');
+        const target = parseFloat(targetInput.value);
+        if (isNaN(target) || target < 0) { toast('Enter a valid target balance (0 or more)', 'error'); return; }
+
+        const rows = Array.from(document.querySelectorAll('#billItemsContainer .bill-item-row'));
+        const paid = parseFloat(currentEditBillPaid) || 0;
+        const neededTotal = target + paid; // total required for balance === target
+
+        const unlocked = rows.filter(r => (parseFloat(r.dataset.paid) || 0) <= 0);
+        if (!unlocked.length) {
+            toast('All line items have payments allocated — amounts cannot be rescaled to hit this balance. Adjust them manually.', 'error');
+            return;
+        }
+
+        const unlockedTotal = unlocked.reduce((s, r) => s + (parseFloat(r.querySelector('.bill-item-amount').value) || 0), 0);
+        if (unlockedTotal <= 0) {
+            // Nothing to rescale proportionally (e.g. items were zeroed out):
+            // assign the full needed total to the first adjustable item instead.
+            unlocked.forEach((r, idx) => {
+                r.querySelector('.bill-item-amount').value = idx === 0 ? neededTotal.toFixed(2) : '0.00';
+            });
+            updateBillSummary();
+            toast('Items were zeroed out — assigned KES ' + neededTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' to the first adjustable item to reach the target balance. Review, then Save Changes.', 'info');
+            return;
+        }
+
+        const factor = neededTotal / unlockedTotal;
+        if (!isFinite(factor) || factor < 0) { toast('Invalid target balance — please check paid and item amounts', 'error'); return; }
+
+        unlocked.forEach(r => {
+            const input = r.querySelector('.bill-item-amount');
+            const current = parseFloat(input.value) || 0;
+            input.value = (Math.round(current * factor * 100) / 100).toFixed(2);
+        });
+        updateBillSummary();
+        toast('Line items rescaled to hit a balance of KES ' + target.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '. Review, then Save Changes.', 'info');
     }
 
     function removeBillItemRow(btn) {
@@ -387,8 +486,11 @@ let currentEditBillId = null;
             document.getElementById('editBillMonth').textContent = bill.month || 'N/A';
 
             const items = (bill.items && bill.items.length) ? bill.items : [{}];
+            // Compute paid BEFORE rendering rows so the balance card is correct from first paint.
+            // Coerce: the API returns DECIMAL columns as strings (e.g. "0.00"),
+            // and string concatenation here produced garbage like "0.000.00" / NaN.
+            (bill.items||[]).forEach(i => { currentEditBillPaid += parseFloat(i.paid) || 0; });
             document.getElementById('billItemsContainer').innerHTML = items.map(i => billItemRow(i)).join('');
-            (bill.items||[]).forEach(i => { currentEditBillPaid += (i.paid||0); });
 
             updateBillSummary();
             document.getElementById('editBillModal').classList.remove('hidden');
