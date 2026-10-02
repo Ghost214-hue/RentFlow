@@ -3,6 +3,24 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/*
+ * Font Awesome and Inter are bundled from node_modules, NOT pulled from a CDN.
+ *
+ * They were previously @import-ed from cdnjs/googleapis inside this file, and
+ * Tailwind's CSS processing DROPPED both during the build: the compiled
+ * stylesheet contained no reference to either, so every `fa-*` icon in the
+ * ported markup rendered as an empty box. Importing from node_modules means the
+ * bundler can resolve them, and the app works with no internet access.
+ *
+ * Inter first, then Font Awesome, so the icon font cannot win the cascade for
+ * element defaults.
+ */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+
 @theme {
     /*
      * The legacy UI used Inter. Keep it so ported pages are pixel-identical
@@ -10,12 +28,3 @@
      */
     --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
-
-/*
- * Font Awesome is still used by the ported markup (fa-* icons). It is the only
- * external stylesheet; the plan is to replace it with inline SVG components
- * module by module, then drop this.
- */
-@import 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css';
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
