@@ -35,24 +35,51 @@ export function Shell({ children, title, subtitle }: ShellProps) {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-                    {items.map((item) => (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                                isActive(item.href)
-                                    ? 'bg-white/15 text-white'
-                                    : 'text-blue-100/80 hover:bg-white/10 hover:text-white'
-                            }`}
-                            aria-current={isActive(item.href) ? 'page' : undefined}
-                        >
-                            <i
-                                className={`fas ${item.icon} w-5`}
-                                aria-hidden="true"
-                            />
-                            {item.label}
-                        </Link>
-                    ))}
+                    {items.map((item) => {
+                        // A module that has not been ported yet is shown for
+                        // context but is NOT a link: clicking it would 404,
+                        // which reads as a broken app.
+                        if (item.ready === false) {
+                            return (
+                                <span
+                                    key={item.href}
+                                    aria-disabled="true"
+                                    title="Not yet available"
+                                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-blue-100/35 cursor-not-allowed"
+                                >
+                                    <i
+                                        className={`fas ${item.icon} w-5`}
+                                        aria-hidden="true"
+                                    />
+                                    {item.label}
+                                    <span className="ml-auto text-[10px] uppercase tracking-wide bg-white/10 rounded px-1.5 py-0.5">
+                                        Soon
+                                    </span>
+                                </span>
+                            );
+                        }
+
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                                    isActive(item.href)
+                                        ? 'bg-white/15 text-white'
+                                        : 'text-blue-100/80 hover:bg-white/10 hover:text-white'
+                                }`}
+                                aria-current={
+                                    isActive(item.href) ? 'page' : undefined
+                                }
+                            >
+                                <i
+                                    className={`fas ${item.icon} w-5`}
+                                    aria-hidden="true"
+                                />
+                                {item.label}
+                            </Link>
+                        );
+                    })}
                 </nav>
             </aside>
 
