@@ -67,6 +67,21 @@ class AuthenticatedSessionController extends Controller
         Auth::login($actor);
         $request->setUserResolver(static fn () => $actor);
 
+        /*
+         * Record which table the actor lives in. The session guard's provider
+         * is Owner, so a Caretaker or Renter session would otherwise resolve
+         * to null on the next request. AuthenticateLegacyJwt reads these to
+         * rehydrate the correct model.
+         */
+        $request->session()->put([
+            'rf_actor_type' => match (true) {
+                $actor instanceof Owner => 'owner',
+                $actor instanceof Caretaker => 'caretaker',
+                default => 'renter',
+            },
+            'rf_actor_id' => (int) $actor->getAuthIdentifier(),
+        ]);
+
         // The single tenancy axis for every role.
         TenantContext::set(TenantContext::resolveForActor($actor));
 

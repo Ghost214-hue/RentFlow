@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\ResolveTenantBeforeBindings;
 use Illuminate\Foundation\Application;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
@@ -12,9 +15,33 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [
-            \App\Http\Middleware\HandleInertiaRequests::class,
-        ]);
+        /*
+         * Tenancy context must be resolved BEFORE route-model binding.
+         *
+         * SubstituteBindings resolves a {model} parameter before the route's
+         * own middleware (and therefore before authentication) runs. Every
+         * owner-scoped model throws when no context exists, so a route such as
+         * POST /complaints/{complaint}/advance would 500 during binding.
+         *
+         * Laravel's web(replace:) substitutes one middleware for another
+         * and expects a single class name, not a list. ResolveTenantContext is
+         * therefore paired with SubstituteBindings inside one composite
+         * middleware that runs in SubstituteBindings' original slot:
+         *
+         *     ... StartSession -> ResolveTenantBeforeBindings -> (bindings)
+         *
+         * The composite sets the tenancy context and then delegates straight
+         * to SubstituteBindings, which preserves the required ordering without
+         * restating Laravel's default group.
+         */
+        $middleware->web(
+            replace: [
+                SubstituteBindings::class => ResolveTenantBeforeBindings::class,
+            ],
+            append: [
+                HandleInertiaRequests::class,
+            ],
+        );
 
         // During coexistence the legacy app authenticates with an HS256 JWT
         // cookie. The bridge guard turns that into a Laravel session so a user

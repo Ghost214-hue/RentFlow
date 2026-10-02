@@ -46,7 +46,7 @@ export interface House {
     id: number;
     unit: string;
     type: string;
-    /** Decimal(12,2) as a string â€” never a number. */
+    /** Decimal(12,2) as a string Ã¢â‚¬â€ never a number. */
     rent: string;
     status: string;
     property_id: number;
@@ -105,7 +105,7 @@ export interface VacantHouse {
     id: number;
     property_id: number;
     unit: string;
-    /** Money string â€” used to prefill the rent field, never recomputed. */
+    /** Money string Ã¢â‚¬â€ used to prefill the rent field, never recomputed. */
     rent: string;
 }
 
@@ -128,7 +128,7 @@ export interface Bill {
     month: string;
     due_date: string | null;
 
-    /** Authoritative figures from BillSnapshot — never computed client-side. */
+    /** Authoritative figures from BillSnapshot â€” never computed client-side. */
     amount: string;
     paid: string;
     balance: string;
@@ -179,4 +179,41 @@ export interface Payment {
 export interface RenterOption {
     id: number;
     name: string;
+}
+/** A caretaker as returned by CaretakerResource. */
+export interface Caretaker {
+    id: number;
+    name: string;
+    email: string;
+    phone: string | null;
+    id_number: string | null;
+    avatar: string | null;
+    /** Parsed from the CSV column into a real list. */
+    assigned_properties: number[];
+    assigned_count: number;
+    created_at: string | null;
+}
+
+/** A complaint as returned by ComplaintResource. */
+export interface Complaint {
+    id: number;
+    title: string;
+    description: string | null;
+    category: string | null;
+    priority: string;
+    status: string;
+    date: string | null;
+    sender_role: string | null;
+    recipient_type: string | null;
+    recipient_ids: number[];
+    property_id: number | null;
+    property_name: string | null;
+    house_id: number | null;
+    house_unit: string | null;
+    tenant_id: number | null;
+    tenant_name: string | null;
+    timeline: Array<Record<string, unknown>>;
+    comments: string | null;
+    created_at: string | null;
+    updated_at: string | null;
 }

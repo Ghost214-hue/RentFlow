@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Models\Bill;
+use App\Models\Caretaker;
+use App\Models\Complaint;
 use App\Models\House;
 use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Renter;
 use App\Policies\BillPolicy;
+use App\Policies\CaretakerPolicy;
+use App\Policies\ComplaintPolicy;
 use App\Policies\HousePolicy;
 use App\Policies\PaymentPolicy;
 use App\Policies\PropertyPolicy;
@@ -35,6 +39,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Renter::class, RenterPolicy::class);
         Gate::policy(Bill::class, BillPolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);
+        Gate::policy(Complaint::class, ComplaintPolicy::class);
+        Gate::policy(Caretaker::class, CaretakerPolicy::class);
 
         // The legacy UI uses Tailwind-style pagination links.
         Paginator::useTailwind();

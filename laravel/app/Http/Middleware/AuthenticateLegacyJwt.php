@@ -29,7 +29,8 @@ class AuthenticateLegacyJwt
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // Already authenticated through normal Laravel session auth.
+        // Already authenticated through normal Laravel session auth, or the
+        // actor was rehydrated by ResolveTenantContext which runs earlier.
         if ($request->user() !== null) {
             TenantContext::set($this->ownerIdFor($request->user()));
 

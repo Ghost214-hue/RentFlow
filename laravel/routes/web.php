@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\BillController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\CaretakerController;
+use App\Http\Controllers\ComplaintController;
 use App\Http\Controllers\HouseController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RenterController;
@@ -54,4 +56,16 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
     Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
     Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->name('payments.confirm');
+
+    // Caretakers — staff accounts scoped to assigned properties.
+    Route::get('/caretakers', [CaretakerController::class, 'index'])->name('caretakers.index');
+    Route::post('/caretakers', [CaretakerController::class, 'store'])->name('caretakers.store');
+    Route::put('/caretakers/{caretaker}', [CaretakerController::class, 'update'])->name('caretakers.update');
+    Route::delete('/caretakers/{caretaker}', [CaretakerController::class, 'destroy'])->name('caretakers.destroy');
+
+    // Complaints — two-way communication. Visibility follows the recipient list.
+    Route::get('/complaints', [ComplaintController::class, 'index'])->name('complaints.index');
+    Route::post('/complaints', [ComplaintController::class, 'store'])->name('complaints.store');
+    Route::post('/complaints/{complaint}/advance', [ComplaintController::class, 'advance'])->name('complaints.advance');
+    Route::delete('/complaints/{complaint}', [ComplaintController::class, 'destroy'])->name('complaints.destroy');
 });
