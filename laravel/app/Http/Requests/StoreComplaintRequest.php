@@ -41,7 +41,13 @@ class StoreComplaintRequest extends FormRequest
             'priority' => ['nullable', Rule::in(ComplaintPriority::values())],
 
             // A renter cannot name somebody else as the subject.
-            'tenant_id' => [$isRenter ? 'nullable' : 'required', 'integer', Rule::exists('tenants', 'id')],
+                        /*
+             * A renter never sends tenant_id: complaintAttributes() overwrites
+             * it with the authenticated actor. `prohibited` rather than
+             * `nullable` so a crafted value is rejected outright instead of
+             * passing validation and then being silently discarded.
+             */
+            'tenant_id' => [$isRenter ? 'prohibited' : 'required', 'integer', Rule::exists('tenants', 'id')],
             'house_id' => ['nullable', 'integer', Rule::exists('houses', 'id')],
             'property_id' => ['nullable', 'integer', Rule::exists('properties', 'id')],
 

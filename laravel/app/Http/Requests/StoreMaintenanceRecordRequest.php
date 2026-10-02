@@ -41,7 +41,13 @@ class StoreMaintenanceRecordRequest extends FormRequest
             'category' => ['nullable', 'string', 'max:100'],
             'priority' => ['nullable', Rule::in(MaintenancePriority::values())],
 
-            'tenant_id' => [$isRenter ? 'nullable' : 'required', 'integer', Rule::exists('tenants', 'id')],
+                        /*
+             * A renter never sends tenant_id: recordAttributes() overwrites it
+             * with the authenticated actor. `prohibited` rather than
+             * `nullable` so a crafted value is rejected outright instead of
+             * passing validation and then being silently discarded.
+             */
+            'tenant_id' => [$isRenter ? 'prohibited' : 'required', 'integer', Rule::exists('tenants', 'id')],
             'house_id' => [$isRenter ? 'nullable' : 'nullable', 'integer', Rule::exists('houses', 'id')],
             'property_id' => ['nullable', 'integer', Rule::exists('properties', 'id')],
 
