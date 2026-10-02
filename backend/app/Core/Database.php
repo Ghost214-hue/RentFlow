@@ -92,7 +92,16 @@ class Database
             }
         }
 
-        $stmt->execute();
+        // Execute() returns false on failure. Without this check the error was
+        // swallowed: insert() then returned a stale insert_id (often 0) and
+        // callers carried on as if the write had succeeded, which silently
+        // dropped rows (see the billing fixture failures this was found by).
+        if (!$stmt->execute()) {
+            $err = $stmt->error ?: $this->connection->error;
+            $stmt->close();
+            throw new \RuntimeException('Query execution failed: ' . $err);
+        }
+
         return $stmt;
     }
 

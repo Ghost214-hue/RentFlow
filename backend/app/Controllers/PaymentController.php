@@ -98,9 +98,22 @@ class PaymentController
             $data['house_id'] = $tenant['house_id'];
         }
 
-        $receipt = 'RCP-' . date('Y') . '-' . str_pad((time() % 10000), 4, '0', STR_PAD_LEFT);
+        $billingService = new BillingService();
+
+        // Defect 4 fix: the old receipt scheme (time() % 10000) collides within
+        // a second and wraps every ~2.8 hours. Use the monotonic counter.
+        $receipt = $billingService->generateReceiptNumber();
 
         $isTenantSelfPay = ($role === 'tenant');
+
+        // Defect 2 fix: payments.status is an ENUM of
+        // ('completed','pending','failed') and does NOT contain 'confirmed',
+        // so the renter self-pay path wrote a value the column cannot store
+        // (silently becoming '' under non-strict MySQL). 'confirmed' was the
+        // historical meaning of a settled payment, so write 'completed' for
+        // every settled payment. The vocabulary itself is retired at cutover.
+        $paymentStatus = 'completed';
+
         $paymentId = $db->insert('payments', [
             'owner_id'    => $ownerId,
             'tenant_id'   => (int) $data['tenant_id'],
@@ -110,35 +123,46 @@ class PaymentController
             'type'        => $data['type'] ?? 'Rent',
             'method'      => $data['method'] ?? 'M-Pesa',
             'date'        => $data['date'] ?? date('Y-m-d'),
-            'status'      => $isTenantSelfPay ? 'confirmed' : 'completed',
+            'status'      => $paymentStatus,
             'receipt'     => $data['receipt'] ?? $receipt,
             'description' => $data['description'] ?? ($data['type'] ?? 'Rent') . ' Payment',
             'tenant_confirmed' => $isTenantSelfPay ? 1 : 0,
         ]);
 
-        $billingService = new BillingService();
-        $bill = $db->fetchOne(
-            "SELECT id FROM bills WHERE owner_id = ? AND tenant_id = ? AND month = ? ORDER BY id LIMIT 1",
-            [$ownerId, (int)$data['tenant_id'], $data['month'] ?? date('Y-m')]
-        );
+        $tenantIdForPayment = (int) $data['tenant_id'];
+        $paymentMonth = (string) ($data['month'] ?? date('Y-m'));
 
-        if ($bill) {
-            $billingService->allocatePayment(
+        // Defect 1 fix: a payment is no longer confined to the single bill whose
+        // month happens to equal the payment month. It is applied to the chosen
+        // month's bill first, then cascades to the oldest unpaid bills, and any
+        // remainder becomes renter credit. Previously a payment in September
+        // left an unpaid August bill untouched, so arrears rolled forward.
+        $db->beginTransaction();
+        try {
+            $unallocated = $billingService->allocatePaymentToOutstandingBills(
                 $paymentId,
-                (int)$bill['id'],
-                (float)$data['amount'],
+                $tenantIdForPayment,
+                (float) $data['amount'],
+                $paymentMonth,
                 $data['type'] ?? 'Mixed'
             );
-
-            $billTotals = $billingService->getBillTotals((int)$bill['id']);
-            $newStatus = $billTotals['paid'] >= $billTotals['total'] ? 'paid' : ($billTotals['paid'] > 0 ? 'partial' : 'pending');
-            $db->update('bills', ['status' => $newStatus], 'id = ?', [$bill['id']]);
+            $billingService->recalcTenantCreditAndBalance($tenantIdForPayment);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollback();
+            error_log('Payment allocation failed, rolled back: ' . $e->getMessage());
+            Router::jsonResponse(['error' => 'Payment could not be allocated. Please retry.'], 500);
         }
 
-        $paymentStatus = $isTenantSelfPay ? 'confirmed' : 'completed';
-        if (in_array($paymentStatus, ['confirmed', 'completed', 'paid'], true)) {
-            $billingService->recalcTenantCreditAndBalance((int) $data['tenant_id']);
-        }
+        // Balance after this payment, for the confirmation email. Previously
+        // $newBalance was never assigned, so every receipt emailed a hardcoded
+        // "Balance: 0.00" regardless of the renter's real position (defect 3).
+        $tenantAfter = $db->fetchOne(
+            "SELECT id, name, balance, credit FROM tenants WHERE id = ?",
+            [$tenantIdForPayment]
+        );
+        $newBalance = max(0.0, (float) ($tenantAfter['balance'] ?? 0));
+        $newCredit = max(0.0, (float) ($tenantAfter['credit'] ?? 0));
 
         $payment = $db->fetchOne("SELECT * FROM payments WHERE id = ?", [$paymentId]);
         
@@ -174,7 +198,8 @@ class PaymentController
                     // Include arrears/rent info in payment data for email
                     $house = $db->fetchOne("SELECT rent FROM houses WHERE id = ?", [$tenant['house_id']]);
                     $payment['monthly_rent'] = $house ? $house['rent'] : 0;
-                    $payment['balance_after'] = $newBalance ?? 0;
+                    $payment['balance_after'] = $newBalance;
+                    $payment['credit_after'] = $newCredit;
                     
                     $emailSent = $emailService->sendPaymentConfirmation($ownerId, $tenant, $payment);
                     
@@ -189,7 +214,7 @@ class PaymentController
                                 [
                                     'tenant_name' => $tenant['name'],
                                     'amount' => number_format((float)$payment['amount'], 2),
-                                    'balance' => number_format($newBalance ?? 0, 2),
+                                    'balance' => number_format($newBalance, 2),
                                     'property' => '',
                                     'unit' => '',
                                     'receipt' => $payment['receipt'],

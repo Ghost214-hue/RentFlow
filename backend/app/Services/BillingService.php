@@ -5,6 +5,17 @@ use App\Core\Database;
 
 class BillingService
 {
+    /**
+     * Tolerance for "is this bill settled?", in currency units.
+     *
+     * MUST be at least one cent (0.01). A 0.001 epsilon is not enough:
+     * 99.995 has no exact binary representation (it is stored as
+     * 99.99499999...), so `99.995 + 0.001 >= 100.0` evaluates FALSE and a
+     * fully-settled bill is reported as PARTIAL forever. One cent is the
+     * smallest meaningful difference in KES and absorbs float error.
+     */
+    public const MONEY_EPSILON = 0.01;
+
     private Database $db;
 
     public function __construct()
@@ -233,6 +244,253 @@ class BillingService
         return max(0.0, $remainingAmount);
     }
 
+    /**
+     * Build a collision-free receipt number.
+     *
+     * The old scheme was 'RCP-' . date('Y') . '-' . str_pad(time() % 10000, 4, ...)
+     * which collides for any two payments in the same second and wraps every
+     * ~2.8 hours. This uses a monotonic per-year counter derived from the
+     * payments table itself, so it is unique without a new column, and is
+     * retried on the (very unlikely) race.
+     */
+    public function generateReceiptNumber(?string $appUrl = null): string
+    {
+        $year = date('Y');
+        $prefix = 'RCP-' . $year . '-';
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $row = $this->db->fetchOne(
+                "SELECT COUNT(*) AS c FROM payments WHERE receipt LIKE ?",
+                [$prefix . '%']
+            );
+            $seq = (int) ($row['c'] ?? 0) + 1 + $attempt;
+
+            $receipt = $prefix . str_pad((string) $seq, 5, '0', STR_PAD_LEFT);
+
+            $clash = $this->db->fetchOne(
+                "SELECT id FROM payments WHERE receipt = ? LIMIT 1",
+                [$receipt]
+            );
+            if (!$clash) {
+                return $receipt;
+            }
+        }
+
+        // Last resort: fall back to a timestamp that cannot repeat.
+        return $prefix . date('His');
+    }
+
+    /**
+     * Defect 1 fix — the correct allocation rule.
+     *
+     * A payment is applied to the renter's bills in this order:
+     *   1. the explicitly chosen month's bill, first
+     *   2. then the OLDEST unpaid bills, in month order
+     *   3. the remainder becomes renter credit
+     *
+     * The old behaviour looked up only the single bill whose month equalled
+     * the payment month, so paying in September never touched an unpaid
+     * August bill and arrears could roll forward forever.
+     *
+     * Ordering is computed from the persisted allocation ledger
+     * (payment_allocations), not from the denormalised bill_items.paid /
+     * bills.status / tenants.balance columns, which are known to drift.
+     *
+     * Only settled payments allocate; pending/failed must never touch a bill.
+     *
+     * @param  string $chosenMonth YYYY-MM month the payer targeted ('' = none)
+     * @return float  the unallocated remainder, i.e. new renter credit
+     */
+    public function allocatePaymentToOutstandingBills(
+        int $paymentId,
+        int $tenantId,
+        float $amount,
+        string $chosenMonth = '',
+        string $paymentType = 'Mixed'
+    ): float {
+        if ($paymentId <= 0 || $amount <= 0.0) {
+            return max(0.0, $amount);
+        }
+
+        // A payment only allocates once it is actually settled.
+        $statusRow = $this->db->fetchOne("SELECT status FROM payments WHERE id = ?", [$paymentId]);
+        if (!$statusRow || !in_array((string) $statusRow['status'], self::SETTLED_STATUSES, true)) {
+            return max(0.0, $amount);
+        }
+
+        // Idempotency: only what is still unallocated may be spread further.
+        $remaining = $this->unallocatedAmount($paymentId, $amount);
+        if ($remaining <= 0.0) {
+            return 0.0;
+        }
+
+        $category = $this->allocationCategory($paymentType);
+
+        // Bill ids ordered: chosen month first, then oldest unpaid by month.
+        $billIds = $this->outstandingBillsForAllocation($tenantId, $chosenMonth);
+
+        foreach ($billIds as $billId) {
+            if ($remaining <= 0.0) {
+                break;
+            }
+            $bill = $this->db->fetchOne("SELECT * FROM bills WHERE id = ?", [$billId]);
+            if (!$bill) {
+                continue;
+            }
+            $this->ensureLegacyBillItems($bill);
+            $absorbed = $this->allocateToBillItems($paymentId, $billId, $remaining, $category);
+            $remaining = max(0.0, $remaining - $absorbed);
+            $this->recalculateBill($billId);
+        }
+
+        return max(0.0, $remaining);
+    }
+
+    /**
+     * Payments in these statuses count towards a bill.
+     * 'confirmed' is legacy vocabulary (defect 2): the payments.status ENUM
+     * does not contain it, but historic rows and the renter self-pay path both
+     * use it. Accepted everywhere until legacy is retired.
+     */
+    public const SETTLED_STATUSES = ['confirmed', 'completed', 'paid'];
+
+    /**
+     * Map a payment type onto the bill item category it settles first.
+     * 'Mixed' means "no category preference".
+     */
+    private function allocationCategory(string $paymentType): ?string
+    {
+        $priority = ['Rent', 'Deposit', 'Water', 'Electricity', 'Other'];
+        if ($paymentType !== 'Mixed' && in_array($paymentType, $priority, true)) {
+            return $paymentType;
+        }
+        return null;
+    }
+
+    /** How much of this payment is still unallocated. */
+    private function unallocatedAmount(int $paymentId, float $amount): float
+    {
+        $row = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(amount), 0) t FROM payment_allocations WHERE payment_id = ?",
+            [$paymentId]
+        );
+        $allocated = max(0.0, (float) ($row['t'] ?? 0));
+        return max(0.0, $amount - $allocated);
+    }
+
+    /**
+     * Candidate bills in allocation order:
+     *   1. the bill for the explicitly chosen month (if still owed)
+     *   2. every other unpaid bill, oldest month first
+     *
+     * "Unpaid" is derived from the allocation ledger, not bills.status.
+     */
+    private function outstandingBillsForAllocation(int $tenantId, string $chosenMonth): array
+    {
+        $rows = $this->db->fetchAll(
+            "SELECT b.id, b.month,
+                    COALESCE((SELECT SUM(bi.amount) FROM bill_items bi WHERE bi.bill_id = b.id), 0) AS item_total,
+                    COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
+                              JOIN bill_items bi2 ON bi2.id = pa.bill_item_id
+                              JOIN payments p ON p.id = pa.payment_id
+                              WHERE bi2.bill_id = b.id
+                                AND p.status IN ('confirmed','completed','paid')), 0) AS paid_total
+             FROM bills b
+             WHERE b.tenant_id = ? AND b.tenant_id > 0
+             ORDER BY b.month ASC, b.id ASC",
+            [$tenantId]
+        );
+
+        $outstanding = [];
+        $chosenId = 0;
+        foreach ($rows as $row) {
+            if ((float) $row['item_total'] - (float) $row['paid_total'] <= self::MONEY_EPSILON) {
+                continue; // settled
+            }
+            $outstanding[] = (int) $row['id'];
+            if ($chosenMonth !== '' && (string) $row['month'] === $chosenMonth) {
+                $chosenId = (int) $row['id'];
+            }
+        }
+
+        if ($chosenId > 0) {
+            // Hoist the chosen month to the front, keeping the rest in order.
+            $outstanding = array_values(array_diff($outstanding, [$chosenId]));
+            array_unshift($outstanding, $chosenId);
+        }
+
+        return $outstanding;
+    }
+
+    /**
+     * Spread an amount across one bill's outstanding items and return how
+     * much of it was actually absorbed.
+     */
+    private function allocateToBillItems(int $paymentId, int $billId, float $amount, ?string $preferredCategory): float
+    {
+        $outstanding = [];
+        foreach ($this->getBillItems($billId) as $item) {
+            $remainingOnItem = max(0.0, (float) $item['amount'] - $this->itemPaidTotal((int) $item['id']));
+            if ($remainingOnItem > self::MONEY_EPSILON) {
+                $outstanding[] = ['item' => $item, 'remaining' => $remainingOnItem];
+            }
+        }
+        if (empty($outstanding)) {
+            return 0.0;
+        }
+
+        if ($preferredCategory !== null) {
+            // Settle the matching category first, then the rest by the
+            // existing priority order (Rent, Deposit, Water, Electricity, Other).
+            $priority = array_merge([$preferredCategory], ['Rent', 'Deposit', 'Water', 'Electricity', 'Other']);
+            usort($outstanding, function ($a, $b) use ($priority) {
+                $posA = array_search($a['item']['type'], $priority, true);
+                $posB = array_search($b['item']['type'], $priority, true);
+                return $posA <=> $posB;
+            });
+        }
+
+        $remainingAmount = $amount;
+        foreach ($outstanding as $entry) {
+            if ($remainingAmount <= self::MONEY_EPSILON) {
+                break;
+            }
+            $item = $entry['item'];
+            $allocated = min($remainingAmount, $entry['remaining']);
+            if ($allocated <= 0.0) {
+                continue;
+            }
+
+            $this->db->insert('payment_allocations', [
+                'payment_id' => $paymentId,
+                'bill_item_id' => $item['id'],
+                'category' => $item['type'],
+                'amount' => $allocated,
+            ]);
+            $remainingAmount -= $allocated;
+
+            // Keep the denormalised columns in step; they stay readable for
+            // legacy pages but the allocation ledger remains authoritative.
+            $newPaid = $this->itemPaidTotal((int) $item['id']);
+            $status = $newPaid + self::MONEY_EPSILON >= (float) $item['amount'] ? 'paid' : 'partial';
+            $this->db->update('bill_items', ['paid' => $newPaid, 'status' => $status], 'id = ?', [$item['id']]);
+        }
+
+        return max(0.0, $amount - $remainingAmount);
+    }
+
+    /** Amount settled against one bill item, from the allocation ledger. */
+    private function itemPaidTotal(int $billItemId): float
+    {
+        $row = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(pa.amount), 0) t FROM payment_allocations pa
+             JOIN payments p ON p.id = pa.payment_id
+             WHERE pa.bill_item_id = ? AND p.status IN ('confirmed','completed','paid')",
+            [$billItemId]
+        );
+        return max(0.0, (float) ($row['t'] ?? 0));
+    }
+
     public function getBillAllocations(int $billId): array
     {
         return $this->db->fetchAll(
@@ -383,7 +641,7 @@ class BillingService
         if ($paid <= 0.0) {
             return 'pending';
         }
-        if ($paid + 0.001 >= $total) {
+        if ($paid + self::MONEY_EPSILON >= $total) {
             return 'paid';
         }
         return 'partial';

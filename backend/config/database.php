@@ -38,7 +38,10 @@ if ($hostEnv === 'localhost' && (int) $portEnv > 0) {
 return [
     'host'     => $hostEnv,
     'port'     => $portEnv,
-    'dbname'   => \App\Core\Env::get('DB_NAME', 'rentaflow'),
+    // BILLING_TEST_DB lets the regression suite (and the Laravel test suite in
+    // Phase 1) point at a throwaway database without touching the app's own
+    // DB_NAME. It is a test-only override and is absent in production.
+    'dbname'   => getenv('BILLING_TEST_DB') ?: \App\Core\Env::get('DB_NAME', 'rentaflow'),
     'username' => \App\Core\Env::get('DB_USER', 'root'),
     'password' => \App\Core\Env::get('DB_PASS', ''),
     'charset'  => 'utf8mb4',

@@ -13,6 +13,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/Services/BillingService.php';
 require_once __DIR__ . '/../app/Services/EmailService.php';
 require_once __DIR__ . '/../app/Core/Env.php';
+require_once __DIR__ . '/../app/Core/Database.php';
+
+use App\Core\Database;
 
 $pass = 0;
 $fail = 0;
@@ -110,25 +113,231 @@ try {
     echo "  SKIP  MySQL '{$dbName}' not reachable ({$e->getMessage()}). Integration tests skipped.\n";
 }
 
+// Sentinel fixture ids, outside the range of real data. They must be POSITIVE
+// because bills.house_id is INT UNSIGNED with a foreign key to houses(id).
+const FIX_OWNER   = 900001;
+const FIX_TENANT  = 900002;
+const FIX_HOUSE   = 900003;
+const FIX_PROPERTY = 900004;
+
 if ($canRunDb) {
     // Test 6 — duplicate bill generation (Test 7's invoice/page/email equality
     // is guaranteed structurally: all three now share getAuthoritativeSnapshot).
     require_once __DIR__ . '/../app/Core/Database.php';
     $db = Database::getInstance();
-    $db->query("DELETE FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE owner_id = -1)");
-    $db->query("DELETE FROM bills WHERE owner_id = -1");
+
+    /** Remove every fixture row, children first so FK constraints are satisfied. */
+    $purgeFixtures = function () use ($db) {
+        $o = FIX_OWNER;
+        $db->query("DELETE FROM payment_allocations WHERE payment_id IN (SELECT id FROM payments WHERE owner_id = $o)");
+        $db->query("DELETE FROM payments WHERE owner_id = $o");
+        $db->query("DELETE FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE owner_id = $o)");
+        $db->query("DELETE FROM bills WHERE owner_id = $o");
+        $db->query("UPDATE houses SET tenant_id = NULL WHERE owner_id = $o");
+        $db->query("DELETE FROM houses WHERE owner_id = $o");
+        $db->query("DELETE FROM tenants WHERE owner_id = $o");
+        $db->query("DELETE FROM properties WHERE owner_id = $o");
+        $db->query("DELETE FROM owners WHERE id = $o");
+    };
+
+    // owners is the root parent of nearly every table via owner_id FK, so the
+    // fixture must seed it first. owners.id is not AUTO_INCREMENT.
+    $purgeFixtures();
+    $db->insert('owners', [
+        'id' => FIX_OWNER, 'name' => 'Fixture Owner',
+        'email' => 'owner@example.test', 'password' => '$2y$10$fixturefixturefixturefixturefixturefixturefixturefixturefi',
+    ]);
+    $propertyId = $db->insert('properties', [
+        'owner_id' => FIX_OWNER, 'name' => 'Fixture Property', 'address' => 'Test',
+        'type' => 'apartment', 'units' => 1, 'occupied' => 1,
+    ]);
+    $houseId = $db->insert('houses', [
+        'owner_id' => FIX_OWNER, 'property_id' => $propertyId, 'unit' => 'FIX-T6',
+        'type' => 'flat', 'status' => 'occupied', 'rent' => 6500.0,
+    ]);
+
     $svc = new BillingService();
-    $id1 = $svc->createBillWithItems(-1, -1, -1, '2099-01', '2099-01-05', [
+    $id1 = $svc->createBillWithItems(FIX_OWNER, $houseId, null, '2099-01', '2099-01-05', [
         ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => 6500.0],
     ]);
-    $id2 = $svc->createBillWithItems(-1, -1, -1, '2099-01', '2099-01-05', [
+    $id2 = $svc->createBillWithItems(FIX_OWNER, $houseId, null, '2099-01', '2099-01-05', [
         ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => 6500.0],
     ]);
     check('T6: duplicate generation returns the same bill id', $id1 === $id2);
     $count = $db->fetchOne("SELECT COUNT(*) c FROM bill_items WHERE bill_id = ?", [$id1]);
     check('T6: no duplicate bill items after re-generation', (int)$count['c'] === 1);
-    $db->query("DELETE FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE owner_id = -1)");
-    $db->query("DELETE FROM bills WHERE owner_id = -1");
+    $purgeFixtures();
+
+    // =============================================================
+    // Section 3: Payment allocation across months (defect 1)
+    //
+    // THE RULE: a payment is applied to
+    //   1. the explicitly chosen month's bill, first
+    //   2. then the oldest unpaid bills in month order
+    //   3. the remainder becomes renter credit
+    // It must NEVER be limited to the single bill whose month happens
+    // to equal the payment month -- that is what left arrears unpaid.
+    // =============================================================
+    echo "\n=== Section 3: Payment allocation across months (defect 1) ===\n";
+
+    $OWNER = FIX_OWNER;
+    $TENANT = FIX_TENANT;
+    $HOUSE  = FIX_HOUSE;
+    $PROPERTY = FIX_PROPERTY;
+
+    /** Clean two-month arrears: July + August, both unpaid, 5,000 each. */
+    // The property/house/tenant ids are AUTO_INCREMENT, so we must use the ids the
+    // database actually assigns rather than guessing them.
+    $seedArrears = function () use ($db, $purgeFixtures, $OWNER) {
+        $purgeFixtures();
+
+        $db->insert('owners', [
+            'id' => $OWNER, 'name' => 'Fixture Owner',
+            'email' => 'owner@example.test',
+            'password' => '$2y$10$fixturefixturefixturefixturefixturefixturefixturefixturefi',
+        ]);
+        $propertyId = $db->insert('properties', [
+            'owner_id' => $OWNER, 'name' => 'Fixture Property', 'address' => 'Test',
+            'type' => 'apartment', 'units' => 1, 'occupied' => 1,
+        ]);
+        $tenantId = $db->insert('tenants', [
+            'owner_id' => $OWNER, 'property_id' => $propertyId,
+            'name' => 'Fixture Renter', 'email' => 'fixture@example.test',
+            'balance' => 0, 'credit' => 0, 'status' => 'active',
+        ]);
+        $houseId = $db->insert('houses', [
+            'owner_id' => $OWNER, 'property_id' => $propertyId, 'unit' => 'FIX-1',
+            'type' => 'flat', 'status' => 'occupied', 'tenant_id' => $tenantId, 'rent' => 5000.0,
+        ]);
+
+        $svc = new BillingService();
+        $jul = $svc->createBillWithItems($OWNER, $houseId, $tenantId, '2099-07', '2099-07-05', [
+            ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => 5000.0],
+        ]);
+        $aug = $svc->createBillWithItems($OWNER, $houseId, $tenantId, '2099-08', '2099-08-05', [
+            ['type' => 'Rent', 'description' => 'Monthly Rent', 'amount' => 5000.0],
+        ]);
+        // Return the real ids so callers allocate against actual rows.
+        return ['jul' => $jul, 'aug' => $aug, 'tenant' => $tenantId, 'house' => $houseId];
+    };
+
+    /** Record a payment row for the fixture renter. */
+    $makePayment = function (string $receipt, string $month, float $amount, string $status = 'completed', int $tenantId = 0, int $houseId = 0) use ($db, $OWNER) {
+        return $db->insert('payments', [
+            'owner_id' => $OWNER, 'tenant_id' => $tenantId, 'house_id' => $houseId,
+            'month' => $month, 'amount' => $amount, 'type' => 'Rent',
+            'method' => 'M-Pesa', 'date' => $month . '-06',
+            'status' => $status, 'receipt' => $receipt,
+        ]);
+    };
+
+    /** Total allocated to a bill across all of its items. */
+    $billPaid = function (int $billId) use ($db) {
+        $r = $db->fetchOne(
+            "SELECT COALESCE(SUM(pa.amount),0) t FROM payment_allocations pa
+             JOIN bill_items bi ON bi.id = pa.bill_item_id
+             JOIN payments p ON p.id = pa.payment_id
+             WHERE bi.bill_id = ? AND p.status IN ('confirmed','completed','paid')",
+            [$billId]
+        );
+        return (float) $r['t'];
+    };
+
+    $svc = new BillingService();
+
+    // --- T19: WITHOUT an explicit month, an August payment clears unpaid JULY first.
+    // (With an explicit month that bill wins first — see T21.)
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-19', '2099-08', 5000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 5000.0, '', 'Rent');
+    check('T19: with no month chosen, the OLDEST unpaid bill (July) is settled first',
+        abs($billPaid($f['jul']) - 5000.0) < 0.005 && $billPaid($f['aug']) == 0.0,
+        'jul=' . $billPaid($f['jul']) . ' aug=' . $billPaid($f['aug']));
+
+    // --- T19b: an explicit later month takes precedence over the older arrears
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-19b', '2099-08', 5000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 5000.0, '2099-08', 'Rent');
+    check('T19b: an explicitly chosen month beats older arrears',
+        abs($billPaid($f['aug']) - 5000.0) < 0.005 && $billPaid($f['jul']) == 0.0,
+        'jul=' . $billPaid($f['jul']) . ' aug=' . $billPaid($f['aug']));
+
+    // --- T19c: the OLD behaviour (oldest-first) is what actually settles arrears
+    // when the chosen month is already fully paid: money cascades onward.
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-19c', '2099-08', 10000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 10000.0, '', 'Rent');
+    check('T19c: a large payment settles every month in order',
+        abs($billPaid($f['jul']) - 5000.0) < 0.005 && abs($billPaid($f['aug']) - 5000.0) < 0.005,
+        'jul=' . $billPaid($f['jul']) . ' aug=' . $billPaid($f['aug']));
+
+    // --- T20: more than one month's arrears cascades into the next month
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-20', '2099-08', 12000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 12000.0, '2099-08', 'Rent');
+    check('T20: overpayment cascades oldest-first then fills the next month',
+        abs($billPaid($f['jul']) - 5000.0) < 0.005 && abs($billPaid($f['aug']) - 5000.0) < 0.005,
+        'jul=' . $billPaid($f['jul']) . ' aug=' . $billPaid($f['aug']));
+
+    // --- T21: the explicitly chosen month is honoured first
+    $f = $seedArrears();
+    $db->update('bills', ['month' => '2099-09'], 'id = ?', [$f['aug']]); // push Aug bill newest
+    $pid = $makePayment('FIX-21', '2099-07', 5000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 5000.0, '2099-07', 'Rent');
+    check('T21: the explicitly chosen month is paid first',
+        abs($billPaid($f['jul']) - 5000.0) < 0.005, 'jul=' . $billPaid($f['jul']));
+
+    // --- T22: remainder beyond ALL arrears becomes credit, is never lost
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-22', '2099-08', 14000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 14000.0, '2099-08', 'Rent');
+    $svc->recalcTenantCreditAndBalance($f['tenant']);
+    $t = $db->fetchOne("SELECT balance, credit FROM tenants WHERE id = ?", [$f['tenant']]);
+    check('T22: 14,000 against 10,000 arrears -> 4,000 credit, 0 balance',
+        abs((float)$t['balance'] - 0.0) < 0.005 && abs((float)$t['credit'] - 4000.0) < 0.005,
+        json_encode($t));
+
+    // --- T23: payment arriving BEFORE the month's bills exist becomes credit
+    $f = $seedArrears();
+    $db->query("DELETE FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE owner_id = $OWNER)");
+    $db->query("DELETE FROM bills WHERE owner_id = $OWNER");
+    $pid = $makePayment('FIX-23', '2099-08', 3000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 3000.0, '2099-08', 'Rent');
+    $svc->recalcTenantCreditAndBalance($f['tenant']);
+    $t = $db->fetchOne("SELECT balance, credit FROM tenants WHERE id = ?", [$f['tenant']]);
+    check('T23: payment before the month\'s bills exist becomes credit',
+        abs((float)$t['credit'] - 3000.0) < 0.005 && abs((float)$t['balance']) < 0.005,
+        json_encode($t));
+
+    // --- T24: allocation is idempotent (safe to re-run)
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-24', '2099-08', 5000.0, 'completed', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 5000.0, '2099-08', 'Rent');
+    $once = $billPaid($f['jul']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 5000.0, '2099-08', 'Rent');
+    check('T24: re-allocating the same payment does not double-count',
+        abs($billPaid($f['jul']) - $once) < 0.005, 'once=' . $once . ' twice=' . $billPaid($f['jul']));
+
+    // --- T25: a pending payment allocates nothing
+    $f = $seedArrears();
+    $pid = $makePayment('FIX-25', '2099-08', 5000.0, 'pending', $f['tenant'], $f['house']);
+    $svc->allocatePaymentToOutstandingBills($pid, $f['tenant'], 5000.0, '2099-08', 'Rent');
+    check('T25: a pending payment allocates nothing',
+        $billPaid($f['jul']) == 0.0 && $billPaid($f['aug']) == 0.0,
+        'jul=' . $billPaid($f['jul']));
+
+    // --- T26: every allocation traces back to exactly one real payment row
+    $orphan = $db->fetchOne(
+        "SELECT COUNT(*) c FROM payment_allocations pa
+         LEFT JOIN payments p ON p.id = pa.payment_id
+         LEFT JOIN bill_items bi ON bi.id = pa.bill_item_id
+         WHERE pa.payment_id IN (SELECT id FROM payments WHERE owner_id = $OWNER)
+           AND (p.id IS NULL OR bi.id IS NULL)"
+    );
+    check('T26: no orphaned allocation rows are created', (int)$orphan['c'] === 0, json_encode($orphan));
+
+    // cleanup fixtures
+    $purgeFixtures();
 }
 
 echo "\n=====================================\n";
