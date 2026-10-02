@@ -62,9 +62,34 @@ return [
     */
 
     'providers' => [
+        /*
+         * RentFlow has NO unified users table. Actors live in three separate
+         * tables: owners (landlords), caretakers and renters (table `tenants`).
+         *
+         * The session guard's provider must resolve to a concrete model, so it
+         * points at Owner. Caretaker and Renter are loaded explicitly by
+         * App\Services\Authenticator and by the legacy JWT bridge, then handed
+         * to Auth::setUser(); the provider is never asked to guess which table
+         * a session belongs to.
+         */
+        'owners' => [
+            'driver' => 'eloquent',
+            'model' => \App\Models\Owner::class,
+        ],
+
+        'caretakers' => [
+            'driver' => 'eloquent',
+            'model' => \App\Models\Caretaker::class,
+        ],
+
+        'renters' => [
+            'driver' => 'eloquent',
+            'model' => \App\Models\Renter::class,
+        ],
+
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', User::class),
+            'model' => \App\Models\Owner::class,
         ],
 
         // 'users' => [

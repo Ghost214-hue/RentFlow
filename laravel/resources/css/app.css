@@ -4,6 +4,18 @@
 @source '../../storage/framework/views/*.php';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    /*
+     * The legacy UI used Inter. Keep it so ported pages are pixel-identical
+     * until DESIGN_TOKENS.md says otherwise.
+     */
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
+
+/*
+ * Font Awesome is still used by the ported markup (fa-* icons). It is the only
+ * external stylesheet; the plan is to replace it with inline SVG components
+ * module by module, then drop this.
+ */
+@import 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css';
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');

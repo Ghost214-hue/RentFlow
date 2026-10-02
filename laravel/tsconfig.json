@@ -24,11 +24,10 @@
         "isolatedModules": true,
         "noEmit": true,
 
-        "baseUrl": ".",
         "paths": {
-            "@/*": ["resources/js/*"],
-            "ziggy-js": ["resources/js/types/ziggy"],
-            "generated": ["resources/js/types/generated"]
+            "@/*": ["./resources/js/*"],
+            "ziggy-js": ["./resources/js/types/ziggy"],
+            "generated": ["./resources/js/types/generated"]
         }
     },
     "include": [
