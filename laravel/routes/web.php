@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\AuthenticatedSessionController;
+use App\Http\Controllers\BillController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HouseController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RenterController;
 use Illuminate\Support\Facades\Route;
 
@@ -43,4 +45,13 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::get('/renters/{renter}', [RenterController::class, 'show'])->name('renters.show');
     Route::put('/renters/{renter}', [RenterController::class, 'update'])->name('renters.update');
     Route::delete('/renters/{renter}', [RenterController::class, 'destroy'])->name('renters.destroy');
+
+    // Bills. Figures come from BillSnapshot on every surface.
+    Route::get('/bills', [BillController::class, 'index'])->name('bills.index');
+    Route::post('/bills/generate', [BillController::class, 'generate'])->name('bills.generate');
+
+    // Payments. All money enters through RecordPayment.
+    Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
+    Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
+    Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->name('payments.confirm');
 });

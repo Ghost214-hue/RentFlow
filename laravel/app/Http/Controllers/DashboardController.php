@@ -22,7 +22,7 @@ class DashboardController extends Controller
         $this->authorize('viewAny', Property::class);
 
         // Money is aggregated in SQL (never in the browser) and emitted as
-        // strings. See Money:: for the aggregation rules.
+        // strings. See Amount:: for the aggregation rules.
         $totals = (object) [
             'expected' => Bill::query()->sum('total'),
             'collected' => Payment::query()->where('status', 'completed')->sum('amount'),

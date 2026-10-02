@@ -46,7 +46,7 @@ export interface House {
     id: number;
     unit: string;
     type: string;
-    /** Decimal(12,2) as a string — never a number. */
+    /** Decimal(12,2) as a string â€” never a number. */
     rent: string;
     status: string;
     property_id: number;
@@ -105,7 +105,7 @@ export interface VacantHouse {
     id: number;
     property_id: number;
     unit: string;
-    /** Money string — used to prefill the rent field, never recomputed. */
+    /** Money string â€” used to prefill the rent field, never recomputed. */
     rent: string;
 }
 
@@ -121,4 +121,62 @@ declare global {
     interface PageProps {
         errors: Record<string, string>;
     }
+}
+/** A bill as returned by BillResource. Money fields are strings. */
+export interface Bill {
+    id: number;
+    month: string;
+    due_date: string | null;
+
+    /** Authoritative figures from BillSnapshot — never computed client-side. */
+    amount: string;
+    paid: string;
+    balance: string;
+    status: string;
+    opening_balance: string;
+    credit_applied: string;
+
+    house_id: number;
+    house_unit: string | null;
+    property_name: string | null;
+
+    tenant_id: number | null;
+    tenant_name: string | null;
+
+    items?: Array<{
+        id: number;
+        type: string;
+        description: string | null;
+        amount: string;
+        paid: string;
+        status: string;
+    }>;
+}
+
+/** A payment as returned by PaymentResource. */
+export interface Payment {
+    id: number;
+    receipt: string | null;
+    /** What the payer handed over. */
+    amount: string;
+    /** What actually reached bill items; the rest is renter credit. */
+    allocated: string;
+    status: string;
+    type: string;
+    method: string | null;
+    month: string | null;
+    date: string | null;
+    description: string | null;
+
+    tenant_id: number | null;
+    tenant_name: string | null;
+    house_unit: string | null;
+
+    tenant_confirmed: boolean;
+    created_at: string | null;
+}
+
+export interface RenterOption {
+    id: number;
+    name: string;
 }

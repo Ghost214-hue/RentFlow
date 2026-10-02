@@ -33,6 +33,13 @@ class Payment extends Model
 
     protected $table = 'payments';
 
+    /**
+     * The payments table has `created_at` but NO `updated_at` column (see the
+     * live schema), so Eloquent must not try to maintain a timestamp on
+     * update -- doing so throws "Unknown column 'updated_at'" on every insert.
+     */
+    public $timestamps = false;
+
     protected $fillable = [
         'tenant_id',
         'house_id',

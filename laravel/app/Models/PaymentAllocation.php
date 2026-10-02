@@ -28,6 +28,9 @@ class PaymentAllocation extends Model
 {
     protected $table = 'payment_allocations';
 
+    /** No `updated_at` column in the live schema (see SHOW COLUMNS). */
+    public $timestamps = false;
+
     protected $fillable = [
         'payment_id',
         'bill_item_id',
@@ -61,7 +64,6 @@ class PaymentAllocation extends Model
     {
         return [
             'amount' => 'decimal:2',
-            'created_at' => 'datetime',
         ];
     }
 
