@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HouseController;
+use App\Http\Controllers\RenterController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -33,4 +34,13 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::post('/houses', [HouseController::class, 'store'])->name('houses.store');
     Route::put('/houses/{house}', [HouseController::class, 'update'])->name('houses.update');
     Route::delete('/houses/{house}', [HouseController::class, 'destroy'])->name('houses.destroy');
+
+    // Renters. NOTE: the parameter is {renter}, not {tenant}, to match the
+    // model name; the URL is /renters in the new app while the DB table
+    // stays `tenants`.
+    Route::get('/renters', [RenterController::class, 'index'])->name('renters.index');
+    Route::post('/renters', [RenterController::class, 'store'])->name('renters.store');
+    Route::get('/renters/{renter}', [RenterController::class, 'show'])->name('renters.show');
+    Route::put('/renters/{renter}', [RenterController::class, 'update'])->name('renters.update');
+    Route::delete('/renters/{renter}', [RenterController::class, 'destroy'])->name('renters.destroy');
 });

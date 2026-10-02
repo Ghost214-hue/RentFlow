@@ -25,7 +25,7 @@ export const NAV: Record<string, NavItem[]> = {
         { href: '/', label: 'Dashboard', icon: 'fa-chart-line' },
         { href: '/properties', label: 'Properties', icon: 'fa-building' },
         { href: '/houses', label: 'Houses', icon: 'fa-home' },
-        { href: '/tenants', label: 'Renters', icon: 'fa-users' },
+        { href: '/renters', label: 'Renters', icon: 'fa-users' },
         { href: '/caretakers', label: 'Caretakers', icon: 'fa-user-shield' },
         { href: '/payments', label: 'Payments', icon: 'fa-money-bill-wave' },
         { href: '/bills', label: 'Bills', icon: 'fa-file-invoice-dollar' },
@@ -51,7 +51,7 @@ export const NAV: Record<string, NavItem[]> = {
         { href: '/', label: 'Dashboard', icon: 'fa-chart-line' },
         { href: '/properties', label: 'Properties', icon: 'fa-building' },
         { href: '/houses', label: 'Houses', icon: 'fa-home' },
-        { href: '/tenants', label: 'Renters', icon: 'fa-users' },
+        { href: '/renters', label: 'Renters', icon: 'fa-users' },
         { href: '/payments', label: 'Payments', icon: 'fa-money-bill-wave' },
         { href: '/bills', label: 'Bills', icon: 'fa-file-invoice-dollar' },
         {

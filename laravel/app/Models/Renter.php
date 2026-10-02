@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\Role;
+use App\Enums\RenterStatus;
 use App\Models\Concerns\BelongsToOwner;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -36,6 +37,15 @@ class Renter extends Model
 
     protected $table = 'tenants';
 
+    /**
+     * NOTE: there is NO `rent` column on `tenants` in the live schema, even
+     * though the legacy TenantController referenced one and docs describe it
+     * as an onboarding snapshot. Only `houses.rent` exists and is the source
+     * of truth for bill generation. Attempting to write `rent` here throws
+     * "Unknown column 'rent'", so it is deliberately absent from $fillable.
+     *
+     * @return array<int, string>
+     */
     protected $fillable = [
         'property_id',
         'house_id',
@@ -58,7 +68,6 @@ class Renter extends Model
         'elec_balance',
         'status',
         'documents',
-        'rent',
         'data_protection_consent_at',
     ];
 
@@ -71,12 +80,12 @@ class Renter extends Model
     {
         return [
             'password' => 'hashed',
-            'rent' => 'decimal:2',
             'deposit' => 'decimal:2',
             'balance' => 'decimal:2',
             'credit' => 'decimal:2',
             'water_balance' => 'decimal:2',
             'elec_balance' => 'decimal:2',
+            'status' => RenterStatus::class,
             'lease_start' => 'date',
             'lease_end' => 'date',
             'data_protection_consent_at' => 'datetime',

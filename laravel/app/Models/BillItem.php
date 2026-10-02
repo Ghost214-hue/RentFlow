@@ -26,6 +26,18 @@ use RuntimeException;
  */
 class BillItem extends Model
 {
+    protected $table = 'bill_items';
+
+    /** @return array<int, string> */
+    protected $fillable = [
+        'bill_id',
+        'type',
+        'description',
+        'amount',
+        'paid',
+        'status',
+    ];
+
     protected static function booted(): void
     {
         static::addGlobalScope('ownerThroughBill', static function (Builder $query): void {

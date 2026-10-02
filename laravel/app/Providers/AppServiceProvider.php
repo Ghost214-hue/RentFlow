@@ -6,8 +6,10 @@ namespace App\Providers;
 
 use App\Models\House;
 use App\Models\Property;
+use App\Models\Renter;
 use App\Policies\HousePolicy;
 use App\Policies\PropertyPolicy;
+use App\Policies\RenterPolicy;
 use App\Support\TenantContext;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
@@ -26,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
         // access by default — an unmapped model denies.
         Gate::policy(House::class, HousePolicy::class);
         Gate::policy(Property::class, PropertyPolicy::class);
+        Gate::policy(Renter::class, RenterPolicy::class);
 
         // The legacy UI uses Tailwind-style pagination links.
         Paginator::useTailwind();

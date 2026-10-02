@@ -64,6 +64,51 @@ export interface PropertyOption {
     name: string;
 }
 
+/** A renter as returned by RenterResource. All money fields are strings. */
+export interface Renter {
+    id: number;
+    name: string;
+    email: string | null;
+    phone: string;
+
+    id_type: string;
+    id_number: string | null;
+
+    status: string;
+    profile_picture: string | null;
+
+    property_id: number | null;
+    property_name: string | null;
+
+    house_id: number | null;
+    house_unit: string | null;
+
+    /** Snapshot at onboarding. Future bills use houses.rent. */
+    rent: string;
+    deposit: string;
+    balance: string;
+    credit: string;
+
+    lease_start: string | null;
+    lease_end: string | null;
+
+    next_of_kin_name: string | null;
+    next_of_kin_phone: string | null;
+    next_of_kin_email: string | null;
+
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+/** A vacant unit offered in the onboarding form. */
+export interface VacantHouse {
+    id: number;
+    property_id: number;
+    unit: string;
+    /** Money string — used to prefill the rent field, never recomputed. */
+    rent: string;
+}
+
 export interface SharedProps {
     auth: Auth;
     flash: {
