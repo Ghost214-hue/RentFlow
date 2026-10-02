@@ -1,0 +1,117 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use App\Enums\Role;
+use App\Models\Concerns\BelongsToOwner;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+/**
+ * A renter.
+ *
+ * NAMING: the database table is `tenants`, which in RentFlow means RENTERS,
+ * not SaaS tenants. The model is therefore called `Renter` to avoid
+ * colliding with the owner-tenancy axis; `$table` points at `tenants`.
+ *
+ * Maps the EXISTING `tenants` table — no schema changes.
+ *
+ * @property int $id
+ * @property int $owner_id
+ * @property string $name
+ * @property string $rent      Snapshot at onboarding; NOT used for future bills
+ * @property string $deposit   Static snapshot; charged on the FIRST bill only
+ * @property string $balance   Cached total outstanding (drifts — see defect 5)
+ * @property string $credit    Cached overpayment (drifts — see defect 5)
+ * @property string $status
+ */
+class Renter extends Model
+{
+    /** @use HasFactory<\Database\Factories\RenterFactory> */
+    use BelongsToOwner;
+    use HasFactory;
+
+    protected $table = 'tenants';
+
+    protected $fillable = [
+        'property_id',
+        'house_id',
+        'name',
+        'email',
+        'profile_picture',
+        'password',
+        'phone',
+        'id_number',
+        'next_of_kin_name',
+        'next_of_kin_phone',
+        'next_of_kin_email',
+        'id_type',
+        'lease_start',
+        'lease_end',
+        'deposit',
+        'balance',
+        'credit',
+        'water_balance',
+        'elec_balance',
+        'status',
+        'documents',
+        'rent',
+        'data_protection_consent_at',
+    ];
+
+    /**
+     * Money and dates. Decimal columns stay strings — never floats.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'password' => 'hashed',
+            'rent' => 'decimal:2',
+            'deposit' => 'decimal:2',
+            'balance' => 'decimal:2',
+            'credit' => 'decimal:2',
+            'water_balance' => 'decimal:2',
+            'elec_balance' => 'decimal:2',
+            'lease_start' => 'date',
+            'lease_end' => 'date',
+            'data_protection_consent_at' => 'datetime',
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+        ];
+    }
+
+    public function role(): Role
+    {
+        return Role::Tenant;
+    }
+
+    public function property(): BelongsTo
+    {
+        return $this->belongsTo(Property::class);
+    }
+
+    public function house(): BelongsTo
+    {
+        return $this->belongsTo(House::class);
+    }
+
+    public function bills(): HasMany
+    {
+        return $this->hasMany(Bill::class, 'tenant_id');
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class, 'tenant_id');
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
+    }
+}
