@@ -8,8 +8,11 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CaretakerController;
 use App\Http\Controllers\ComplaintController;
 use App\Http\Controllers\HouseController;
+use App\Http\Controllers\MaintenanceRecordController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RenterController;
+use App\Http\Controllers\RenterDashboardController;
+use App\Http\Controllers\RenterProfileController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -68,4 +71,16 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::post('/complaints', [ComplaintController::class, 'store'])->name('complaints.store');
     Route::post('/complaints/{complaint}/advance', [ComplaintController::class, 'advance'])->name('complaints.advance');
     Route::delete('/complaints/{complaint}', [ComplaintController::class, 'destroy'])->name('complaints.destroy');
+
+    // Maintenance requests — renters raise them, staff advance them.
+    Route::get('/maintenance', [MaintenanceRecordController::class, 'index'])->name('maintenance.index');
+    Route::post('/maintenance', [MaintenanceRecordController::class, 'store'])->name('maintenance.store');
+    Route::post('/maintenance/{record}/advance', [MaintenanceRecordController::class, 'advance'])->name('maintenance.advance');
+    Route::delete('/maintenance/{record}', [MaintenanceRecordController::class, 'destroy'])->name('maintenance.destroy');
+
+    // Renter-facing pages. Each aborts unless the actor is a Renter, so an
+    // owner or caretaker reaching these gets a 403 rather than empty data.
+    Route::get('/renter/dashboard', RenterDashboardController::class)->name('renter.dashboard');
+    Route::get('/renter/profile', [RenterProfileController::class, 'show'])->name('renter.profile.show');
+    Route::put('/renter/profile', [RenterProfileController::class, 'update'])->name('renter.profile.update');
 });

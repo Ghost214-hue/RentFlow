@@ -25,12 +25,17 @@ class RenterResource extends JsonResource
             'id' => (int) $this->id,
             'name' => (string) $this->name,
             'email' => $this->email,
-            'phone' => (string) $this->phone,
+            /*
+             * `status` is cast to the RenterStatus enum and the phone/id_type
+             * columns are nullable, so casting straight to string fatals with
+             * "could not be converted to string". Enum cases expose ->value.
+             */
+            'phone' => $this->phone === null ? null : (string) $this->phone,
 
-            'id_type' => (string) $this->id_type,
+            'id_type' => $this->id_type === null ? null : (string) $this->id_type,
             'id_number' => $this->id_number,
 
-            'status' => (string) $this->status,
+            'status' => $this->status instanceof \BackedEnum ? $this->status->value : (string) $this->status,
             'profile_picture' => $this->profile_picture,
 
             'property_id' => $this->property_id !== null ? (int) $this->property_id : null,
@@ -44,10 +49,12 @@ class RenterResource extends JsonResource
             // is read from the loaded house rather than from the renter.
             'rent' => (string) ($this->house?->rent ?? '0.00'),
 
-            // Deposit and balances live on the renter.
-            'deposit' => (string) $this->deposit,
-            'balance' => (string) $this->balance,
-            'credit' => (string) $this->credit,
+            // Deposit and balances live on the renter. These columns are nullable, so
+            // a null would fatal on a bare (string) cast; '0.00' is the safe
+            // equivalent because Amount::of() would read null as zero anyway.
+            'deposit' => (string) ($this->deposit ?? '0.00'),
+            'balance' => (string) ($this->balance ?? '0.00'),
+            'credit' => (string) ($this->credit ?? '0.00'),
 
             'lease_start' => $this->lease_start?->toDateString(),
             'lease_end' => $this->lease_end?->toDateString(),

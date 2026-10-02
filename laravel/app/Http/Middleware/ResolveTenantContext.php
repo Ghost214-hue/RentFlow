@@ -74,7 +74,17 @@ class ResolveTenantContext
                 default => Owner::class,
             };
 
-            $actor = $model::find((int) $actorId);
+            /*
+             * The lookup MUST bypass the owner scope. Resolving the context is
+             * what this query is for, so applying a scope that depends on the
+             * context would throw "no owner context" and deadlock.
+             *
+             * This is safe: the id comes from the integrity-protected session
+             * that AuthenticatedSessionController wrote at login, not from user
+             * input. The owner context derived from it then scopes everything
+             * downstream, so no subsequent query can escape it.
+             */
+            $actor = $model::withoutOwnerScope()->find((int) $actorId);
 
             if ($actor !== null) {
                 Auth::setUser($actor);

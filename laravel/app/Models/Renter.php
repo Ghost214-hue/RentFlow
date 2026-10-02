@@ -10,6 +10,7 @@ use App\Models\Concerns\BelongsToOwner;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
 /**
  * A renter.
@@ -20,16 +21,20 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * Maps the EXISTING `tenants` table — no schema changes.
  *
+ * Extends Authenticatable rather than App\Models\Model because a renter signs
+ * in: SessionGuard::login() type-hints Authenticatable, so without this every
+ * renter login fatals with a TypeError. The money columns this model inherited
+ * from App\Models\Model are cast explicitly in casts() below.
+ *
  * @property int $id
  * @property int $owner_id
  * @property string $name
- * @property string $rent      Snapshot at onboarding; NOT used for future bills
  * @property string $deposit   Static snapshot; charged on the FIRST bill only
  * @property string $balance   Cached total outstanding (drifts — see defect 5)
  * @property string $credit    Cached overpayment (drifts — see defect 5)
  * @property string $status
  */
-class Renter extends Model
+class Renter extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\RenterFactory> */
     use BelongsToOwner;

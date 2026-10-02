@@ -217,3 +217,87 @@ export interface Complaint {
     created_at: string | null;
     updated_at: string | null;
 }
+/** A maintenance request as returned by MaintenanceRecordResource. */
+export interface MaintenanceRecord {
+    id: number;
+    title: string;
+    description: string | null;
+    category: string | null;
+    priority: string;
+    status: string;
+    assigned_to: string | null;
+    /** Decimal string, never a number. */
+    cost: string | null;
+    cost_notes: string | null;
+    vendor_name: string | null;
+    vendor_phone: string | null;
+    scheduled_date: string | null;
+    completed_date: string | null;
+    notes: string | null;
+    property_id: number | null;
+    property_name: string | null;
+    house_id: number | null;
+    house_unit: string | null;
+    tenant_id: number | null;
+    tenant_name: string | null;
+    recipient_ids: number[];
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+/** Props for the renter's own dashboard. */
+export interface RenterDashboardProps {
+    renter: {
+        id: number;
+        name: string;
+        email: string;
+        phone: string | null;
+        status: string;
+        property_name: string | null;
+        house_unit: string | null;
+        lease_start: string | null;
+        lease_end: string | null;
+    };
+    summary: {
+        /** All money values are decimal strings computed server-side. */
+        outstanding: string;
+        credit: string;
+        unpaid_bill_count: number;
+        open_complaints: number;
+        open_maintenance: number;
+    };
+    recentBills: Bill[];
+    recentPayments: Array<{
+        id: number;
+        amount: string;
+        method: string | null;
+        status: string;
+        paid_at: string | null;
+    }>;
+}
+
+/** Props for the renter's own profile. */
+export interface RenterProfileProps {
+    renter: {
+        id: number;
+        name: string;
+        email: string;
+        phone: string | null;
+        id_number: string | null;
+        id_type: string | null;
+        next_of_kin_name: string | null;
+        next_of_kin_phone: string | null;
+        next_of_kin_email: string | null;
+        profile_picture: string | null;
+        /** Read-only tenancy, shown for context only. */
+        status: string;
+        property_name: string | null;
+        house_unit: string | null;
+        lease_start: string | null;
+        lease_end: string | null;
+        deposit: string;
+        balance: string;
+        credit: string;
+    };
+    flash?: { success?: string | null };
+}

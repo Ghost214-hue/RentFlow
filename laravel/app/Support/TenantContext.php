@@ -55,12 +55,25 @@ final class TenantContext
     }
 
     /**
-     * Derive the owner from an authenticated actor.
+     * Derive the owner id from an authenticated actor.
+     *
+     * An Owner IS the tenancy, so its own id is the owner id. A Caretaker or
+     * Renter belongs to an owner, so theirs is the `owner_id` column.
+     *
+     * NOTE: getKey() takes no arguments and always returns the primary key.
+     * Passing 'owner_id' to it looks like it reads that column but silently
+     * returns the primary key instead, which would resolve a renter's context
+     * to the RENTER's own id and scope every query to a non-existent owner.
+     * The attribute is therefore read explicitly.
      */
     public static function resolveForActor(Owner|Caretaker|Renter $actor): ?int
     {
-        return $actor->getKey('owner_id') !== null
-            ? (int) $actor->getKey('owner_id')
-            : (int) $actor->getKey();
+        if ($actor instanceof Owner) {
+            return (int) $actor->getKey();
+        }
+
+        $ownerId = $actor->getAttribute('owner_id');
+
+        return $ownerId === null ? null : (int) $ownerId;
     }
 }

@@ -31,9 +31,19 @@ use RuntimeException;
  */
 trait BelongsToOwner
 {
+    /**
+     * Named key for the owner scope.
+     *
+     * The scope MUST be registered under an explicit name. An anonymous
+     * closure cannot be removed later: withoutGlobalScope(static::class) looks
+     * up by identifier, finds nothing, and silently leaves the scope in place,
+     * so withoutOwnerScope() would throw instead of bypassing.
+     */
+    private const OWNER_SCOPE = 'rentflow_owner_scope';
+
     public static function bootBelongsToOwner(): void
     {
-        static::addGlobalScope(static function (Builder $query): void {
+        static::addGlobalScope(self::OWNER_SCOPE, static function (Builder $query): void {
             $ownerId = TenantContext::id();
 
             if ($ownerId === null) {
@@ -72,11 +82,22 @@ trait BelongsToOwner
      *
      * Usage: Property::withoutOwnerScope()->where(...)->get();
      *
-     * Intended for CLI jobs, seeders and aggregate reports only — always leave a
-     * comment justifying the scope bypass. Never use it to serve a request.
+     * Intended for the auth/tenancy bootstrap, CLI jobs, seeders and aggregate
+     * reports. Two callers legitimately need it:
+     *
+     *  - ResolveTenantContext, which reads the actor OUT of the session in
+     *    order to derive the owner context. It cannot use the scope, because
+     *    the scope is what depends on that context. Safe because the id comes
+     *    from the integrity-protected session, never from user input, and the
+     *    context derived from it scopes everything after.
+     *  - Authenticator::findByEmail, which matches an email before any owner is
+     *    known. The password check and the resulting session are what bind the
+     *    login to one owner.
+     *
+     * Never use it to serve a request.
      */
     public static function withoutOwnerScope(): Builder
     {
-        return static::query()->withoutGlobalScope(static::class);
+        return static::query()->withoutGlobalScope(self::OWNER_SCOPE);
     }
 }

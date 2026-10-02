@@ -37,10 +37,16 @@ class ComplaintController extends Controller
 
         if ($actor instanceof Renter) {
             // Their own complaints, plus any that name them as a recipient.
+            /*
+             * MariaDB has no CAST(... AS JSON), so the id is passed as a plain
+             * string: JSON_CONTAINS matches it against the integer members of
+             * the array, which is exactly the intended comparison. COALESCE
+             * supplies '[]' for rows with no broadcast list.
+             */
             $actorId = (int) $actor->getKey();
             $query->where(function ($q) use ($actorId): void {
                 $q->where('tenant_id', $actorId)->orWhereRaw(
-                    'JSON_CONTAINS(COALESCE(recipient_ids, "[]"), CAST(? AS JSON))',
+                    "JSON_CONTAINS(COALESCE(recipient_ids, '[]'), ?)",
                     [(string) $actorId],
                 );
             });
