@@ -10,6 +10,7 @@ use App\Http\Controllers\ComplaintController;
 use App\Http\Controllers\HouseController;
 use App\Http\Controllers\MaintenanceRecordController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\RenterController;
 use App\Http\Controllers\RenterDashboardController;
 use App\Http\Controllers\RenterProfileController;
@@ -59,6 +60,12 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
     Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
     Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->name('payments.confirm');
+
+    // Properties. Unit counts are recomputed from the house rows on every read.
+    Route::get('/properties', [PropertyController::class, 'index'])->name('properties.index');
+    Route::post('/properties', [PropertyController::class, 'store'])->name('properties.store');
+    Route::put('/properties/{property}', [PropertyController::class, 'update'])->name('properties.update');
+    Route::delete('/properties/{property}', [PropertyController::class, 'destroy'])->name('properties.destroy');
 
     // Caretakers — staff accounts scoped to assigned properties.
     Route::get('/caretakers', [CaretakerController::class, 'index'])->name('caretakers.index');

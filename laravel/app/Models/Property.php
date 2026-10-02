@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToOwner;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -60,5 +61,17 @@ class Property extends Model
     public function houses(): HasMany
     {
         return $this->hasMany(House::class, 'property_id');
+    }
+
+    /**
+     * The caretaker assigned to this property.
+     *
+     * properties.caretaker_id points at caretakers.id. It is NULLABLE and the
+     * row may have been deleted since, so the relation is resolved lazily and
+     * callers must handle null.
+     */
+    public function caretaker(): BelongsTo
+    {
+        return $this->belongsTo(Caretaker::class, 'caretaker_id');
     }
 }

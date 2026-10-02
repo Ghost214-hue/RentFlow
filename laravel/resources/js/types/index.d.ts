@@ -301,3 +301,40 @@ export interface RenterProfileProps {
     };
     flash?: { success?: string | null };
 }
+/** A property as returned by PropertyResource. */
+export interface Property {
+    id: number;
+    name: string;
+    address: string;
+    type: string | null;
+    image: string | null;
+    /** Decimal string, never a number. */
+    rent: string;
+    /** Cached columns, shown for reference only. */
+    units_recorded: number;
+    occupied_recorded: number;
+    /** Authoritative counts derived from the house rows. */
+    units: number;
+    occupied: number;
+    payment_method_type: string | null;
+    paybill_number: string | null;
+    paybill_account: string | null;
+    till_number: string | null;
+    bank_name: string | null;
+    bank_account: string | null;
+    bank_branch: string | null;
+    mobile_money_number: string | null;
+    caretaker_id: number | null;
+    caretaker_name: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+/** Props for the properties index. */
+export interface PropertiesIndexProps {
+    properties: Paginated<Property>;
+    caretakers: RenterOption[];
+    canManage: boolean;
+    filters: { search: string | null; payment_method_type: string | null };
+    flash?: { success?: string | null; error?: string | null };
+}
