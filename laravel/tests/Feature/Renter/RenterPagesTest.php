@@ -55,9 +55,10 @@ it('refuses the renter profile to a caretaker', function (): void {
     $this->actingAs($this->caretaker)->get('/renter/profile')->assertForbidden();
 });
 
-it('refuses guests', function (): void {
-    $this->get('/renter/dashboard')->assertUnauthorized();
-    $this->get('/renter/profile')->assertUnauthorized();
+it('sends a guest to the login page', function (): void {
+    // A browser navigation is redirected to sign-in, not shown a raw 401.
+    $this->get('/renter/dashboard')->assertRedirect(route('login'));
+    $this->get('/renter/profile')->assertRedirect(route('login'));
 });
 
 it('lets a renter update their contact details', function (): void {

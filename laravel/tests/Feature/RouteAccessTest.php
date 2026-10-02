@@ -26,8 +26,13 @@ beforeEach(function (): void {
     TenantContext::clear();
 });
 
-it('refuses a guest on every authenticated route', function (string $path) {
-    $this->get($path)->assertUnauthorized();
+/*
+ * A guest must never reach a protected page. A BROWSER navigation is redirected
+ * to the login page (302) rather than shown a bare 401 error page, which used to
+ * look like a broken application. A JSON/API request still gets a real 401.
+ */
+it('sends a guest to the login page on every authenticated route', function (string $path) {
+    $this->get($path)->assertRedirect(route('login'));
 })->with([
     '/',
     '/renters',
@@ -40,6 +45,17 @@ it('refuses a guest on every authenticated route', function (string $path) {
     '/renter/dashboard',
     '/renter/profile',
 ]);
+
+it('remembers where a guest was heading so sign-in returns them there', function (): void {
+    $this->get('/bills')->assertRedirect(route('login'));
+
+    expect(session('url.intended'))->toBe(url('/bills'));
+});
+
+it('still returns a real 401 to a JSON request', function (): void {
+    // The client needs a status code it can branch on, not an HTML redirect.
+    $this->getJson('/bills')->assertUnauthorized();
+});
 
 it('lets an authenticated owner reach the owner routes', function (): void {
     foreach ([

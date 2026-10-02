@@ -76,8 +76,30 @@ class AuthenticateLegacyJwt
         return null;
     }
 
+    /**
+     * Refuse an unauthenticated request.
+     *
+     * A BROWSER navigation is sent to the login page rather than shown a bare
+     * "401 Unauthorized" error page: opening a bookmarked URL, refreshing a tab
+     * or pasting a link should look like a request to sign in, not a broken
+     * application. The wanted URL is remembered so sign-in returns the user
+     * there instead of dumping them on the dashboard.
+     *
+     * A JSON or API request keeps a real 401 so the client can handle it.
+     */
     private function unauthenticated(Request $request): Response
     {
-        abort(401, 'Unauthenticated.');
+        if ($request->expectsJson() || $request->is('api/*')) {
+            abort(401, 'Unauthenticated.');
+        }
+
+        // Avoid a redirect loop if /login ever sits behind this guard.
+        if ($request->is('login')) {
+            abort(401, 'Unauthenticated.');
+        }
+
+        $request->session()->put('url.intended', $request->fullUrl());
+
+        return redirect()->route('login');
     }
 }

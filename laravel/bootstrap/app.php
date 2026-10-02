@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveTenantBeforeBindings;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -54,4 +55,35 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        /*
+         * Send a guest to the login page instead of showing a raw 401.
+         *
+         * Without this, opening any protected URL directly (a bookmark, a
+         * refreshed tab, a pasted link) returns a bare "401 Unauthorized"
+         * error page, which looks like a broken application rather than a
+         * request to sign in.
+         *
+         * An EXPIRED session lands here too, which is why the intended URL is
+         * flashed: after signing in the user returns to the page they wanted
+         * instead of the dashboard.
+         *
+         * Only browser navigations are redirected. An XHR or JSON request still
+         * receives a real 401 so the client can handle it.
+         */
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return null;
+            }
+
+            // Opening the login page while already logged in should go home,
+            // not bounce back to a loop.
+            if ($request->is('login')) {
+                return null;
+            }
+
+            $request->session()->put('url.intended', $request->fullUrl());
+
+            return redirect()->route('login');
+        });
     })->create();
