@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Models\Caretaker;
+use App\Models\Concerns\BelongsToOwner;
 use App\Models\Owner;
 use App\Models\Renter;
 use App\Support\TenantContext;
@@ -79,17 +80,31 @@ class ResolveTenantContext
              * what this query is for, so applying a scope that depends on the
              * context would throw "no owner context" and deadlock.
              *
-             * This is safe: the id comes from the integrity-protected session
-             * that AuthenticatedSessionController wrote at login, not from user
-             * input. The owner context derived from it then scopes everything
-             * downstream, so no subsequent query can escape it.
+             * Only Caretaker and Renter carry that scope. Owner is the tenancy
+             * ROOT -- it has no owner_id column and does not use BelongsToOwner,
+             * so it has no withoutOwnerScope() to call. Asking it for one threw
+             * "Call to undefined method App\Models\Owner::withoutOwnerScope()"
+             * and turned every request with a stale owner session into a 500.
              */
-            $actor = $model::withoutOwnerScope()->find((int) $actorId);
+            $query = in_array(BelongsToOwner::class, class_uses_recursive($model), true)
+                ? $model::withoutOwnerScope()
+                : $model::query();
+
+            /*
+             * A session can outlive its row: the account may have been deleted,
+             * or the database replaced underneath it. A null result simply means
+             * "not signed in", which the auth middleware turns into a redirect
+             * to the login page -- not an error.
+             */
+            $actor = $query->find((int) $actorId);
 
             if ($actor !== null) {
                 Auth::setUser($actor);
                 $request->setUserResolver(static fn () => $actor);
                 TenantContext::set(TenantContext::resolveForActor($actor));
+            } else {
+                // Drop the stale record so the next request starts clean.
+                $request->session()->forget(['rf_actor_type', 'rf_actor_id']);
             }
         }
 

@@ -20,6 +20,7 @@ use App\Models\Owner;
 use App\Models\Property;
 use App\Models\Renter;
 use App\Support\TenantContext;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     TenantContext::set(null);
@@ -35,6 +36,65 @@ beforeEach(function (): void {
         ->create(['password' => 'secret123']);
 
     TenantContext::clear();
+});
+
+/*
+ * REGRESSION: ResolveTenantContext called $model::withoutOwnerScope() for every
+ * actor type. Owner is the tenancy ROOT -- it has no owner_id column and does
+ * not use BelongsToOwner, so it has no such method. Any request carrying a
+ * stale owner session died with
+ * "Call to undefined method App\Models\Owner::withoutOwnerScope()".
+ */
+it('rehydrates an owner session without calling a scope it does not have', function (): void {
+    // Log in as an owner, exactly as a browser would.
+    $this->post('/login', ['email' => $this->owner->email, 'password' => 'secret123']);
+
+    // The dashboard must render. This is the request that previously 500ed.
+    $this->get('/')->assertOk();
+    $this->assertAuthenticatedAs($this->owner);
+});
+
+it('rehydrates a renter session', function (): void {
+    $this->post('/login', ['email' => $this->renter->email, 'password' => 'secret123']);
+
+    $this->get('/renter/dashboard')->assertOk();
+    $this->assertAuthenticatedAs($this->renter);
+});
+
+it('rehydrates a caretaker session', function (): void {
+    $this->post('/login', ['email' => $this->caretaker->email, 'password' => 'secret123']);
+
+    $this->get('/')->assertOk();
+    $this->assertAuthenticatedAs($this->caretaker);
+});
+
+/*
+ * A session can outlive its row: the account is deleted, or the database is
+ * replaced underneath it. That must read as "not signed in" and send the user to
+ * the login page, never as a 500.
+ */
+it('treats a session pointing at a deleted owner as signed out', function (): void {
+    $deletedId = (int) $this->owner->id;
+    DB::table('owners')->where('id', $deletedId)->delete();
+
+    $this->withSession(['rf_actor_type' => 'owner', 'rf_actor_id' => $deletedId])
+        ->get('/')
+        ->assertRedirect(route('login'));
+});
+
+it('treats a session pointing at a deleted renter as signed out', function (): void {
+    $deletedId = (int) $this->renter->id;
+    DB::table('tenants')->where('id', $deletedId)->delete();
+
+    $this->withSession(['rf_actor_type' => 'renter', 'rf_actor_id' => $deletedId])
+        ->get('/')
+        ->assertRedirect(route('login'));
+});
+
+it('survives a session carrying a nonsense actor type', function (): void {
+    $this->withSession(['rf_actor_type' => 'martian', 'rf_actor_id' => 1])
+        ->get('/')
+        ->assertRedirect(route('login'));
 });
 
 it('logs an owner in', function (): void {
