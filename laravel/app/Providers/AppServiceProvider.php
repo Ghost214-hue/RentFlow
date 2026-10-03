@@ -6,18 +6,22 @@ namespace App\Providers;
 
 use App\Models\Bill;
 use App\Models\Caretaker;
+use App\Models\EmailLog;
 use App\Models\Complaint;
 use App\Models\House;
 use App\Models\MaintenanceRecord;
 use App\Models\Payment;
 use App\Models\Property;
+use App\Models\PropertyDocument;
 use App\Models\Renter;
 use App\Policies\BillPolicy;
 use App\Policies\CaretakerPolicy;
+use App\Policies\EmailLogPolicy;
 use App\Policies\ComplaintPolicy;
 use App\Policies\HousePolicy;
 use App\Policies\MaintenanceRecordPolicy;
 use App\Policies\PaymentPolicy;
+use App\Policies\PropertyDocumentPolicy;
 use App\Policies\PropertyPolicy;
 use App\Policies\RenterPolicy;
 use App\Support\TenantContext;
@@ -44,6 +48,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Complaint::class, ComplaintPolicy::class);
         Gate::policy(Caretaker::class, CaretakerPolicy::class);
         Gate::policy(MaintenanceRecord::class, MaintenanceRecordPolicy::class);
+        Gate::policy(PropertyDocument::class, PropertyDocumentPolicy::class);
+        Gate::policy(EmailLog::class, EmailLogPolicy::class);
 
         // The legacy UI uses Tailwind-style pagination links.
         Paginator::useTailwind();

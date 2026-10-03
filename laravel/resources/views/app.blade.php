@@ -3,10 +3,16 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    {{-- No CDN scripts. All assets are built by Vite and versioned. --}}
+    {{--
+        No CDN scripts. All assets are built by Vite and versioned.
+
+        @routes was removed: it is a Ziggy directive, Ziggy is not installed,
+        and nothing in resources/js calls route() -- the navigation uses plain
+        string paths. Laravel therefore printed the literal text "@routes" at the
+        top of every page.
+    --}}
     <title inertia>{{ config('app.name', 'RentFlow') }}</title>
 
-    @routes
     @vite(['resources/css/app.css', 'resources/js/app.tsx'])
     @inertiaHead
 </head>

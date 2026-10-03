@@ -338,3 +338,63 @@ export interface PropertiesIndexProps {
     filters: { search: string | null; payment_method_type: string | null };
     flash?: { success?: string | null; error?: string | null };
 }
+/** A rules/regulations document. */
+export interface PropertyDocument {
+    id: number;
+    title: string;
+    content: string;
+    type: string;
+    version: string | null;
+    is_active: boolean;
+    property_id: number | null;
+    property_name: string | null;
+    published_at: string | null;
+    updated_at: string | null;
+}
+
+/** One row of the email delivery log. */
+export interface EmailLogEntry {
+    id: number;
+    to_email: string;
+    to_name: string | null;
+    subject: string;
+    status: string;
+    error: string | null;
+    sent_at: string | null;
+}
+
+/** Portfolio analytics, computed server-side from the ledger. */
+export interface ReportsProps {
+    summary: {
+        counts: {
+            properties: number;
+            houses: number;
+            occupied: number;
+            vacant: number;
+            renters: number;
+            active_renters: number;
+            open_complaints: number;
+            open_maintenance: number;
+        };
+        money: {
+            /** All decimal strings. */
+            billed_to_date: string;
+            received_to_date: string;
+            outstanding: string;
+            collection_rate: string;
+        };
+    };
+    monthly: Array<{
+        month: string;
+        billed: string;
+        received: string;
+        outstanding: string;
+    }>;
+    topDebtors: Array<{ id: number; name: string; outstanding: string }>;
+    complaints: {
+        total: number;
+        by_status: Record<string, number>;
+        by_priority: Record<string, number>;
+        by_category: Record<string, number>;
+    };
+}

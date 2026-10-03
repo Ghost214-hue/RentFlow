@@ -58,19 +58,16 @@ export const NAV: Record<string, NavItem[]> = {
             href: '/documents',
             label: 'Rules',
             icon: 'fa-file-alt',
-            ready: false,
         },
         {
             href: '/reports',
             label: 'Reports',
             icon: 'fa-chart-pie',
-            ready: false,
         },
         {
             href: '/email-logs',
             label: 'Email Delivery',
             icon: 'fa-envelope-open-text',
-            ready: false,
         },
     ],
     caretaker: [
@@ -98,13 +95,11 @@ export const NAV: Record<string, NavItem[]> = {
             href: '/documents',
             label: 'Rules',
             icon: 'fa-file-alt',
-            ready: false,
         },
         {
             href: '/email-logs',
             label: 'Email Delivery',
             icon: 'fa-envelope-open-text',
-            ready: false,
         },
     ],
     tenant: [
@@ -136,7 +131,6 @@ export const NAV: Record<string, NavItem[]> = {
             href: '/documents',
             label: 'Rules',
             icon: 'fa-file-alt',
-            ready: false,
         },
     ],
 };

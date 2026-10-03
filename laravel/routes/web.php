@@ -7,12 +7,15 @@ use App\Http\Controllers\BillController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CaretakerController;
 use App\Http\Controllers\ComplaintController;
+use App\Http\Controllers\EmailLogController;
 use App\Http\Controllers\HouseController;
 use App\Http\Controllers\MaintenanceRecordController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PropertyDocumentController;
 use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\RenterController;
 use App\Http\Controllers\RenterDashboardController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RenterProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -84,6 +87,18 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::post('/maintenance', [MaintenanceRecordController::class, 'store'])->name('maintenance.store');
     Route::post('/maintenance/{record}/advance', [MaintenanceRecordController::class, 'advance'])->name('maintenance.advance');
     Route::delete('/maintenance/{record}', [MaintenanceRecordController::class, 'destroy'])->name('maintenance.destroy');
+
+    // Rules and documents. Renters read the active ones; only owners author them.
+    Route::get('/documents', [PropertyDocumentController::class, 'index'])->name('documents.index');
+    Route::post('/documents', [PropertyDocumentController::class, 'store'])->name('documents.store');
+    Route::put('/documents/{document}', [PropertyDocumentController::class, 'update'])->name('documents.update');
+    Route::delete('/documents/{document}', [PropertyDocumentController::class, 'destroy'])->name('documents.destroy');
+
+    // Reports. Computed from the ledger at read time; there is no reports table.
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+
+    // Email delivery log. Read only: the mail queue writes it.
+    Route::get('/email-logs', [EmailLogController::class, 'index'])->name('email-logs.index');
 
     // Renter-facing pages. Each aborts unless the actor is a Renter, so an
     // owner or caretaker reaching these gets a 403 rather than empty data.
