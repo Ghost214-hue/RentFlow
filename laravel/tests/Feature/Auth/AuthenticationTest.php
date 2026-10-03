@@ -64,7 +64,14 @@ it('rehydrates a renter session', function (): void {
 it('rehydrates a caretaker session', function (): void {
     $this->post('/login', ['email' => $this->caretaker->email, 'password' => 'secret123']);
 
-    $this->get('/')->assertOk();
+    /*
+     * A caretaker is sent to their OWN dashboard, not the owner portfolio
+     * dashboard. Rendering the owner view for them would expose every property,
+     * bill and payment in the tenant scope.
+     */
+    $this->get('/')->assertRedirect(route('caretaker.dashboard'));
+
+    $this->get(route('caretaker.dashboard'))->assertOk();
     $this->assertAuthenticatedAs($this->caretaker);
 });
 

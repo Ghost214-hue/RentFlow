@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\BillController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CaretakerController;
+use App\Http\Controllers\CaretakerDashboardController;
 use App\Http\Controllers\ComplaintController;
 use App\Http\Controllers\EmailLogController;
 use App\Http\Controllers\HouseController;
@@ -69,6 +70,13 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::post('/properties', [PropertyController::class, 'store'])->name('properties.store');
     Route::put('/properties/{property}', [PropertyController::class, 'update'])->name('properties.update');
     Route::delete('/properties/{property}', [PropertyController::class, 'destroy'])->name('properties.destroy');
+
+    // The caretaker's own landing page, scoped to their assigned properties.
+    // The controller aborts anyone who is not a Caretaker, so no extra `can:`
+    // gate is needed here (and CaretakerPolicy::viewAny is owner-only, which
+    // would have blocked the very actor this page is for).
+    Route::get('/caretaker/dashboard', CaretakerDashboardController::class)
+        ->name('caretaker.dashboard');
 
     // Caretakers — staff accounts scoped to assigned properties.
     Route::get('/caretakers', [CaretakerController::class, 'index'])->name('caretakers.index');

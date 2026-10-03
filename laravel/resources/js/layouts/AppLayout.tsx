@@ -71,7 +71,7 @@ export const NAV: Record<string, NavItem[]> = {
         },
     ],
     caretaker: [
-        { href: '/', label: 'Dashboard', icon: 'fa-chart-line' },
+        { href: '/caretaker/dashboard', label: 'Dashboard', icon: 'fa-chart-line' },
         {
             href: '/properties',
             label: 'Properties',
