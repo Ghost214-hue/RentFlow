@@ -1,0 +1,66 @@
+feat(mail): real email foundation, and fix the broken forgot-password link
+
+THE BUG
+/forgot-password was linked from the login screen and did not exist. Three
+separate faults stacked:
+  1. no route, no controller, no reset page -- it 404'd
+  2. the link was <a href>, not <Link>, so even a real route would have
+     forced a full page reload and thrown away the SPA shell
+  3. nothing existed behind it: no token model, no service, no mail
+It now works end to end: request a code, verify it, set a new password.
+
+THE FOUNDATION, rebuilt rather than ported
+The legacy EmailService hand-rolled SMTP over a raw socket, mixed template
+lookup, rendering, transport and logging in one 15-method god object, and
+called sendTemplate('Paymnt Confirm') with a magic string that silently matched
+nothing. email_logs consequently had no writer at all -- the /email-logs page
+was decorative. This replaces it:
+
+  MailTemplate (enum)      Every sendable mail as a closed set. A typo is now
+                           a fatal error, not a silently dropped email, and
+                           requiredVariables() makes "Dear ," unsendable: a
+                           missing variable fails the job and shows up in the
+                           delivery log instead of reaching a tenant.
+  RenderMailTemplate       Owner override -> shipped Blade. 13 HTML templates.
+  RenderedMail (Mailable)  Pre-rendered body, standard Laravel mail path.
+  DeliverMail (job)        Delivers and records the outcome. The log row IS
+                           the queue entry; no second email_queue table.
+  Mailer                   ONE way to send. Logging is not a separate step a
+                           call site can forget -- the pending row is written
+                           before dispatch, so it exists even if everything
+                           after that fails.
+
+Nothing sends inline. With QUEUE_CONNECTION=sync (current) it still runs inline,
+but the code path, retry behaviour and log statuses are identical to a real
+worker, so changing driver changes throughput, not behaviour.
+
+TEMPLATE SAFETY, which is why overrides are NOT Blade
+`email_templates` is per-owner, and the legacy install only ever seeded owner 1
+-- so every other owner's notifications silently sent nothing. Falling back to
+owner 1's rows would be a cross-tenant read. Shipped templates are Blade;
+an owner's own override is substituted as text with {{placeholder}} and never
+reaches the Blade compiler, because @php/@include would turn "customise your
+welcome email" into server-side code execution.
+
+FOUND A DEFECT IN MY OWN FIRST CUT
+I started with Mail::html(), but MailFake has no html() method -- so Mail::fake()
+neither recorded the send nor stopped it reaching a real transport. Tests could
+not assert and fake() gave false assurance. Now a Mailable.
+
+RESET SECURITY, beyond the legacy behaviour
+Legacy answered 404 "No account found with that email address", which is an
+account-enumeration oracle: it tells anyone which addresses have accounts here,
+so they can aim phishing at exactly those people. Known and unknown addresses
+now produce an identical response, the same wording, and comparable timing.
+Also: constant-time comparison, 15-minute expiry, 5-attempt cap, earlier codes
+invalidated on issue and on use, and rate limiting per address.
+
+KNOWN LIMITATION, inherited not introduced
+The six-digit code is stored in plaintext because `code` is VARCHAR(6) and
+cannot hold a hash. Anyone with read access to that table could reset any
+account. Flagged via PasswordResetService::IS_CODE_STORED_IN_PLAINTEXT, and
+worth a migration adding `code_hash` -- not done unilaterally, since this
+database holds real personal data.
+
+22 new tests. Suite is 270 tests / 662 assertions. Pint-clean on all touched
+files.

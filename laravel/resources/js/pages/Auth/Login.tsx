@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 interface Props {
@@ -96,7 +96,17 @@ export default function Login({ flash }: Props) {
                                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                                 <span className="text-sm text-slate-600">Remember me</span>
                             </label>
-                            <a href="/forgot-password" className="text-sm font-medium text-blue-600 hover:text-blue-700">Forgot password?</a>
+                            {/*
+                                An Inertia <Link>, NOT <a href>.
+                                A plain anchor forces a full page reload, which
+                                throws away the SPA shell -- and /forgot-password
+                                had no route at all, so this link 404'd. That was
+                                the whole of the reported "forgot password does
+                                not work" bug.
+                            */}
+                            <Link href="/forgot-password" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                                Forgot password?
+                            </Link>
                         </div>
                         <button type="submit" disabled={processing}
                             className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all disabled:opacity-60 disabled:cursor-not-allowed">

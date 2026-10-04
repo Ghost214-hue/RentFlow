@@ -2,23 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Auth\NewPasswordController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\BillController;
-use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CaretakerController;
 use App\Http\Controllers\CaretakerDashboardController;
 use App\Http\Controllers\ComplaintController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailLogController;
 use App\Http\Controllers\HouseController;
 use App\Http\Controllers\MaintenanceRecordController;
 use App\Http\Controllers\PaymentController;
-use App\Http\Controllers\TenancyTerminationController;
-use App\Http\Controllers\PropertyDocumentController;
 use App\Http\Controllers\PropertyController;
+use App\Http\Controllers\PropertyDocumentController;
 use App\Http\Controllers\RenterController;
 use App\Http\Controllers\RenterDashboardController;
-use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RenterProfileController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\TenancyTerminationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -36,6 +38,23 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+
+    /*
+     * Password reset. This route DID NOT EXIST -- the login screen linked to
+     * /forgot-password and got a 404, which is why the link appeared broken.
+     *
+     * Two steps, both under `guest`: request a code, then set a new password
+     * with it. The controllers guarantee the response is identical whether or
+     * not the address has an account, so that rule cannot be forgotten here.
+     */
+    Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])
+        ->name('password.request');
+    Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
+        ->name('password.email');
+    Route::get('/reset-password', [NewPasswordController::class, 'create'])
+        ->name('password.reset');
+    Route::post('/reset-password', [NewPasswordController::class, 'store'])
+        ->name('password.update');
 });
 
 Route::middleware(['legacy.jwt'])->group(function (): void {
