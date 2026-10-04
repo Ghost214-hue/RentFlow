@@ -161,7 +161,7 @@ class RenterController extends Controller
         );
 
         return Inertia::render('Renters/Show', [
-            'renter' => new RenterResource($renter),
+            'renter' => RenterResource::make($renter)->resolve(),
             'history' => [
                 'bills' => $bills,
                 'payments' => $payments,
