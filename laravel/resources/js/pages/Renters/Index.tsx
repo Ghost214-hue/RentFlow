@@ -3,6 +3,7 @@ import { useState } from 'react';
 import AppLayout from '@/layouts/AppLayout';
 import type { AuthUser, Paginated, PropertyOption, Renter, VacantHouse } from '@/types';
 import RenterWizardModal from './RenterWizardModal';
+import TerminateModal from './TerminateModal';
 import RentersTable from './RentersTable';
 
 interface Props {
@@ -36,26 +37,24 @@ export default function RentersIndex({
     const [showModal, setShowModal] = useState(false);
     const [editing, setEditing] = useState<Renter | null>(null);
 
+    // Termination replaces deletion, so this drives a modal rather than a
+    // confirm-and-DELETE.
+    const [terminating, setTerminating] = useState<Renter | null>(null);
+    const [terminateMode, setTerminateMode] = useState<'terminate' | 'approve'>('terminate');
+
     function applyFilter(propertyId: string | undefined, status: string | undefined, search: string | undefined) {
         router.get('/renters', { property_id: propertyId, status, search }, { preserveState: true });
     }
 
-    function remove(renter: Renter) {
-        // The server refuses deletion while the renter owes money; say so
-        // up front rather than letting the click fail silently.
-        if (Number(renter.balance) > 0) {
-            window.alert(
-                `${renter.name} has an outstanding balance of KES ${renter.balance}. ` +
-                'Settle it before removing the renter, so their billing history is kept.',
-            );
-            return;
-        }
-
-        if (!window.confirm(`Remove ${renter.name}? This cannot be undone.`)) {
-            return;
-        }
-
-        router.delete(`/renters/${renter.id}`, { preserveScroll: true });
+    /*
+     * A tenancy is ENDED, never deleted. There is no remove action: deleting the
+     * row would orphan the bills, payments and the termination audit trail.
+     * Terminating frees the unit and scrubs personal data while keeping the
+     * financial history.
+     */
+    function openTerminate(renter: Renter, mode: 'terminate' | 'approve') {
+        setTerminating(renter);
+        setTerminateMode(mode);
     }
 
     return (
@@ -127,8 +126,16 @@ export default function RentersIndex({
                     renters={renters}
                     canManage={canManage}
                     onEdit={(r) => { setEditing(r); setShowModal(true); }}
-                    onDelete={remove}
+                    onTerminate={openTerminate}
                 />
+
+                {terminating && (
+                    <TerminateModal
+                        renter={terminating}
+                        mode={terminateMode}
+                        onClose={() => { setTerminating(null); setTerminateMode('terminate'); }}
+                    />
+                )}
 
                 {showModal && (
                     <RenterWizardModal

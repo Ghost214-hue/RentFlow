@@ -173,21 +173,6 @@ class RenterController extends Controller
         ]);
     }
 
-    public function destroy(Renter $renter): RedirectResponse
-    {
-        // Policy refuses while the renter still owes money, so their bills
-        // and payment history are never orphaned.
-        $this->authorize('delete', $renter);
-
-        $name = $renter->name;
-        $houseId = (int) $renter->house_id;
-        $propertyId = (int) $renter->property_id;
-
-        $renter->delete();
-        $this->releaseUnit($houseId, $propertyId);
-
-        return back()->with('success', "{$name} removed.");
-    }
 
     /**
      * Free a unit back to vacant and recompute the property's occupied count

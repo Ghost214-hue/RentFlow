@@ -266,6 +266,13 @@ export interface RenterDashboardProps {
         open_complaints: number;
         open_maintenance: number;
     };
+    /** Tenancy status, so the dashboard offers the right action. */
+    tenancy: {
+        status: string;
+        can_request_termination: boolean;
+        pending_request: boolean;
+        effective_date: string | null;
+    };
     recentBills: Bill[];
     recentPayments: Array<{
         id: number;

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\RenterStatus;
+use App\Enums\TerminationStatus;
 use App\Http\Resources\BillResource;
 use App\Http\Resources\MaintenanceRecordResource;
 use App\Models\Complaint;
 use App\Models\MaintenanceRecord;
 use App\Models\Payment;
 use App\Models\Renter;
+use App\Models\TenancyTermination;
 use App\Support\Amount;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -75,6 +78,28 @@ class RenterDashboardController extends Controller
                 'unpaid_bill_count' => $outstandingBills->count(),
                 'open_complaints' => $openComplaints,
                 'open_maintenance' => $openMaintenance,
+            ],
+            /*
+             * Tenancy status, so the dashboard can offer the right action:
+             *   active              -> "Request to leave"
+             *   pending_termination -> "Request submitted, awaiting approval"
+             *   terminated          -> nothing; the tenancy has ended
+             */
+            'tenancy' => [
+                'status' => $renter->status instanceof \BackedEnum
+                    ? $renter->status->value
+                    : (string) $renter->status,
+                'can_request_termination' => $renter->status instanceof RenterStatus
+                    ? $renter->status === RenterStatus::Active
+                    : false,
+                'pending_request' => TenancyTermination::query()
+                    ->where('tenant_id', $renter->getKey())
+                    ->where('status', TerminationStatus::Pending->value)
+                    ->exists(),
+                'effective_date' => TenancyTermination::query()
+                    ->where('tenant_id', $renter->getKey())
+                    ->orderByDesc('id')
+                    ->value('effective_date'),
             ],
             'recentBills' => BillResource::collection($bills)->resolve(),
             'recentPayments' => $recentPayments->map(fn (Payment $p) => [

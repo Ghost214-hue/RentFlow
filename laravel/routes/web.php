@@ -56,7 +56,14 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::post('/renters', [RenterController::class, 'store'])->name('renters.store');
     Route::get('/renters/{renter}', [RenterController::class, 'show'])->name('renters.show');
     Route::put('/renters/{renter}', [RenterController::class, 'update'])->name('renters.update');
-    Route::delete('/renters/{renter}', [RenterController::class, 'destroy'])->name('renters.destroy');
+    /*
+     * There is deliberately NO DELETE /renters/{renter}.
+     *
+     * Hard-deleting a renter would orphan their bills, payments and the
+     * tenancy_terminations audit trail. A tenancy now ends by being TERMINATED,
+     * which frees the unit, scrubs the personal data and keeps the financial
+     * history. See TenancyTerminationController.
+     */
 
     // Bills. Figures come from BillSnapshot on every surface.
     Route::get('/bills', [BillController::class, 'index'])->name('bills.index');

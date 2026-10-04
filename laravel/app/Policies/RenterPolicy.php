@@ -55,26 +55,41 @@ class RenterPolicy
     }
 
     /**
-     * Only an owner may terminate or delete, and never a renter who still
-     * owes money — the bills and payment history must be preserved.
+     * A renter can never be HARD DELETED.
+     *
+     * Deleting the row would orphan their bills, payments and the
+     * tenancy_terminations audit trail, and would destroy the record of who
+     * occupied which unit. A tenancy now ends by being TERMINATED, which
+     * frees the unit, scrubs the personal data and keeps the financial
+     * history.
+     *
+     * Denied unconditionally rather than conditionally, so there is no path --
+     * not even for an owner with a fully settled account -- that removes the
+     * row. There is also no DELETE route for /renters/{renter}.
      */
     public function delete(Owner|Caretaker|Renter $actor, Renter $renter): bool
     {
-        return $actor instanceof Owner && $this->hasNoOutstandingBalance($renter);
+        return false;
     }
 
     /**
-     * Refuse deletion while the renter owes money, so financial history is
-     * never orphaned. Credit (overpayment) does not block deletion.
+     * Only an owner terminates, and a caretaker may act only on renters in
+     * their assigned properties.
+     *
+     * A renter cannot terminate themselves: they REQUEST to leave, which
+     * creates a pending record the owner then approves.
      */
-    private function hasNoOutstandingBalance(Renter $renter): bool
-    {
-        return (float) $renter->balance <= 0.0;
-    }
-
-    /** Termination frees the unit; same owner-only rule. */
     public function terminate(Owner|Caretaker|Renter $actor, Renter $renter): bool
     {
-        return $actor instanceof Owner;
+        if ($actor instanceof Owner) {
+            return true;
+        }
+
+        if ($actor instanceof Caretaker) {
+            return $renter->property_id !== null
+                && $actor->isAssignedTo((int) $renter->property_id);
+        }
+
+        return false;
     }
 }

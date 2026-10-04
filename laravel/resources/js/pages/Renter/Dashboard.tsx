@@ -1,4 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
+import { useState } from 'react';
+import RequestTerminationModal from './RequestTerminationModal';
 import AppLayout from '@/layouts/AppLayout';
 import { formatMoney } from '@/lib/money';
 import type { Bill, RenterDashboardProps } from '@/types';
@@ -11,7 +13,8 @@ import type { Bill, RenterDashboardProps } from '@/types';
  * from the cached tenants.balance column.
  */
 export default function RenterDashboard(props: RenterDashboardProps) {
-    const { renter, summary, recentBills, recentPayments } = props;
+    const { renter, summary, tenancy, recentBills, recentPayments } = props;
+    const [requestingTermination, setRequestingTermination] = useState(false);
 
     const cards = [
         {
@@ -142,6 +145,53 @@ export default function RenterDashboard(props: RenterDashboardProps) {
                         </Link>
                     ))}
                 </div>
+
+                {/*
+                 * Tenancy status and the renter's own exit path. A renter
+                 * REQUESTS to leave; the landlord approves. There is no remove
+                 * action for a renter at all.
+                 */}
+                <section className="mt-6 bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">Your Tenancy</h2>
+                            <p className="text-sm text-slate-500 mt-0.5">
+                                {tenancy.status === 'active'
+                                    ? 'You are currently in this tenancy.'
+                                    : tenancy.status === 'pending_termination'
+                                        ? 'You have asked to leave. Your landlord will review it.'
+                                        : 'This tenancy has ended.'}
+                            </p>
+                        </div>
+
+                        {tenancy.can_request_termination ? (
+                            <button
+                                type="button"
+                                onClick={() => setRequestingTermination(true)}
+                                className="px-5 py-2.5 bg-white text-amber-700 border border-amber-200 rounded-xl font-medium hover:bg-amber-50 transition-all inline-flex items-center gap-2 self-start sm:self-auto"
+                            >
+                                <i className="fas fa-door-open" aria-hidden="true" />
+                                Request to Leave
+                            </button>
+                        ) : tenancy.pending_request ? (
+                            <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 self-start sm:self-auto">
+                                Request pending
+                                {tenancy.effective_date ? ` · ${tenancy.effective_date}` : ''}
+                            </span>
+                        ) : (
+                            <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 self-start sm:self-auto">
+                                Tenancy ended
+                            </span>
+                        )}
+                    </div>
+                </section>
+
+                {requestingTermination && (
+                    <RequestTerminationModal
+                        renterId={renter.id}
+                        onClose={() => setRequestingTermination(false)}
+                    />
+                )}
             </AppLayout>
         </>
     );
