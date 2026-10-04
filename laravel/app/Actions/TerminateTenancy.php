@@ -6,10 +6,12 @@ namespace App\Actions;
 
 use App\Enums\RenterStatus;
 use App\Enums\TerminationStatus;
+use App\Mail\PortfolioMailer;
 use App\Models\Caretaker;
 use App\Models\House;
 use App\Models\MaintenanceRecord;
 use App\Models\Owner;
+use App\Models\Property;
 use App\Models\Renter;
 use App\Models\TenancyTermination;
 use App\Support\Amount;
@@ -36,6 +38,15 @@ use RuntimeException;
  */
 final class TerminateTenancy
 {
+    private readonly PortfolioMailer $mailer;
+
+    public function __construct(?PortfolioMailer $mailer = null)
+    {
+        // Constructed by hand (`new TerminateTenancy()`), so the mailer is
+        // resolved here rather than demanded at every call site.
+        $this->mailer = $mailer ?? app(PortfolioMailer::class);
+    }
+
     /**
      * A renter asks to leave their tenancy.
      */
@@ -51,7 +62,7 @@ final class TerminateTenancy
 
         $effectiveDate ??= now()->addDays(30)->toDateString();
 
-        return DB::transaction(function () use ($renter, $reason, $effectiveDate): TenancyTermination {
+        $termination = DB::transaction(function () use ($renter, $reason, $effectiveDate): TenancyTermination {
             // Lock the renter so two requests cannot both pass the check.
             $locked = Renter::query()->lockForUpdate()->findOrFail($renter->getKey());
 
@@ -77,6 +88,12 @@ final class TerminateTenancy
                 'status' => TerminationStatus::Pending->value,
             ]);
         });
+
+        // After the commit: a request that then rolls back must not leave the
+        // landlord chasing a termination that does not exist.
+        $this->mailer->terminationRequested($termination);
+
+        return $termination;
     }
 
     /**
@@ -93,7 +110,7 @@ final class TerminateTenancy
     ): TenancyTermination {
         $effectiveDate ??= now()->toDateString();
 
-        return DB::transaction(function () use ($renter, $actor, $reason, $effectiveDate, $damages): TenancyTermination {
+        $termination = DB::transaction(function () use ($renter, $actor, $reason, $effectiveDate, $damages): TenancyTermination {
             $locked = Renter::query()->lockForUpdate()->findOrFail($renter->getKey());
 
             $houseId = $locked->house_id;
@@ -157,7 +174,7 @@ final class TerminateTenancy
                     ->where('status', 'occupied')
                     ->count();
 
-                \App\Models\Property::query()
+                Property::query()
                     ->whereKey($propertyId)
                     ->update(['occupied' => $occupied]);
             }
@@ -189,5 +206,11 @@ final class TerminateTenancy
                 'status' => TerminationStatus::Completed->value,
             ]);
         });
+
+        // Sent after the commit so a rolled-back termination cannot notify
+        // a renter who is still, in fact, a tenant.
+        $this->mailer->tenancyEnded($termination);
+
+        return $termination;
     }
 }

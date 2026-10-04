@@ -6,6 +6,7 @@ namespace App\Actions;
 
 use App\Billing\BillSnapshotBuilder;
 use App\Enums\PaymentStatus;
+use App\Mail\PortfolioMailer;
 use App\Models\Bill;
 use App\Models\BillItem;
 use App\Models\Payment;
@@ -13,8 +14,8 @@ use App\Models\PaymentAllocation;
 use App\Models\Renter;
 use App\Support\Amount;
 use Brick\Money\Money as BrickMoney;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 /**
  * Record a payment and allocate it across the renter's arrears.
@@ -33,16 +34,24 @@ use RuntimeException;
  */
 final class RecordPayment
 {
+    private readonly PortfolioMailer $mailer;
+
     public function __construct(
         private readonly BillSnapshotBuilder $snapshots = new BillSnapshotBuilder,
-    ) {}
+        ?PortfolioMailer $mailer = null,
+    ) {
+        // Actions are constructed by hand (`new RecordPayment()`), so the
+        // mailer is resolved here instead of being demanded at every call
+        // site. Resolved eagerly so it can never be null at send time.
+        $this->mailer = $mailer ?? app(PortfolioMailer::class);
+    }
 
     /**
      * @param  array{tenant_id: int, amount: string, month?: string, type?: string, method?: string, date?: string, description?: string, receipt?: string, status?: string}  $attributes
      */
     public function handle(array $attributes): Payment
     {
-        return DB::transaction(function () use ($attributes): Payment {
+        $payment = DB::transaction(function () use ($attributes): Payment {
             $renter = Renter::query()->lockForUpdate()->findOrFail($attributes['tenant_id']);
 
             $amount = Amount::of($attributes['amount']);
@@ -68,6 +77,19 @@ final class RecordPayment
 
             return $payment->fresh(['allocations', 'renter', 'house']);
         });
+
+        /*
+         * Notify AFTER the transaction commits, never inside it.
+         *
+         * Mail runs through the queue, and with QUEUE_CONNECTION=sync that
+         * means inline: sending inside the closure would dispatch before the
+         * commit, so a rollback could leave a renter holding a receipt for a
+         * payment that does not exist. After the commit there is nothing to
+         * undo. Best-effort -- a mail outage must not undo a recorded payment.
+         */
+        $this->mailer->paymentReceived($payment);
+
+        return $payment;
     }
 
     /**
@@ -105,7 +127,7 @@ final class RecordPayment
      * unpaid. "Unpaid" is derived from the ledger via BillSnapshot, never
      * from bills.status.
      *
-     * @return \Illuminate\Support\Collection<int, Bill>
+     * @return Collection<int, Bill>
      */
     private function candidateBills(Renter $renter, string $chosenMonth)
     {

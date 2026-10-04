@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreComplaintRequest;
 use App\Http\Resources\ComplaintResource;
+use App\Mail\PortfolioMailer;
 use App\Models\Caretaker;
 use App\Models\Complaint;
 use App\Models\Owner;
@@ -123,6 +124,10 @@ class ComplaintController extends Controller
         }
 
         $complaint = Complaint::create($attributes);
+
+        // Acknowledge it by email. Best-effort and outside any transaction:
+        // a complaint that was filed must not be lost because mail is down.
+        app(PortfolioMailer::class)->complaintFiled($complaint);
 
         return back()->with('success', "Complaint \"{$complaint->title}\" recorded.");
     }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
+use App\Enums\RenterStatus;
+use App\Mail\PortfolioMailer;
 use App\Models\Bill;
 use App\Models\BillItem;
-use App\Enums\RenterStatus;
 use App\Models\House;
 use App\Models\Property;
 use App\Models\Renter;
-use App\Support\TenantContext;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -30,12 +30,21 @@ use RuntimeException;
  */
 final class OnboardRenter
 {
+    private readonly PortfolioMailer $mailer;
+
+    public function __construct(?PortfolioMailer $mailer = null)
+    {
+        // Constructed by hand (`new OnboardRenter()`), so the mailer is
+        // resolved here rather than demanded at every call site.
+        $this->mailer = $mailer ?? app(PortfolioMailer::class);
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
     public function handle(array $attributes): Renter
     {
-        return DB::transaction(function () use ($attributes): Renter {
+        $renter = DB::transaction(function () use ($attributes): Renter {
             $renter = Renter::create([
                 'property_id' => $attributes['property_id'],
                 'house_id' => $attributes['house_id'],
@@ -70,6 +79,12 @@ final class OnboardRenter
 
             return $renter;
         });
+
+        // After the commit, never inside it: see RecordPayment. A welcome
+        // email must not go out for a renter whose onboarding then rolled back.
+        $this->mailer->renterOnboarded($renter);
+
+        return $renter;
     }
 
     /**
