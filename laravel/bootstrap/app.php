@@ -1,13 +1,15 @@
 <?php
 
+use App\Http\Middleware\AuthenticateLegacyJwt;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveTenantBeforeBindings;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
-use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -41,6 +43,9 @@ return Application::configure(basePath: dirname(__DIR__))
             ],
             append: [
                 HandleInertiaRequests::class,
+                // Appended LAST so headers land on whatever the response turned
+                // out to be, including a rendered error page.
+                SecurityHeaders::class,
             ],
         );
 
@@ -48,7 +53,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // cookie. The bridge guard turns that into a Laravel session so a user
         // logged into either app is logged into both. Removed at cutover.
         $middleware->alias([
-            'legacy.jwt' => \App\Http\Middleware\AuthenticateLegacyJwt::class,
+            'legacy.jwt' => AuthenticateLegacyJwt::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

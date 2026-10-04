@@ -26,11 +26,14 @@ use App\Policies\PropertyPolicy;
 use App\Policies\RenterPolicy;
 use App\Reports\ReportScope;
 use App\Support\TenantContext;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -57,6 +60,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->registerRateLimiters();
+
         // Explicit policy mapping. Nothing is inferred, and nothing grants
         // access by default — an unmapped model denies.
         Gate::policy(House::class, HousePolicy::class);
@@ -86,5 +91,41 @@ class AppServiceProvider extends ServiceProvider
                 fn () => TenantContext::clear(),
             );
         }
+    }
+
+    /**
+     * Named rate limits, applied per route with `->middleware('throttle:name')`.
+     *
+     * Before this, only sign-in and password reset were throttled. Every other
+     * endpoint could be driven in a loop by anyone holding a session -- filing
+     * thousands of complaints, regenerating bills every second, or mailing a
+     * renter thousands of times (each send costs money and leaves a row behind).
+     *
+     * Limits are keyed on the authenticated user where there is one, so one busy
+     * owner cannot exhaust the allowance of every other owner behind the same
+     * NAT. They are deliberately generous: this is a back office behind a login,
+     * not a public API, so the aim is to make bulk abuse obvious rather than to
+     * get in a real user's way.
+     */
+    private function registerRateLimiters(): void
+    {
+        // Per address AND per IP, so neither one attacker cycling addresses nor
+        // one shared office IP can grind through a list of accounts.
+        RateLimiter::for('login', fn (Request $request): Limit => Limit::perMinute(5)->by(
+            mb_strtolower((string) $request->input('email')).'|'.$request->ip()
+        ));
+
+        $actor = static fn (Request $request): string => (string) ($request->user()?->getAuthIdentifier() ?? $request->ip());
+
+        RateLimiter::for('session', fn (Request $request): Limit => Limit::perMinute(300)->by($actor($request)));
+
+        // Anything that writes money, files work, or changes a tenancy.
+        RateLimiter::for('writes', fn (Request $request): Limit => Limit::perMinute(60)->by($actor($request)));
+
+        // Bulk exports and portfolio-wide reads.
+        RateLimiter::for('reads', fn (Request $request): Limit => Limit::perMinute(120)->by($actor($request)));
+
+        // Queues outbound mail: every send costs money and writes a row.
+        RateLimiter::for('mail', fn (Request $request): Limit => Limit::perMinute(10)->by($actor($request)));
     }
 }

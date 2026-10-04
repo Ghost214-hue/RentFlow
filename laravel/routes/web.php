@@ -57,7 +57,12 @@ Route::middleware('guest')->group(function (): void {
         ->name('password.update');
 });
 
-Route::middleware(['legacy.jwt'])->group(function (): void {
+/*
+ * `throttle:session` is a broad backstop across the authenticated area, on top
+ * of the per-route limits below. One authenticated actor cannot hammer the app
+ * even where an individual endpoint's own allowance is generous.
+ */
+Route::middleware(['legacy.jwt', 'throttle:session'])->group(function (): void {
     Route::get('/', DashboardController::class)->name('dashboard');
 
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
@@ -72,7 +77,7 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     // model name; the URL is /renters in the new app while the DB table
     // stays `tenants`.
     Route::get('/renters', [RenterController::class, 'index'])->name('renters.index');
-    Route::post('/renters', [RenterController::class, 'store'])->name('renters.store');
+    Route::post('/renters', [RenterController::class, 'store'])->middleware('throttle:mail')->name('renters.store');
     Route::get('/renters/{renter}', [RenterController::class, 'show'])->name('renters.show');
     Route::put('/renters/{renter}', [RenterController::class, 'update'])->name('renters.update');
     /*
@@ -86,11 +91,11 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
 
     // Bills. Figures come from BillSnapshot on every surface.
     Route::get('/bills', [BillController::class, 'index'])->name('bills.index');
-    Route::post('/bills/generate', [BillController::class, 'generate'])->name('bills.generate');
+    Route::post('/bills/generate', [BillController::class, 'generate'])->middleware('throttle:writes')->name('bills.generate');
 
     // Payments. All money enters through RecordPayment.
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
-    Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
+    Route::post('/payments', [PaymentController::class, 'store'])->middleware('throttle:writes')->name('payments.store');
     Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->name('payments.confirm');
 
     // Properties. Unit counts are recomputed from the house rows on every read.
@@ -114,7 +119,7 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
 
     // Complaints — two-way communication. Visibility follows the recipient list.
     Route::get('/complaints', [ComplaintController::class, 'index'])->name('complaints.index');
-    Route::post('/complaints', [ComplaintController::class, 'store'])->name('complaints.store');
+    Route::post('/complaints', [ComplaintController::class, 'store'])->middleware('throttle:mail')->name('complaints.store');
     Route::post('/complaints/{complaint}/advance', [ComplaintController::class, 'advance'])->name('complaints.advance');
     Route::delete('/complaints/{complaint}', [ComplaintController::class, 'destroy'])->name('complaints.destroy');
 
@@ -131,10 +136,10 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
     Route::delete('/documents/{document}', [PropertyDocumentController::class, 'destroy'])->name('documents.destroy');
 
     // Reports. Computed from the ledger at read time; there is no reports table.
-    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('/reports', [ReportController::class, 'index'])->middleware('throttle:reads')->name('reports.index');
 
     // Email delivery log. Read only: the mail queue writes it.
-    Route::get('/email-logs', [EmailLogController::class, 'index'])->name('email-logs.index');
+    Route::get('/email-logs', [EmailLogController::class, 'index'])->middleware('throttle:reads')->name('email-logs.index');
 
     // Tenancy termination. A renter REQUESTS to leave; the owner terminates or
     // approves. Backed by the previously unused tenancy_terminations table.

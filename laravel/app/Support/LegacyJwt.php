@@ -29,6 +29,13 @@ final class LegacyJwt
      */
     public static function decode(string $token): ?array
     {
+        // A bridge with no usable secret is switched OFF, not open. Checking
+        // this first means the rest of the method never has to reason about a
+        // blank key.
+        if (self::hasSecret() === false) {
+            return null;
+        }
+
         $parts = explode('.', $token);
 
         if (count($parts) !== 3) {
@@ -109,10 +116,34 @@ final class LegacyJwt
         };
     }
 
+    /** Is the bridge usable at all? Empty or missing secret means no. */
+    public static function hasSecret(): bool
+    {
+        return trim((string) env('JWT_SECRET', '')) !== '';
+    }
+
+    /**
+     * The shared HS256 secret.
+     *
+     * FAILS CLOSED. hash_hmac() accepts an EMPTY key and still produces a
+     * valid, verifiable MAC -- so an empty JWT_SECRET means anyone can
+     * compute a correct signature for a token of their choosing and
+     * impersonate any owner. This project shipped with JWT_SECRET= (present,
+     * but zero characters), which is exactly that condition.
+     *
+     * A missing or empty secret therefore disables the bridge entirely rather
+     * than accepting anything. Signing in still works through the normal
+     * Laravel session; only the legacy cookie is refused.
+     *
+     * @throws MissingJwtSecret
+     */
     private static function secret(): string
     {
-        // Shared with the legacy app for the duration of coexistence.
-        $secret = (string) env('JWT_SECRET', '');
+        $secret = trim((string) env('JWT_SECRET', ''));
+
+        if ($secret === '') {
+            throw MissingJwtSecret::make();
+        }
 
         return $secret;
     }
