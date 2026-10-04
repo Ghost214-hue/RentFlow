@@ -12,6 +12,7 @@ use App\Http\Controllers\EmailLogController;
 use App\Http\Controllers\HouseController;
 use App\Http\Controllers\MaintenanceRecordController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\TenancyTerminationController;
 use App\Http\Controllers\PropertyDocumentController;
 use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\RenterController;
@@ -108,6 +109,16 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
 
     // Email delivery log. Read only: the mail queue writes it.
     Route::get('/email-logs', [EmailLogController::class, 'index'])->name('email-logs.index');
+
+    // Tenancy termination. A renter REQUESTS to leave; the owner terminates or
+    // approves. Backed by the previously unused tenancy_terminations table.
+    Route::get('/terminations', [TenancyTerminationController::class, 'index'])->name('terminations.index');
+    Route::post('/renters/{renter}/termination', [TenancyTerminationController::class, 'requestTermination'])
+        ->name('renters.termination.request');
+    Route::post('/renters/{renter}/terminate', [TenancyTerminationController::class, 'terminate'])
+        ->name('renters.terminate');
+    Route::post('/renters/{renter}/termination/approve', [TenancyTerminationController::class, 'approve'])
+        ->name('renters.termination.approve');
 
     // Renter-facing pages. Each aborts unless the actor is a Renter, so an
     // owner or caretaker reaching these gets a 403 rather than empty data.

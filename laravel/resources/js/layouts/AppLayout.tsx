@@ -65,6 +65,11 @@ export const NAV: Record<string, NavItem[]> = {
             icon: 'fa-chart-pie',
         },
         {
+            href: '/terminations',
+            label: 'Terminations',
+            icon: 'fa-door-open',
+        },
+        {
             href: '/email-logs',
             label: 'Email Delivery',
             icon: 'fa-envelope-open-text',
@@ -149,6 +154,7 @@ const PAGE_TITLES: Record<string, string> = {
     '/complaints': 'Complaints',
     '/documents': 'Rules',
     '/reports': 'Reports',
+    '/terminations': 'Terminations',
     '/email-logs': 'Email Delivery',
 };
 

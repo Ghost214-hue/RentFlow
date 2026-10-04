@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { formatMoney } from '@/lib/money';
 import type { Paginated, Renter } from '@/types';
 import { initials } from '@/pages/Houses/helpers';
@@ -76,6 +76,36 @@ export default function RentersTable({
                                                     <button type="button" onClick={() => onEdit(r)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" aria-label={`Edit ${r.name}`}>
                                                         <i className="fas fa-pen" aria-hidden="true" />
                                                     </button>
+                                                    {/*
+                                                        A pending request needs the owner to APPROVE it;
+                                                        otherwise the owner TERMINATES directly. A
+                                                        terminated renter offers neither.
+                                                    */}
+                                                    {r.status === 'pending_termination' ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (!window.confirm(`Approve ${r.name}'s request to leave?`)) return;
+                                                                router.post(`/renters/${r.id}/termination/approve`, {}, { preserveScroll: true });
+                                                            }}
+                                                            className="p-1.5 text-slate-400 hover:text-emerald-600 transition-colors"
+                                                            aria-label={`Approve termination for ${r.name}`}>
+                                                            <i className="fas fa-check" aria-hidden="true" />
+                                                        </button>
+                                                    ) : r.status === 'active' ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (!window.confirm(
+                                                                    `Terminate ${r.name}'s tenancy?\n\nThe unit will be marked vacant and their personal details removed. This cannot be undone.`,
+                                                                )) return;
+                                                                router.post(`/renters/${r.id}/terminate`, {}, { preserveScroll: true });
+                                                            }}
+                                                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                                                            aria-label={`Terminate tenancy for ${r.name}`}>
+                                                            <i className="fas fa-door-open" aria-hidden="true" />
+                                                        </button>
+                                                    ) : null}
                                                     <button type="button" onClick={() => onDelete(r)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors" aria-label={`Remove ${r.name}`}>
                                                         <i className="fas fa-trash" aria-hidden="true" />
                                                     </button>
