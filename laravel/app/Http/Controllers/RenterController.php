@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Actions\OnboardRenter;
+use App\Models\Bill;
+use App\Models\Complaint;
+use App\Models\MaintenanceRecord;
+use App\Models\Payment;
+use App\Support\Amount;
 use App\Http\Requests\StoreRenterRequest;
 use App\Http\Resources\RenterResource;
 use App\Models\Caretaker;
@@ -93,8 +98,78 @@ class RenterController extends Controller
     {
         $this->authorize('view', $renter);
 
+        $renter->load(['property:id,name', 'house:id,unit,rent']);
+
+        /*
+         * History for the detail page. Ported from tenant-details.php, which
+         * showed receipts, bills, complaints, maintenance and documents.
+         *
+         * Every figure is derived from the ledger; tenants.balance is a cache
+         * that drifts and is not trusted here.
+         */
+        $bills = $renter->bills()
+            ->orderByDesc('month')
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get()
+            ->map(fn (Bill $b) => [
+                'id' => (int) $b->getKey(),
+                'month' => $b->month,
+                'total' => Amount::toString(Amount::of($b->total)),
+                'status' => $b->status instanceof \BackedEnum ? $b->status->value : (string) $b->status,
+                'due_date' => $b->due_date?->toDateString(),
+            ]);
+
+        $payments = $renter->payments()
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get()
+            ->map(fn (Payment $p) => [
+                'id' => (int) $p->getKey(),
+                'amount' => Amount::toString(Amount::of($p->amount)),
+                'method' => $p->method,
+                'status' => $p->status instanceof \BackedEnum ? $p->status->value : (string) $p->status,
+                'date' => $p->date?->toDateString(),
+            ]);
+
+        $complaints = $renter->complaints()
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (Complaint $c) => [
+                'id' => (int) $c->getKey(),
+                'title' => (string) $c->title,
+                'status' => $c->status instanceof \BackedEnum ? $c->status->value : (string) $c->status,
+                'created_at' => $c->created_at?->toIso8601String(),
+            ]);
+
+        $maintenance = $renter->maintenance()
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (MaintenanceRecord $m) => [
+                'id' => (int) $m->getKey(),
+                'title' => (string) $m->title,
+                'status' => $m->status instanceof \BackedEnum ? $m->status->value : (string) $m->status,
+                'priority' => $m->priority instanceof \BackedEnum ? $m->priority->value : (string) $m->priority,
+                'created_at' => $m->created_at?->toIso8601String(),
+            ]);
+
+        // Outstanding from unpaid bills, not the drifting balance cache.
+        $unpaid = Amount::sum(
+            $renter->bills()->whereIn('status', ['pending', 'partial', 'overdue'])->pluck('total')
+        );
+
         return Inertia::render('Renters/Show', [
-            'renter' => new RenterResource($renter->load(['property:id,name', 'house:id,unit,rent'])),
+            'renter' => new RenterResource($renter),
+            'history' => [
+                'bills' => $bills,
+                'payments' => $payments,
+                'complaints' => $complaints,
+                'maintenance' => $maintenance,
+                'unpaid_total' => Amount::toString($unpaid),
+            ],
+            'flash' => ['success' => $request->session()->get('success')],
         ]);
     }
 

@@ -124,6 +124,18 @@ class Renter extends Authenticatable
         return $this->hasMany(Payment::class, 'tenant_id');
     }
 
+    /** Complaints raised by this renter. */
+    public function complaints(): HasMany
+    {
+        return $this->hasMany(Complaint::class, 'tenant_id');
+    }
+
+    /** Maintenance requests raised by this renter. */
+    public function maintenance(): HasMany
+    {
+        return $this->hasMany(MaintenanceRecord::class, 'tenant_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

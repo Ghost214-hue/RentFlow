@@ -2,7 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import AppLayout from '@/layouts/AppLayout';
 import type { AuthUser, Paginated, PropertyOption, Renter, VacantHouse } from '@/types';
-import RenterModal from './RenterModal';
+import RenterWizardModal from './RenterWizardModal';
 import RentersTable from './RentersTable';
 
 interface Props {
@@ -131,7 +131,7 @@ export default function RentersIndex({
                 />
 
                 {showModal && (
-                    <RenterModal
+                    <RenterWizardModal
                         editing={editing}
                         properties={properties}
                         vacantHouses={vacantHouses}

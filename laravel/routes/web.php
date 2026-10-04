@@ -44,6 +44,7 @@ Route::middleware(['legacy.jwt'])->group(function (): void {
 
     Route::get('/houses', [HouseController::class, 'index'])->name('houses.index');
     Route::post('/houses', [HouseController::class, 'store'])->name('houses.store');
+    Route::get('/houses/{house}', [HouseController::class, 'show'])->name('houses.show');
     Route::put('/houses/{house}', [HouseController::class, 'update'])->name('houses.update');
     Route::delete('/houses/{house}', [HouseController::class, 'destroy'])->name('houses.destroy');
 

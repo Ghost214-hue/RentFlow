@@ -47,9 +47,20 @@ class RenterFactory extends Factory
         return $this->state(fn (): array => ['property_id' => $property->getKey()]);
     }
 
+    /**
+     * Link this renter to a house.
+     *
+     * BOTH sides are written: tenants.house_id and houses.tenant_id. The
+     * legacy schema stores the link in both places and code reads both --
+     * House::renter() joins houses.tenant_id while HousePolicy checks the
+     * renter's house_id. Setting only one leaves the unit detail page showing
+     * a vacant unit for an occupied one.
+     */
     public function inHouse(House $house): static
     {
-        return $this->state(fn (): array => [
+        return $this->afterCreating(function (Renter $renter) use ($house): void {
+            $house->forceFill(['tenant_id' => $renter->getKey()])->save();
+        })->state(fn (): array => [
             'house_id' => $house->getKey(),
             'property_id' => $house->property_id,
         ]);

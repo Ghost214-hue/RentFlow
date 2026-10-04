@@ -38,6 +38,13 @@ function HouseRow({ house, canManage, onEdit, onDelete }: {
             </td>
             <td className="px-6 py-4">
                 <div className="flex items-center gap-1">
+                    {/* View the unit profile. Available to every staff role,
+                        including a caretaker who cannot edit the unit. */}
+                    <Link href={`/houses/${house.id}`}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
+                        aria-label={`View unit ${house.unit}`}>
+                        <i className="fas fa-eye" aria-hidden="true" />
+                    </Link>
                     {canManage && (
                         <>
                             <button type="button" onClick={() => onEdit(house)}

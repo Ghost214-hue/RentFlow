@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreHouseRequest;
+use App\Models\Bill;
+use App\Models\MaintenanceRecord;
+use App\Support\Amount;
 use App\Http\Resources\HouseResource;
 use App\Models\Caretaker;
 use App\Models\House;
@@ -22,6 +25,99 @@ use Inertia\Response;
  */
 class HouseController extends Controller
 {
+    /**
+     * Unit detail.
+     *
+     * Ported from frontend/pages/house-details.php: unit facts, the current
+     * tenant, meter numbers, bill history, and open maintenance. Renters never
+     * reach this page -- it is an owner/caretaker view of someone else's home.
+     */
+    public function show(Request $request, House $house): Response
+    {
+        $actor = $request->user();
+        $this->authorize('view', $house);
+
+        $house->load(['property:id,name,address', 'renter:id,name,email,phone,status,profile_picture']);
+
+        /*
+         * HousePolicy lets a renter view the unit they occupy. The bill and
+         * maintenance history must therefore be scoped to THEM, not to the
+         * unit: a re-let unit still holds the previous tenant's bills, and
+         * showing those would expose another household's charges.
+         *
+         * Staff see the whole unit history.
+         */
+        $viewerIsStaff = ! $actor instanceof \App\Models\Renter;
+
+        $billQuery = $house->bills()
+            ->when(! $viewerIsStaff, fn ($q) => $q->where('tenant_id', $actor->getKey()));
+
+        $maintenanceQuery = $house->maintenance()
+            ->when(! $viewerIsStaff, fn ($q) => $q->where('tenant_id', $actor->getKey()));
+
+        $bills = $billQuery
+            ->orderByDesc('month')
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get()
+            ->map(fn (Bill $b) => [
+                'id' => (int) $b->getKey(),
+                'month' => $b->month,
+                'total' => Amount::toString(Amount::of($b->total)),
+                'status' => $b->status instanceof \BackedEnum ? $b->status->value : (string) $b->status,
+                'due_date' => $b->due_date?->toDateString(),
+            ]);
+
+        $maintenance = $maintenanceQuery
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get()
+            ->map(fn (MaintenanceRecord $m) => [
+                'id' => (int) $m->getKey(),
+                'title' => (string) $m->title,
+                'status' => $m->status instanceof \BackedEnum ? $m->status->value : (string) $m->status,
+                'priority' => $m->priority instanceof \BackedEnum ? $m->priority->value : (string) $m->priority,
+                'cost' => Amount::toString(Amount::of($m->cost)),
+                'created_at' => $m->created_at?->toIso8601String(),
+            ]);
+
+        // Outstanding is derived from the ledger, not the cached house/renter columns.
+        $unpaidTotal = Amount::sum(
+            $billQuery->whereIn('status', ['pending', 'partial', 'overdue'])->pluck('total')
+        );
+
+        return Inertia::render('Houses/Show', [
+            'house' => [
+                'id' => (int) $house->getKey(),
+                'unit' => (string) $house->unit,
+                'type' => $house->type,
+                'status' => $house->status instanceof \BackedEnum ? $house->status->value : (string) $house->status,
+                'rent' => Amount::toString(Amount::of($house->rent)),
+                'water_meter' => $house->water_meter,
+                'elec_meter' => $house->elec_meter,
+                'last_reading' => Amount::toString(Amount::of($house->last_reading)),
+                'property_id' => (int) $house->property_id,
+                'property_name' => $house->property?->name,
+                'property_address' => $house->property?->address,
+            ],
+            'currentTenant' => $house->renter === null ? null : [
+                'id' => (int) $house->renter->getKey(),
+                'name' => (string) $house->renter->name,
+                'email' => $house->renter->email,
+                'phone' => $house->renter->phone,
+                'status' => $house->renter->status instanceof \BackedEnum
+                    ? $house->renter->status->value
+                    : (string) $house->renter->status,
+                'profile_picture' => $house->renter->profile_picture,
+            ],
+            'financials' => [
+                'unpaid_total' => Amount::toString($unpaidTotal),
+            ],
+            'bills' => $bills,
+            'maintenance' => $maintenance,
+        ]);
+    }
+
     public function index(Request $request): Response
     {
         $perPage = (int) $request->integer('per_page', 15);
