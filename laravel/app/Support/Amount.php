@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Brick\Money\Money;
 
 /**
@@ -114,5 +115,24 @@ final class Amount
     public static function equals(Money $a, Money $b): bool
     {
         return $a->compareTo($b) === 0;
+    }
+
+    /**
+     * Mean of a money total over a count, e.g. average repair cost per job.
+     *
+     * A zero or negative count is 0.00 rather than a division error: an owner
+     * with no completed repairs has no average, and an exception here would take
+     * the whole reports page down.
+     *
+     * HALF_UP matches how an accountant would round a per-job figure, and keeps
+     * the result exact rather than truncating cents.
+     */
+    public static function average(Money $total, int $count): Money
+    {
+        if ($count <= 0) {
+            return self::zero();
+        }
+
+        return $total->dividedBy(BigDecimal::of($count), RoundingMode::HalfUp);
     }
 }

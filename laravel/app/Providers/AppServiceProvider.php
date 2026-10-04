@@ -6,8 +6,8 @@ namespace App\Providers;
 
 use App\Models\Bill;
 use App\Models\Caretaker;
-use App\Models\EmailLog;
 use App\Models\Complaint;
+use App\Models\EmailLog;
 use App\Models\House;
 use App\Models\MaintenanceRecord;
 use App\Models\Payment;
@@ -16,16 +16,20 @@ use App\Models\PropertyDocument;
 use App\Models\Renter;
 use App\Policies\BillPolicy;
 use App\Policies\CaretakerPolicy;
-use App\Policies\EmailLogPolicy;
 use App\Policies\ComplaintPolicy;
+use App\Policies\EmailLogPolicy;
 use App\Policies\HousePolicy;
 use App\Policies\MaintenanceRecordPolicy;
 use App\Policies\PaymentPolicy;
 use App\Policies\PropertyDocumentPolicy;
 use App\Policies\PropertyPolicy;
 use App\Policies\RenterPolicy;
+use App\Reports\ReportScope;
 use App\Support\TenantContext;
+use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -33,7 +37,22 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        /*
+         * Reports need to know WHO is asking, not just which owner owns the
+         * rows: a caretaker is scoped to their assigned properties everywhere
+         * else in the app, and a report that ignored that would widen their
+         * reach to the owner's whole portfolio.
+         *
+         * Bound as scoped(), NOT singleton(). A plain singleton survives across
+         * requests in a long-running worker and hands one user's scope to
+         * the next -- exactly the cross-tenant leak the owner scope exists
+         * to prevent. scoped() is flushed at the request boundary, and each
+         * report class keeps its own memoised lookups.
+         */
+        $this->app->scoped(
+            ReportScope::class,
+            static fn (): ReportScope => ReportScope::for(request()->user()),
+        );
     }
 
     public function boot(): void
@@ -57,13 +76,13 @@ class AppServiceProvider extends ServiceProvider
         // Long-lived workers (queue/scheduler) must never carry one request's
         // owner into the next. Cleared between jobs.
         if ($this->app->runningInConsole()) {
-            \Illuminate\Support\Facades\Event::listen(
-                \Illuminate\Queue\Events\JobProcessed::class,
+            Event::listen(
+                JobProcessed::class,
                 fn () => TenantContext::clear(),
             );
 
-            \Illuminate\Support\Facades\Event::listen(
-                \Illuminate\Console\Events\CommandFinished::class,
+            Event::listen(
+                CommandFinished::class,
                 fn () => TenantContext::clear(),
             );
         }

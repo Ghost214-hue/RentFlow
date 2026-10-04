@@ -370,8 +370,29 @@ export interface EmailLogEntry {
     sent_at: string | null;
 }
 
-/** Portfolio analytics, computed server-side from the ledger. */
+/** One share-of-total row: a payment method, income type or bill component. */
+export interface ShareRow {
+    label: string;
+    /** Decimal string, never a number. */
+    amount: string;
+    count: number;
+    /** Percentage of the total, as a decimal string. */
+    share: string;
+}
+
+/**
+ * Props for the consolidated reports page.
+ *
+ * Five legacy report screens (portfolio, bills, financial, tenancy/vacancy,
+ * complaints) were merged into this one page. Every figure is computed
+ * server-side from the bill and allocation ledger -- nothing is calculated in
+ * the browser, so a report can never disagree with what a renter was charged.
+ */
 export interface ReportsProps {
+    /** The month every time-scoped figure describes. */
+    month: string;
+    /** Months that actually have bills, for the filter. */
+    months: string[];
     summary: {
         counts: {
             properties: number;
@@ -398,10 +419,95 @@ export interface ReportsProps {
         outstanding: string;
     }>;
     topDebtors: Array<{ id: number; name: string; outstanding: string }>;
+    /** Legacy ReportController: per-property collection for `month`. */
+    propertyPerformance: Array<{
+        property_id: number;
+        name: string;
+        units: number;
+        occupied: number;
+        billed: string;
+        collected: string;
+        outstanding: string;
+        collection_rate: string;
+    }>;
+    /** Legacy BillsReportController: status split and arrears. */
+    billing: {
+        counts: { total: number; paid: number; partial: number; pending: number; overdue: number };
+        money: { billed: string; paid: string; partial: string; pending: string };
+        arrears: {
+            count: number;
+            amount: string;
+            oldest_month: string | null;
+            aging: Array<{ label: string; count: number; amount: string; share: string }>;
+        };
+    };
+    /** Rent against utilities for `month`. */
+    composition: ShareRow[];
+    /** Per-unit collection for `month`, worst first. */
+    byHouse: Array<{
+        house_id: number;
+        unit: string;
+        property: string | null;
+        billed: string;
+        collected: string;
+        outstanding: string;
+    }>;
+    /** Legacy FinancialReportController: money in. */
+    revenue: {
+        collected: string;
+        pending: string;
+        failed: string;
+        in_flight: string;
+        counts: { settled: number; pending: number; failed: number };
+        method_share: ShareRow[];
+        type_breakdown: ShareRow[];
+    };
+    /** Legacy TenancyVacancyReportController. */
+    occupancy: {
+        units: {
+            total: number;
+            occupied: number;
+            vacant: number;
+            occupancy_rate: string;
+            vacancy_rate: string;
+        };
+        money: { potential_monthly: string; collecting_monthly: string; lost_monthly: string };
+        renters: { active: number; pending_termination: number; terminated: number };
+        terminations: { pending: number; approved: number; by_actor: Record<string, number> };
+    };
+    occupancyByProperty: Array<{
+        property_id: number;
+        name: string;
+        units: number;
+        occupied: number;
+        vacant: number;
+        occupancy_rate: string;
+        lost_monthly: string;
+    }>;
+    vacantUnits: Array<{
+        house_id: number;
+        unit: string;
+        property: string | null;
+        rent: string;
+        vacant_since: string | null;
+    }>;
+    /** Legacy ComplaintsReportController. */
     complaints: {
         total: number;
+        resolved: number;
+        unresolved: number;
+        resolution_rate: string;
+        high_priority_open: number;
         by_status: Record<string, number>;
         by_priority: Record<string, number>;
         by_category: Record<string, number>;
+    };
+    /** New: the legacy app had no maintenance aggregate at all. */
+    maintenance: {
+        counts: { total: number; open: number; completed: number };
+        money: { spent: string; committed: string; per_job: string };
+        by_status: Record<string, number>;
+        by_priority: Record<string, number>;
+        by_category: Array<{ label: string; count: number; amount: string }>;
     };
 }

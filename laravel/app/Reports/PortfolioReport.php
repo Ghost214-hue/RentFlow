@@ -12,7 +12,8 @@ use App\Models\PaymentAllocation;
 use App\Models\Property;
 use App\Models\Renter;
 use App\Support\Amount;
-use Brick\Money\Money;
+use App\Support\Rate;
+use Carbon\CarbonImmutable;
 
 /**
  * Computed portfolio figures.
@@ -20,37 +21,45 @@ use Brick\Money\Money;
  * There is NO reports table: everything here is derived at read time from the
  * bill and allocation ledger. Money is computed with Brick\Money so a report can
  * never disagree with what a renter is actually charged.
+ *
+ * Ported from the legacy ReportController, which reported monthly revenue,
+ * per-property performance, collection rate and occupancy. All four are here.
  */
 final class PortfolioReport
 {
     /** Payment statuses that represent settled money. */
     private const SETTLED = ['completed', 'confirmed', 'paid'];
 
+    public function __construct(private readonly ReportScope $scope) {}
+
     /** @return array<string, mixed> */
     public function summary(): array
     {
-        $houses = House::query()->count();
-        $occupied = House::query()->where('status', 'occupied')->count();
+        $houses = $this->scope->whereProperty(House::query());
+        $totalHouses = (clone $houses)->count();
+        $occupied = (clone $houses)->where('status', 'occupied')->count();
 
-        $billedToDate = Amount::sum(BillItem::query()->pluck('amount'));
+        $billedToDate = Amount::sum(
+            BillItem::query()->whereIn('bill_id', $this->scope->bills()->select('id'))->pluck('amount')
+        );
 
         $receivedToDate = Amount::sum(
             PaymentAllocation::query()
-                ->whereHas('payment', fn ($q) => $q->whereIn('status', self::SETTLED))
+                ->whereIn('payment_id', $this->scope->payments()->whereIn('status', self::SETTLED)->select('id'))
                 ->pluck('amount')
         );
 
         return [
             'counts' => [
-                'properties' => Property::query()->count(),
-                'houses' => $houses,
+                'properties' => $this->scope->wherePropertyRow(Property::query())->count(),
+                'houses' => $totalHouses,
                 'occupied' => $occupied,
-                'vacant' => max(0, $houses - $occupied),
-                'renters' => Renter::query()->count(),
-                'active_renters' => Renter::query()->where('status', 'active')->count(),
-                'open_complaints' => Complaint::query()
+                'vacant' => max(0, $totalHouses - $occupied),
+                'renters' => $this->scope->whereRenter(Renter::query())->count(),
+                'active_renters' => $this->scope->whereRenter(Renter::query())->where('status', 'active')->count(),
+                'open_complaints' => $this->scope->whereHouse(Complaint::query())
                     ->whereIn('status', ['open', 'in-progress'])->count(),
-                'open_maintenance' => MaintenanceRecord::query()
+                'open_maintenance' => $this->scope->whereHouse(MaintenanceRecord::query())
                     ->whereIn('status', ['pending', 'in-progress'])->count(),
             ],
             'money' => [
@@ -60,28 +69,77 @@ final class PortfolioReport
                 'outstanding' => Amount::toString(
                     Amount::atLeastZero($billedToDate->minus($receivedToDate))
                 ),
-                'collection_rate' => $this->collectionRate($billedToDate, $receivedToDate),
+                'collection_rate' => Rate::of($receivedToDate, $billedToDate),
             ],
         ];
     }
 
     /**
-     * Percentage of billed money settled, as a decimal string.
+     * Per-property performance for one month.
      *
-     * Computed in integer basis points so it is exact and never a float.
+     * Collection is matched per house and then rolled up, so a strong property
+     * cannot hide a dead unit inside it.
+     *
+     * @return array<int, array{property_id: int, name: string, units: int, occupied: int, billed: string, collected: string, outstanding: string, collection_rate: string}>
      */
-    private function collectionRate(Money $billed, Money $received): string
+    public function propertyPerformance(?string $month = null): array
     {
-        // Money::getMinorAmount() applies the currency scale (2 dp). BigDecimal,
-        // which Money::getAmount() returns, has no toMinorUnit().
-        $billedMinor = (int) $billed->getMinorAmount()->toInt();
-        $receivedMinor = (int) $received->getMinorAmount()->toInt();
+        $month ??= CarbonImmutable::now()->format('Y-m');
 
-        if ($billedMinor === 0) {
-            return '0.00';
-        }
+        $billedByHouse = $this->scope->bills()
+            ->where('month', $month)
+            ->selectRaw('house_id, SUM(total) AS billed')
+            ->groupBy('house_id')
+            ->pluck('billed', 'house_id');
 
-        return number_format(\intdiv($receivedMinor * 10000, $billedMinor) / 100, 2);
+        $settled = $this->scope->payments()->whereIn('status', self::SETTLED);
+
+        $collectedByHouse = $this->scope->bills()
+            ->where('month', $month)
+            ->join('bill_items', 'bill_items.bill_id', '=', 'bills.id')
+            ->join('payment_allocations', 'payment_allocations.bill_item_id', '=', 'bill_items.id')
+            ->whereIn('payment_allocations.payment_id', $settled->select('id'))
+            ->selectRaw('bills.house_id, SUM(payment_allocations.amount) AS collected')
+            ->groupBy('bills.house_id')
+            ->pluck('collected', 'bills.house_id');
+
+        return $this->scope->wherePropertyRow(Property::query())
+            ->with('houses')
+            ->get()
+            ->map(function (Property $property) use ($billedByHouse, $collectedByHouse): array {
+                $billed = Amount::zero();
+                $collected = Amount::zero();
+                $occupied = 0;
+
+                foreach ($property->houses as $house) {
+                    $id = $house->getKey();
+                    $billed = $billed->plus(Amount::of($billedByHouse[$id] ?? '0'));
+
+                    // Clamp: money over-allocated against this month's bills is
+                    // credit, and must not read as negative collection.
+                    $collected = $collected->plus(Amount::atLeastZero(
+                        Amount::of($collectedByHouse[$id] ?? '0')
+                    ));
+
+                    if ($house->status === 'occupied') {
+                        $occupied++;
+                    }
+                }
+
+                return [
+                    'property_id' => (int) $property->getKey(),
+                    'name' => (string) $property->name,
+                    'units' => $property->houses->count(),
+                    'occupied' => $occupied,
+                    'billed' => Amount::toString($billed),
+                    'collected' => Amount::toString($collected),
+                    'outstanding' => Amount::toString(Amount::owed($billed, $collected)),
+                    'collection_rate' => Rate::of($collected, $billed),
+                ];
+            })
+            ->sortByDesc(fn (array $row): int => (int) Amount::of($row['billed'])->getMinorAmount()->toInt())
+            ->values()
+            ->all();
     }
 
     /**
@@ -91,12 +149,12 @@ final class PortfolioReport
      */
     public function monthly(int $limit = 12): array
     {
-        $billed = \App\Models\Bill::query()
+        $billed = $this->scope->bills()
             ->selectRaw('month, SUM(total) AS billed')
             ->groupBy('month')
             ->pluck('billed', 'month');
 
-        $received = \App\Models\Payment::query()
+        $received = $this->scope->payments()
             ->whereNotNull('month')
             ->whereIn('status', self::SETTLED)
             ->selectRaw('month, SUM(amount) AS received')
@@ -129,21 +187,22 @@ final class PortfolioReport
      */
     public function topDebtors(int $limit = 10): array
     {
-        $rows = Renter::query()
+        $rows = $this->scope->whereRenter(Renter::query())
             ->select(['id', 'name'])
             ->get()
             ->map(function (Renter $r): array {
                 $billed = Amount::sum(
                     BillItem::query()
-                        ->whereIn('bill_id', $r->bills()->select('id'))
+                        ->whereIn('bill_id', $this->scope->bills()
+                            ->whereIn('tenant_id', [$r->getKey()])->select('id'))
                         ->pluck('amount')
                 );
 
                 $paid = Amount::sum(
                     PaymentAllocation::query()
-                        ->whereHas('payment', fn ($q) => $q
+                        ->whereIn('payment_id', $this->scope->payments()
                             ->where('tenant_id', $r->getKey())
-                            ->whereIn('status', self::SETTLED))
+                            ->whereIn('status', self::SETTLED)->select('id'))
                         ->pluck('amount')
                 );
 
@@ -157,7 +216,7 @@ final class PortfolioReport
 
         // Sort on the integer minor unit, not the formatted string.
         return $rows
-            ->sortByDesc(fn (array $row) => (int) \App\Support\Amount::of($row['outstanding'])
+            ->sortByDesc(fn (array $row): int => (int) Amount::of($row['outstanding'])
                 ->getMinorAmount()
                 ->toInt())
             ->take($limit)
