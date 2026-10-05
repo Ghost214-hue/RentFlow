@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Encryption\Encrypter;
 
 /**
  * Generates a shared JWT secret for the legacy sign-in bridge.
@@ -27,12 +26,17 @@ class GenerateJwtSecret extends Command
 
     protected $description = 'Generate a secure shared JWT secret for the legacy sign-in bridge';
 
+    /*
+     * random_bytes() is PHP's CSPRNG, and unpredictability is the property that
+     * actually matters here. 48 bytes is 384 bits -- far beyond brute force.
+     *
+     * Deliberately NOT the framework encrypter: its randomBytes() does not
+     * exist in this Laravel version, and pulling in a dependency to generate a
+     * random number would be the wrong trade anyway.
+     */
     public function handle(): int
     {
-        $secret = $this->laravel->make(Encrypter::class)
-            ->randomBytes(48);
-
-        $base64 = rtrim(strtr(base64_encode($secret), '+/', '-_'), '=');
+        $base64 = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
 
         $line = 'JWT_SECRET='.$base64;
 
