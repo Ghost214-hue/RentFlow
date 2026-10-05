@@ -93,7 +93,7 @@ Route::middleware('guest')->group(function (): void {
  * of the per-route limits below. One authenticated actor cannot hammer the app
  * even where an individual endpoint's own allowance is generous.
  */
-Route::middleware(['legacy.jwt', 'throttle:session'])->group(function (): void {
+Route::middleware(['auth', 'throttle:session'])->group(function (): void {
     Route::get('/', DashboardController::class)->name('dashboard');
 
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');

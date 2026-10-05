@@ -8,7 +8,7 @@ declare(strict_types=1);
 |--------------------------------------------------------------------------
 |
 | Every authenticated route must refuse a guest. This is a cheap sweep that
-| catches a route added without the legacy.jwt guard: it would otherwise return
+| catches a route added without the auth guard: it would otherwise return
 | 200 or a 500 instead of 401.
 |
 | Replaces the stock ExampleTest, which asserted GET / returned 200. That is

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Support\LegacyJwt;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
@@ -71,12 +70,6 @@ class SecurityAudit extends Command
             'APP_ENV not local',
             config('app.env') !== 'local',
             'APP_ENV=local disables error reporting. Set APP_ENV=production.'
-        );
-
-        $criticalCheck(
-            'JWT bridge secret non-empty',
-            LegacyJwt::hasSecret(),
-            'An empty JWT_SECRET is an auth bypass: hash_hmac accepts a blank key, so anyone can forge an owner token. Run `php artisan jwt:secret`.'
         );
 
         $criticalCheck(

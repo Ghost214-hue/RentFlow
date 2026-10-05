@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Middleware\AuthenticateLegacyJwt;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveTenantBeforeBindings;
 use App\Http\Middleware\SecurityHeaders;
@@ -49,12 +48,16 @@ return Application::configure(basePath: dirname(__DIR__))
             ],
         );
 
-        // During coexistence the legacy app authenticates with an HS256 JWT
-        // cookie. The bridge guard turns that into a Laravel session so a user
-        // logged into either app is logged into both. Removed at cutover.
-        $middleware->alias([
-            'legacy.jwt' => AuthenticateLegacyJwt::class,
-        ]);
+        /*
+         * The legacy JWT bridge (AuthenticateLegacyJwt, LegacyJwt) was REMOVED at
+         * cutover. It accepted an HS256 cookie from the old PHP app so a user signed
+         * in to either app was signed in to both.
+         *
+         * Removing it also closed an authentication bypass: the shared JWT_SECRET
+         * was empty, and hash_hmac() accepts a blank key and still produces a
+         * verifiable MAC, so a forged token had been accepted as any owner. Sessions
+         * are now the only way in.
+         */
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -17,27 +17,13 @@ declare(strict_types=1);
 |
 */
 
+use App\Http\Middleware\AuthenticateLegacyJwt;
 use App\Models\Owner;
 use App\Support\LegacyJwt;
-use App\Support\MissingJwtSecret;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-
-/**
- * Sets JWT_SECRET for one test.
- *
- * env() does not read $_ENV directly -- it goes through the repository's
- * adapters, which check getenv() and $_SERVER as well. Writing only $_ENV left
- * the old value in place and the assertions were meaningless.
- */
-function setJwtSecret(string $value): void
-{
-    putenv('JWT_SECRET='.$value);
-    $_ENV['JWT_SECRET'] = $value;
-    $_SERVER['JWT_SECRET'] = $value;
-}
 
 beforeEach(function (): void {
     // Each test declares the secret it needs; an empty one is the vulnerable
@@ -45,84 +31,49 @@ beforeEach(function (): void {
     config()->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
 });
 
-// --- the JWT bridge ---------------------------------------------------
+// --- the legacy JWT bridge is GONE ---------------------------------------
 
 /*
- * THE HEADLINE FIX.
- *
- * With no secret, the bridge must refuse EVERY token rather than accept every
- * token. "Rejects everything" and "accepts anything" are one character apart.
+ * These replace the tests that pinned the bridge's behaviour. Removing a
+ * security control deserves the same kind of regression test as adding one, so
+ * what is asserted now is that the code cannot come back unnoticed.
  */
-it('refuses every legacy token when the shared secret is empty', function (): void {
+it('has no legacy JWT bridge left to abuse', function (): void {
+    expect(class_exists(LegacyJwt::class))->toBeFalse()
+        ->and(class_exists(AuthenticateLegacyJwt::class))->toBeFalse();
+});
+
+it('is not wired into the middleware stack', function (): void {
+    foreach (app('router')->getMiddleware() as $alias) {
+        expect($alias)->not->toBe(AuthenticateLegacyJwt::class);
+    }
+
+    // And no route still depends on it.
+    foreach (app('router')->getRoutes()->getRoutes() as $route) {
+        foreach ($route->gatherMiddleware() as $middleware) {
+            expect($middleware)->not->toBe('legacy.jwt');
+        }
+    }
+});
+
+/*
+ * The bypass the bridge carried: an empty JWT_SECRET produced a valid MAC, so a
+ * forged token was accepted as any owner. With the bridge deleted there is no
+ * code path left that reads the cookie or the secret at all.
+ */
+it('ignores the legacy rf_token cookie entirely', function (): void {
     $b64 = fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
     $header = $b64(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
     $payload = $b64(json_encode([
-        'role' => 'owner', 'owner_id' => 1, 'actor_id' => 1,
-        'exp' => time() + 3600,
+        'role' => 'owner', 'owner_id' => 1, 'exp' => time() + 3600,
     ]));
-
-    // Exactly what an attacker would send, signed with the empty key.
     $forged = $header.'.'.$payload.'.'.$b64(hash_hmac('sha256', $header.'.'.$payload, '', true));
 
-    setJwtSecret('');
+    // No session, and the cookie alone: still a guest.
+    $this->withUnencryptedCookie('rf_token', $forged)->get('/renters')->assertRedirect('/login');
 
-    expect(LegacyJwt::decode($forged))->toBeNull()
-        ->and(LegacyJwt::hasSecret())->toBeFalse();
+    expect(app('auth')->check())->toBeFalse();
 });
-
-it('reports whether the bridge is usable', function (): void {
-    setJwtSecret('');
-    expect(LegacyJwt::hasSecret())->toBeFalse();
-
-    setJwtSecret(str_repeat('a', 32));
-    expect(LegacyJwt::hasSecret())->toBeTrue();
-});
-
-it('still refuses a wrong secret', function (): void {
-    $b64 = fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
-    $header = $b64(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-    $payload = $b64(json_encode(['role' => 'owner', 'owner_id' => 1, 'exp' => time() + 3600]));
-
-    setJwtSecret(str_repeat('a', 32));
-    $wrong = $header.'.'.$payload.'.'.$b64(hash_hmac('sha256', $header.'.'.$payload, str_repeat('b', 32), true));
-
-    expect(LegacyJwt::decode($wrong))->toBeNull();
-});
-
-it('accepts a correctly signed token when a real secret is set', function (): void {
-    $secret = str_repeat('k', 40);
-    setJwtSecret($secret);
-
-    $b64 = fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
-    $header = $b64(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-    $payload = $b64(json_encode(['role' => 'owner', 'owner_id' => 1, 'exp' => time() + 3600]));
-    $token = $header.'.'.$payload.'.'.$b64(hash_hmac('sha256', $header.'.'.$payload, $secret, true));
-
-    expect(LegacyJwt::decode($token))->not->toBeNull();
-});
-
-it('still refuses an expired token', function (): void {
-    $secret = str_repeat('k', 40);
-    setJwtSecret($secret);
-
-    $b64 = fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
-    $header = $b64(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-    $payload = $b64(json_encode(['role' => 'owner', 'owner_id' => 1, 'exp' => time() - 10]));
-    $token = $header.'.'.$payload.'.'.$b64(hash_hmac('sha256', $header.'.'.$payload, $secret, true));
-
-    expect(LegacyJwt::decode($token))->toBeNull();
-});
-
-it('names the missing secret clearly when one is demanded', function (): void {
-    setJwtSecret('');
-
-    $r = new ReflectionMethod(LegacyJwt::class, 'secret');
-    $r->setAccessible(true);
-
-    expect(fn () => $r->invoke(null))
-        ->toThrow(MissingJwtSecret::class, 'jwt:secret');
-});
-
 // --- response headers -------------------------------------------------
 
 it('sends the baseline security headers', function (): void {
@@ -222,8 +173,13 @@ it('pins bcrypt with an explicit 72-byte limit', function (): void {
 
 // --- the audit command ------------------------------------------------
 
-it('reports a critical problem when the JWT secret is empty', function (): void {
-    setJwtSecret('');
+/*
+ * APP_DEBUG=true is the single most common way a Laravel app leaks: it renders
+ * stack traces, file paths, SQL and environment values to whoever triggers an
+ * error, including the secrets in this .env.
+ */
+it('reports a critical problem when debug is on', function (): void {
+    config()->set('app.debug', true);
 
     $this->artisan('security:audit')->assertExitCode(1);
 });
@@ -232,7 +188,6 @@ it('passes the audit when nothing critical is wrong', function (): void {
     config()->set('app.debug', false);
     config()->set('app.env', 'production');
     config()->set('session.secure', true);
-    setJwtSecret(str_repeat('z', 40));
 
     $this->artisan('security:audit')->assertExitCode(0);
 });
