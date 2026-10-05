@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.production
+.env.*.local
 
 # Dependencies
 node_modules/
@@ -19,24 +20,44 @@ Thumbs.db
 
 # Logs
 *.log
-backend/logs/
 
-# Cache
-backend/storage/cache/
-backend/storage/sessions/
 
-# Uploads
-backend/public/uploads/*
-!backend/public/uploads/.gitkeep
 
 # Build
-frontend/public/css/output.css
 dist/
 build/
+/laravel/public/build/
+/laravel/public/hot
+/laravel/node_modules/
+/laravel/vendor/
 
-# Composer
-backend/composer.lock
-
-# Database (keep migrations)
+# Database artifacts — NEVER commit a dump or a real .env.
+# Migrations and seeders below are source and MUST stay tracked.
+*.sql
+*.sql.gz
+*.sql.zip
+*.dump
 *.sqlite
 *.db
+!laravel/database/schema/*.sql
+
+# Laravel runtime state
+/laravel/storage/*.key
+/laravel/storage/app/private/
+/laravel/storage/framework/cache/
+/laravel/storage/framework/sessions/
+/laravel/storage/framework/views/
+/laravel/storage/logs/
+
+# Test & tooling output
+/laravel/tests/Browser/screenshots/
+/laravel/tests/Browser/_snapshots/
+/laravel/playwright-report/
+/laravel/test-results/
+/laravel/coverage/
+/laravel/.phpunit.cache/
+/laravel/.php-cs-fixer.cache
+/.phpunit.cache/
+
+# Local private scratch (restored DB copies, sanitised dumps in progress)
+/private/

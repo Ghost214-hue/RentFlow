@@ -1,0 +1,190 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Http\Controllers\Auth\NewPasswordController;
+use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\SetupPasswordController;
+use App\Http\Controllers\AuthenticatedSessionController;
+use App\Http\Controllers\BillController;
+use App\Http\Controllers\CaretakerController;
+use App\Http\Controllers\CaretakerDashboardController;
+use App\Http\Controllers\ComplaintController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EmailLogController;
+use App\Http\Controllers\HouseController;
+use App\Http\Controllers\MaintenanceRecordController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PropertyController;
+use App\Http\Controllers\PropertyDocumentController;
+use App\Http\Controllers\RenterController;
+use App\Http\Controllers\RenterDashboardController;
+use App\Http\Controllers\RenterProfileController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\TenancyTerminationController;
+use Illuminate\Support\Facades\Route;
+
+/*
+| RentFlow routes.
+|
+| Every authenticated route runs through the legacy JWT bridge so a user
+| signed in to the old PHP app is also signed in here. That middleware is
+| removed at cutover.
+*/
+
+/*
+ * Login is public: the JWT bridge middleware must NOT run here, or the
+ * form could never be submitted by a signed-out visitor.
+ */
+Route::middleware('guest')->group(function (): void {
+    Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
+    Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+
+    /*
+     * Password reset. This route DID NOT EXIST -- the login screen linked to
+     * /forgot-password and got a 404, which is why the link appeared broken.
+     *
+     * Two steps, both under `guest`: request a code, then set a new password
+     * with it. The controllers guarantee the response is identical whether or
+     * not the address has an account, so that rule cannot be forgotten here.
+     */
+    Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])
+        ->name('password.request');
+    Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
+        ->name('password.email');
+    Route::get('/reset-password', [NewPasswordController::class, 'create'])
+        ->name('password.reset');
+    Route::post('/reset-password', [NewPasswordController::class, 'store'])
+        ->name('password.update');
+
+    /*
+     * Self-serve owner registration. This route DID NOT EXIST either -- the login
+     * screen linked to /signup and 404'd, the same bug as forgot-password.
+     *
+     * Only owners register here. Renters and caretakers are created by an owner
+     * and invited, because letting anyone claim a tenancy would mean anyone
+     * could attach themselves to a property.
+     */
+    Route::get('/register', [RegisteredUserController::class, 'create'])
+        ->name('register');
+    Route::post('/register', [RegisteredUserController::class, 'store'])
+        ->middleware('throttle:register')
+        ->name('register.store');
+
+    /*
+     * First-password setup for an invited renter or caretaker.
+     *
+     * Reached from a link in an email, so it runs under `guest`: the person
+     * clicking it has no session yet. The token in the URL is the credential.
+     */
+    Route::get('/setup-password', [SetupPasswordController::class, 'show'])
+        ->name('password.setup');
+    Route::post('/setup-password', [SetupPasswordController::class, 'store'])
+        ->middleware('throttle:setup')
+        ->name('password.setup.store');
+    Route::post('/setup-password/resend', [SetupPasswordController::class, 'resend'])
+        ->middleware('throttle:setup')
+        ->name('password.setup.resend');
+});
+
+/*
+ * `throttle:session` is a broad backstop across the authenticated area, on top
+ * of the per-route limits below. One authenticated actor cannot hammer the app
+ * even where an individual endpoint's own allowance is generous.
+ */
+Route::middleware(['auth', 'throttle:session'])->group(function (): void {
+    Route::get('/', DashboardController::class)->name('dashboard');
+
+    Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::get('/houses', [HouseController::class, 'index'])->name('houses.index');
+    Route::post('/houses', [HouseController::class, 'store'])->name('houses.store');
+    Route::get('/houses/{house}', [HouseController::class, 'show'])->name('houses.show');
+    Route::put('/houses/{house}', [HouseController::class, 'update'])->name('houses.update');
+    Route::delete('/houses/{house}', [HouseController::class, 'destroy'])->name('houses.destroy');
+
+    // Renters. NOTE: the parameter is {renter}, not {tenant}, to match the
+    // model name; the URL is /renters in the new app while the DB table
+    // stays `tenants`.
+    Route::get('/renters', [RenterController::class, 'index'])->name('renters.index');
+    Route::post('/renters', [RenterController::class, 'store'])->middleware('throttle:mail')->name('renters.store');
+    Route::get('/renters/{renter}', [RenterController::class, 'show'])->name('renters.show');
+    Route::put('/renters/{renter}', [RenterController::class, 'update'])->name('renters.update');
+    /*
+     * There is deliberately NO DELETE /renters/{renter}.
+     *
+     * Hard-deleting a renter would orphan their bills, payments and the
+     * tenancy_terminations audit trail. A tenancy now ends by being TERMINATED,
+     * which frees the unit, scrubs the personal data and keeps the financial
+     * history. See TenancyTerminationController.
+     */
+
+    // Bills. Figures come from BillSnapshot on every surface.
+    Route::get('/bills', [BillController::class, 'index'])->name('bills.index');
+    Route::post('/bills/generate', [BillController::class, 'generate'])->middleware('throttle:writes')->name('bills.generate');
+
+    // Payments. All money enters through RecordPayment.
+    Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
+    Route::post('/payments', [PaymentController::class, 'store'])->middleware('throttle:writes')->name('payments.store');
+    Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->name('payments.confirm');
+
+    // Properties. Unit counts are recomputed from the house rows on every read.
+    Route::get('/properties', [PropertyController::class, 'index'])->name('properties.index');
+    Route::post('/properties', [PropertyController::class, 'store'])->name('properties.store');
+    Route::put('/properties/{property}', [PropertyController::class, 'update'])->name('properties.update');
+    Route::delete('/properties/{property}', [PropertyController::class, 'destroy'])->name('properties.destroy');
+
+    // The caretaker's own landing page, scoped to their assigned properties.
+    // The controller aborts anyone who is not a Caretaker, so no extra `can:`
+    // gate is needed here (and CaretakerPolicy::viewAny is owner-only, which
+    // would have blocked the very actor this page is for).
+    Route::get('/caretaker/dashboard', CaretakerDashboardController::class)
+        ->name('caretaker.dashboard');
+
+    // Caretakers — staff accounts scoped to assigned properties.
+    Route::get('/caretakers', [CaretakerController::class, 'index'])->name('caretakers.index');
+    Route::post('/caretakers', [CaretakerController::class, 'store'])->name('caretakers.store');
+    Route::put('/caretakers/{caretaker}', [CaretakerController::class, 'update'])->name('caretakers.update');
+    Route::delete('/caretakers/{caretaker}', [CaretakerController::class, 'destroy'])->name('caretakers.destroy');
+
+    // Complaints — two-way communication. Visibility follows the recipient list.
+    Route::get('/complaints', [ComplaintController::class, 'index'])->name('complaints.index');
+    Route::post('/complaints', [ComplaintController::class, 'store'])->middleware('throttle:mail')->name('complaints.store');
+    Route::post('/complaints/{complaint}/advance', [ComplaintController::class, 'advance'])->name('complaints.advance');
+    Route::delete('/complaints/{complaint}', [ComplaintController::class, 'destroy'])->name('complaints.destroy');
+
+    // Maintenance requests — renters raise them, staff advance them.
+    Route::get('/maintenance', [MaintenanceRecordController::class, 'index'])->name('maintenance.index');
+    Route::post('/maintenance', [MaintenanceRecordController::class, 'store'])->name('maintenance.store');
+    Route::post('/maintenance/{record}/advance', [MaintenanceRecordController::class, 'advance'])->name('maintenance.advance');
+    Route::delete('/maintenance/{record}', [MaintenanceRecordController::class, 'destroy'])->name('maintenance.destroy');
+
+    // Rules and documents. Renters read the active ones; only owners author them.
+    Route::get('/documents', [PropertyDocumentController::class, 'index'])->name('documents.index');
+    Route::post('/documents', [PropertyDocumentController::class, 'store'])->name('documents.store');
+    Route::put('/documents/{document}', [PropertyDocumentController::class, 'update'])->name('documents.update');
+    Route::delete('/documents/{document}', [PropertyDocumentController::class, 'destroy'])->name('documents.destroy');
+
+    // Reports. Computed from the ledger at read time; there is no reports table.
+    Route::get('/reports', [ReportController::class, 'index'])->middleware('throttle:reads')->name('reports.index');
+
+    // Email delivery log. Read only: the mail queue writes it.
+    Route::get('/email-logs', [EmailLogController::class, 'index'])->middleware('throttle:reads')->name('email-logs.index');
+
+    // Tenancy termination. A renter REQUESTS to leave; the owner terminates or
+    // approves. Backed by the previously unused tenancy_terminations table.
+    Route::get('/terminations', [TenancyTerminationController::class, 'index'])->name('terminations.index');
+    Route::post('/renters/{renter}/termination', [TenancyTerminationController::class, 'requestTermination'])
+        ->name('renters.termination.request');
+    Route::post('/renters/{renter}/terminate', [TenancyTerminationController::class, 'terminate'])
+        ->name('renters.terminate');
+    Route::post('/renters/{renter}/termination/approve', [TenancyTerminationController::class, 'approve'])
+        ->name('renters.termination.approve');
+
+    // Renter-facing pages. Each aborts unless the actor is a Renter, so an
+    // owner or caretaker reaching these gets a 403 rather than empty data.
+    Route::get('/renter/dashboard', RenterDashboardController::class)->name('renter.dashboard');
+    Route::get('/renter/profile', [RenterProfileController::class, 'show'])->name('renter.profile.show');
+    Route::put('/renter/profile', [RenterProfileController::class, 'update'])->name('renter.profile.update');
+});

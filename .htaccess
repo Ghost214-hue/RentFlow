@@ -1,63 +1,42 @@
-# RentaFlow - Main .htaccess Configuration
-# Deployment: /RentalFlow subdirectory
+# RentalFlow - Apache configuration for the LARAVEL application
+# Deployment: /RentalFlow subdirectory, document root one level ABOVE laravel/
+#
+# Rewritten after the legacy PHP app was deleted. Every rule here used to point
+# at frontend/public/ and backend/public/, which no longer exist -- deploying
+# with the old file would have served nothing at all.
 
-# Point directory requests to the frontend index
-DirectoryIndex frontend/public/index.php
+DirectoryIndex laravel/public/index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-
-    # Set base path for rewrite rules
     RewriteBase /RentalFlow/
 
-    # Security: Block access to sensitive files
-    <FilesMatch "\.(env|log|sql|md)$">
-        Order allow,deny
-        Deny from all
+    # Never serve application source, env files or logs.
+    <FilesMatch "^(\.env|\.env\..*|composer\.(json|lock)|package(-lock)?\.json|\.gitignore)$">
+        Require all denied
     </FilesMatch>
 
-    <FilesMatch "^(composer\.json|composer\.lock|package\.json|\.git)">
-        Order allow,deny
-        Deny from all
-    </FilesMatch>
-
-    # API Routes - forward to backend
-    RewriteRule ^api(/.*)?$ backend/public/index.php [QSA,L]
-
-    # Static Assets - serve directly from frontend/public
-    RewriteRule ^css/(.*)$ frontend/public/css/$1 [QSA,L]
-    RewriteRule ^js/(.*)$ frontend/public/js/$1 [QSA,L]
-    RewriteRule ^images/(.*)$ frontend/public/images/$1 [QSA,L]
-    RewriteRule ^favicon\.ico$ frontend/public/favicon.ico [L]
-
-    # Auth Pages
-    RewriteRule ^signin$ frontend/public/signin.php [QSA,L]
-    RewriteRule ^signup$ frontend/public/signup.php [QSA,L]
-    RewriteRule ^forgot-password$ frontend/public/forgot-password.php [QSA,L]
-    RewriteRule ^setup-password$ frontend/public/setup-password.php [QSA,L]
-    RewriteRule ^terms-and-conditions$ frontend/pages/terms-and-conditions.php [QSA,L]
-
-    # Frontend Pages - route through index.php for SPA fallback
+    # Everything below runs through Laravel's front controller.
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^([a-zA-Z0-9_-]+)$ frontend/public/index.php [QSA,L]
-
-    # SPA fallback for any other requests
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(.*)$ frontend/public/index.php [QSA,L]
+    RewriteRule ^ index.php [QSA,L]
 </IfModule>
 
-# Security Headers
+# Static assets from the Vite build and public/ are served straight from disk.
 <IfModule mod_headers.c>
-    Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-    Header set Referrer-Policy "strict-origin-when-cross-origin"
-    Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
 </IfModule>
 
-# MIME Types
+# Deny access to anything hidden or backup-ish.
+<FilesMatch "(^\.|\.(bak|sql|log|md)$)">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes
+
 <IfModule mod_mime.c>
     AddType text/css .css
     AddType application/javascript .js
@@ -69,6 +48,3 @@ DirectoryIndex frontend/public/index.php
     AddType font/woff2 .woff2
     AddType font/woff .woff
 </IfModule>
-
-# Disable directory listing
-Options -Indexes
