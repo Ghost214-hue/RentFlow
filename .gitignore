@@ -20,18 +20,10 @@ Thumbs.db
 
 # Logs
 *.log
-backend/logs/
 
-# Cache
-backend/storage/cache/
-backend/storage/sessions/
 
-# Uploads
-backend/public/uploads/*
-!backend/public/uploads/.gitkeep
 
 # Build
-frontend/public/css/output.css
 dist/
 build/
 /laravel/public/build/
@@ -47,8 +39,6 @@ build/
 *.dump
 *.sqlite
 *.db
-!backend/database/migrations/*.sql
-!backend/database/seeders/*.sql
 !laravel/database/schema/*.sql
 
 # Laravel runtime state

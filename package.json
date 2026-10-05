@@ -1,13 +1,11 @@
 {
   "name": "rentalflow",
   "version": "1.0.0",
+  "private": true,
+  "description": "Workspace root for RentalFlow. The frontend build lives in laravel/ and is run with `npm run build` from there.",
   "scripts": {
-    "build": "tailwindcss -i ./frontend/src/css/input.css -o ./frontend/public/css/output.css --minify",
-    "watch": "tailwindcss -i ./frontend/src/css/input.css -o ./frontend/public/css/output.css --watch"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.4.19",
-    "postcss": "^8.5.15",
-    "autoprefixer": "^10.5.0"
+    "build": "npm --prefix laravel run build",
+    "dev": "npm --prefix laravel run dev",
+    "watch": "npm --prefix laravel run dev"
   }
 }
