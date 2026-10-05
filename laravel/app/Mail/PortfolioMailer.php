@@ -32,34 +32,9 @@ final class PortfolioMailer
 {
     public function __construct(private readonly Mailer $mailer) {}
 
-    /** A renter has been onboarded and needs their activation link. */
-    public function renterOnboarded(Renter $renter): void
-    {
-        $email = (string) ($renter->email ?? '');
-
-        if ($email === '') {
-            return;
-        }
-
-        $this->mailer->trySend(
-            MailTemplate::TenantWelcome,
-            $this->ownerId($renter),
-            $email,
-            (string) $renter->name,
-            [
-                'tenant' => (string) $renter->name,
-                'property' => $this->propertyName($renter),
-                'house' => $this->unitName($renter),
-                'email' => $email,
-                // TODO(activation): wire to password_setup_tokens once the
-                // setup-password flow is ported. Until then the link is the
-                // reset route, so a renter can still get in.
-                'setup_link' => route('password.request').'?email='.urlencode($email),
-            ],
-        );
-    }
-
-    /** A payment was recorded, and the renter expects a receipt. */
+    /**
+     * A payment was recorded, and the renter expects a receipt.
+     */
     public function paymentReceived(Payment $payment): void
     {
         $renter = Renter::query()->find($payment->tenant_id);

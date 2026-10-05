@@ -114,8 +114,14 @@ export default function Login({ flash }: Props) {
                         </button>
                     </form>
                     <div className="mt-6 text-center">
+                        {/*
+                            Was <a href="/signup">, which had NO route at all --
+                            a second dead link on this screen, same as
+                            /forgot-password. Registration now exists, and this is
+                            an Inertia <Link> so the SPA shell survives.
+                        */}
                         <p className="text-sm text-slate-500">Don't have an account?{' '}
-                            <a href="/signup" className="font-medium text-blue-600 hover:text-blue-700">Sign up</a></p>
+                            <Link href="/register" className="font-medium text-blue-600 hover:text-blue-700">Sign up</Link></p>
                     </div>
                 </div>
             </div>

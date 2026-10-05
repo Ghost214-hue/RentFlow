@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\SetupPasswordController;
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\BillController;
 use App\Http\Controllers\CaretakerController;
@@ -55,6 +57,35 @@ Route::middleware('guest')->group(function (): void {
         ->name('password.reset');
     Route::post('/reset-password', [NewPasswordController::class, 'store'])
         ->name('password.update');
+
+    /*
+     * Self-serve owner registration. This route DID NOT EXIST either -- the login
+     * screen linked to /signup and 404'd, the same bug as forgot-password.
+     *
+     * Only owners register here. Renters and caretakers are created by an owner
+     * and invited, because letting anyone claim a tenancy would mean anyone
+     * could attach themselves to a property.
+     */
+    Route::get('/register', [RegisteredUserController::class, 'create'])
+        ->name('register');
+    Route::post('/register', [RegisteredUserController::class, 'store'])
+        ->middleware('throttle:register')
+        ->name('register.store');
+
+    /*
+     * First-password setup for an invited renter or caretaker.
+     *
+     * Reached from a link in an email, so it runs under `guest`: the person
+     * clicking it has no session yet. The token in the URL is the credential.
+     */
+    Route::get('/setup-password', [SetupPasswordController::class, 'show'])
+        ->name('password.setup');
+    Route::post('/setup-password', [SetupPasswordController::class, 'store'])
+        ->middleware('throttle:setup')
+        ->name('password.setup.store');
+    Route::post('/setup-password/resend', [SetupPasswordController::class, 'resend'])
+        ->middleware('throttle:setup')
+        ->name('password.setup.resend');
 });
 
 /*

@@ -127,5 +127,14 @@ class AppServiceProvider extends ServiceProvider
 
         // Queues outbound mail: every send costs money and writes a row.
         RateLimiter::for('mail', fn (Request $request): Limit => Limit::perMinute(10)->by($actor($request)));
+
+        // Signup is the one endpoint open to the whole internet. Low, because a
+        // spam account costs a row and an isolated empty portfolio -- tenancy
+        // isolation means there is nothing behind it to reach -- but bounded.
+        RateLimiter::for('register', fn (Request $request): Limit => Limit::perMinute(3)->by($request->ip()));
+
+        // Setting a first password from an emailed link, and asking for a
+        // replacement. Behind a session-less page, so keyed on IP.
+        RateLimiter::for('setup', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
     }
 }

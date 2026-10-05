@@ -11,6 +11,7 @@ use App\Models\BillItem;
 use App\Models\House;
 use App\Models\Property;
 use App\Models\Renter;
+use App\Services\AccountSetupService;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -32,16 +33,19 @@ final class OnboardRenter
 {
     private readonly PortfolioMailer $mailer;
 
-    public function __construct(?PortfolioMailer $mailer = null)
-    {
-        // Constructed by hand (`new OnboardRenter()`), so the mailer is
+    private readonly AccountSetupService $setups;
+
+    public function __construct(
+        ?PortfolioMailer $mailer = null,
+        ?AccountSetupService $setups = null,
+    ) {
+        // Constructed by hand (`new OnboardRenter()`), so both collaborators are
         // resolved here rather than demanded at every call site.
         $this->mailer = $mailer ?? app(PortfolioMailer::class);
+        $this->setups = $setups ?? app(AccountSetupService::class);
     }
 
-    /**
-     * @param  array<string, mixed>  $attributes
-     */
+    /** @param array<string, mixed> $attributes */
     public function handle(array $attributes): Renter
     {
         $renter = DB::transaction(function () use ($attributes): Renter {
@@ -82,7 +86,10 @@ final class OnboardRenter
 
         // After the commit, never inside it: see RecordPayment. A welcome
         // email must not go out for a renter whose onboarding then rolled back.
-        $this->mailer->renterOnboarded($renter);
+        //
+        // The invitation carries the real setup link, so this supersedes the
+        // placeholder the welcome email used before the setup flow existed.
+        $this->setups->invite('tenant', (int) $renter->getKey(), (int) $renter->owner_id);
 
         return $renter;
     }
