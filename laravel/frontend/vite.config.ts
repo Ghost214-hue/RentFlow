@@ -9,6 +9,7 @@ export default defineConfig({
     plugins: [
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
+            publicDirectory: '../backend/public',
             refresh: true,
             fonts: [
                 bunny('Instrument Sans', {
@@ -21,7 +22,7 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': path.resolve(process.cwd(), 'resources/js'),
+            '@': path.resolve(process.cwd(), 'src'),
         },
     },
     server: {
