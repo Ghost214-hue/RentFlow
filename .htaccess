@@ -5,7 +5,7 @@
 # at frontend/public/ and backend/public/, which no longer exist -- deploying
 # with the old file would have served nothing at all.
 
-DirectoryIndex laravel/public/index.php
+DirectoryIndex laravel/backend/public/index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On

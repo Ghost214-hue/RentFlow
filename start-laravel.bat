@@ -5,27 +5,34 @@ REM   Log in: dev@example.test / secret123   (owner)
 REM           ct@example.test / secret123   (caretaker)
 REM           rt@example.test / secret123   (renter)
 REM
-REM PREFERRED: Apache on http://127.0.0.1:8080
-REM   Apache is threaded, so a browser's parallel requests are handled at once.
-REM   The vhost is installed at C:\xampp\apache\conf\extra\httpd-rentflow.conf
-REM   and is included from httpd.conf. To activate it, restart Apache from the
-REM   XAMPP Control Panel (right-click it, Run as Administrator).
-REM
-REM FALLBACK: artisan serve on http://127.0.0.1:8000
-REM   PHP's built-in server is SINGLE-THREADED and Windows cannot fork workers
-REM   for it, so a page's parallel asset requests serialise behind one another
-REM   and can hit PHP's 30 second limit ("Maximum execution time of 30 seconds
-REM   exceeded"). It works, but it is not as reliable under load.
+REM Serves the current checkout at http://127.0.0.1:8000.
+REM For Apache, configure apache-rentflow.conf with this checkout's path.
 REM
 REM Press Ctrl+C to stop.
 
 setlocal
-set PHP=C:\tools\php83\php.exe
-set DIR=C:\xampp\htdocs\RentFlow\laravel
+set "DIR=%~dp0laravel\backend"
+set "FRONTEND=%~dp0laravel\frontend"
+set "PHP=php"
+
+where php >NUL 2>NUL
+if errorlevel 1 (
+    if exist "C:\xampp\php\php.exe" (
+        set "PHP=C:\xampp\php\php.exe"
+        set "PATH=C:\xampp\php;%PATH%"
+    ) else (
+        echo  ERROR: PHP was not found. Add PHP to PATH or install XAMPP.
+        pause
+        exit /b 1
+    )
+)
+
+if exist "%ProgramData%\ComposerSetup\bin" (
+    set "PATH=%ProgramData%\ComposerSetup\bin;%PATH%"
+)
 
 echo.
 echo  Fallback server: http://127.0.0.1:8000
-echo  Preferred server: http://127.0.0.1:8080  (Apache, threaded)
 echo  Sign in: dev@example.test / secret123
 echo.
 
@@ -38,17 +45,30 @@ if errorlevel 1 (
 )
 
 if not exist "%DIR%\vendor\autoload.php" (
-    echo  ERROR: dependencies missing. Run:
-    echo      cd C:\xampp\htdocs\RentFlow\laravel
-    echo      C:\tools\php83\php.exe C:\tools\php83\composer.phar install
+    echo  ERROR: Laravel dependencies missing. Run:
+    echo      cd /d "%DIR%"
+    echo      composer install
     pause
     exit /b 1
 )
 
 if not exist "%DIR%\public\build\manifest.json" (
+    where npm >NUL 2>NUL
+    if errorlevel 1 (
+        echo  ERROR: frontend assets are missing and npm was not found.
+        echo  Install Node.js, then run npm install and npm run build in:
+        echo      "%FRONTEND%"
+        pause
+        exit /b 1
+    )
     echo  Building frontend assets...
-    cd /d "%DIR%"
+    cd /d "%FRONTEND%"
     call npm run build
+    if errorlevel 1 (
+        echo  ERROR: frontend build failed.
+        pause
+        exit /b 1
+    )
 )
 
 cd /d "%DIR%"
