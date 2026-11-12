@@ -4,8 +4,8 @@
   "private": true,
   "description": "Workspace root for RentalFlow. The frontend build lives in laravel/ and is run with `npm run build` from there.",
   "scripts": {
-    "build": "npm --prefix laravel run build",
-    "dev": "npm --prefix laravel run dev",
-    "watch": "npm --prefix laravel run dev"
+    "build": "npm --prefix laravel/frontend run build",
+    "dev": "npm --prefix laravel/frontend run dev",
+    "watch": "npm --prefix laravel/frontend run dev"
   }
 }
