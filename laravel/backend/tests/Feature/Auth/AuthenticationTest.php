@@ -21,6 +21,7 @@ use App\Models\Property;
 use App\Models\Renter;
 use App\Support\TenantContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 beforeEach(function (): void {
     TenantContext::set(null);
@@ -111,6 +112,21 @@ it('logs an owner in', function (): void {
     ])->assertRedirect();
 
     $this->assertAuthenticatedAs($this->owner);
+});
+
+it('logs in an owner with a legacy bcrypt hash and upgrades it', function (): void {
+    $owner = Owner::factory()->create();
+    DB::table('owners')
+        ->where('id', $owner->id)
+        ->update(['password' => Hash::driver('bcrypt')->make('legacy-secret')]);
+
+    $this->post('/login', [
+        'email' => $owner->email,
+        'password' => 'legacy-secret',
+    ])->assertRedirect();
+
+    $this->assertAuthenticatedAs($owner);
+    expect(password_get_info($owner->fresh()->password)['algoName'])->toBe('argon2i');
 });
 
 /*

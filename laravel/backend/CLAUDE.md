@@ -45,3 +45,16 @@ php artisan boost:install
 
 Boost replaces these bootstrap instructions with guidelines tailored to the application. After installation, read `AGENTS.md` again and continue with the user's original request using the generated guidelines.
 </laravel-boost-guidelines>
+
+---
+## RentFlow layout note (refactor: backend/frontend split)
+
+This repo is split into two siblings under `laravel/`:
+
+- `laravel/backend/` — everything Laravel/PHP: `artisan`, `app/`, `bootstrap/`, `config/`, `database/`, `public/`, `routes/`, `storage/`, `tests/`, `composer.json`, `resources/views/` (Blade, incl. mail).
+- `laravel/frontend/` — everything React/TypeScript/Vite: `package.json`, `vite.config.ts`, `tsconfig.json`, `src/` (app.tsx, bootstrap.ts, layouts/, lib/, pages/, types/), `src/css/app.css`.
+
+The Vite build (`frontend/vite.config.ts`) writes its manifest into `backend/public/build/` (`publicDirectory: '../backend/public'`), so the Blade `@vite()` directives in `backend/resources/views/` resolve against `backend/public/build/manifest.json`. Inertia is the contract between the halves: a controller's `Inertia::render('Folder/Page')` maps to `frontend/src/pages/Folder/Page.tsx`.
+
+Dev workflow: `php artisan serve` in `backend/` + `npm run dev` in `frontend/`.
+Build workflow: `npm run build` in `frontend/` writes assets to `backend/public/build/`.

@@ -25,15 +25,13 @@
         "noEmit": true,
 
         "paths": {
-            "@/*": ["./resources/js/*"],
-            "ziggy-js": ["./resources/js/types/ziggy"],
-            "generated": ["./resources/js/types/generated"]
+            "@/*": ["./src/*"]
         }
     },
     "include": [
-        "resources/js/**/*.ts",
-        "resources/js/**/*.tsx",
-        "resources/js/**/*.d.ts"
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "src/**/*.d.ts"
     ],
-    "exclude": ["node_modules", "public", "vendor"]
+    "exclude": ["node_modules", "../backend/public", "../backend/vendor"]
 }

@@ -2,7 +2,7 @@
  * Inertia shared prop types.
  *
  * These mirror the backend contract. Pages add their own props on top; see
- * resources/js/types/generated.d.ts for types produced from PHP enums and
+ * src/types/generated.d.ts for types produced from PHP enums and
  * DTOs by spatie/laravel-typescript-transformer.
  */
 
@@ -69,7 +69,8 @@ export interface Renter {
     id: number;
     name: string;
     email: string | null;
-    phone: string;
+    /** Nullable – the backend returns null when the column is empty. */
+    phone: string | null;
 
     id_type: string;
     id_number: string | null;
@@ -119,6 +120,7 @@ export interface SharedProps {
 
 declare global {
     interface PageProps {
+        auth: Auth;
         errors: Record<string, string>;
     }
 }

@@ -136,6 +136,33 @@ export default function RenterShow({ renter, history, flash }: Props) {
                                 <Detail label="Email" value={renter.next_of_kin_email} />
                             </dl>
                         </Section>
+
+                        {/* Contact Section */}
+                        <Section icon="fa-phone" tone="text-blue-600" title="Contact">
+                            <div className="p-4 bg-blue-50 rounded-lg mb-4">
+                                <h4 className="font-semibold text-blue-800 mb-2">Contact</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <p className="text-sm text-slate-700 mb-1">Renter</p>
+                                        <a href={`tel:${renter.phone}`} className="text-blue-600 hover:text-blue-800 underline">
+                                            {renter.phone ?? 'Not available'}
+                                        </a>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-slate-700 mb-1">Next of Kin</p>
+                                        <a href={`tel:${renter.next_of_kin_phone}`} className="text-blue-600 hover:text-blue-800 underline">
+                                            {renter.next_of_kin_phone ?? 'Not available'}
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <button onClick={() => window.location.href=`tel:${renter.phone ?? renter.next_of_kin_phone}`} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                                    <i className="fas fa-phone mr-2" aria-hidden="true" />
+                                    Call Now
+                                </button>
+                            </div>
+                        </Section>
                     </div>
 
                     {/* History */}

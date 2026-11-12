@@ -67,12 +67,36 @@ final class Authenticator
         foreach ([Owner::class, Caretaker::class, Renter::class] as $model) {
             $actor = $this->findByEmail($model);
 
-            if ($actor !== null && Hash::check($this->password, (string) $actor->password)) {
+            if ($actor !== null && $this->passwordMatches((string) $actor->password)) {
+                if (
+                    config('hashing.rehash_on_login', true) &&
+                    Hash::needsRehash((string) $actor->password)
+                ) {
+                    $actor->forceFill([
+                        'password' => Hash::make($this->password),
+                    ])->save();
+                }
+
                 return $actor;
             }
         }
 
         return null;
+    }
+
+    private function passwordMatches(string $hashedPassword): bool
+    {
+        $algorithm = password_get_info($hashedPassword)['algoName'] ?? 'unknown';
+
+        $driver = match ($algorithm) {
+            'bcrypt' => 'bcrypt',
+            'argon2i' => 'argon',
+            'argon2id' => 'argon2id',
+            default => null,
+        };
+
+        return $driver !== null
+            && Hash::driver($driver)->check($this->password, $hashedPassword);
     }
 
     /**

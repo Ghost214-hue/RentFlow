@@ -136,5 +136,12 @@ class AppServiceProvider extends ServiceProvider
         // Setting a first password from an emailed link, and asking for a
         // replacement. Behind a session-less page, so keyed on IP.
         RateLimiter::for('setup', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
+
+        // Password reset: request a code (step 1) and set a new password (step 2).
+        // Keyed per email+IP so an attacker cannot grind an inbox or brute-force
+        // a reset code. Low limits because a reset code is only six digits.
+        RateLimiter::for('password-reset', fn (Request $request): Limit => Limit::perMinute(5)->by(
+            mb_strtolower((string) $request->input('email')).'|'.$request->ip()
+        ));
     }
 }

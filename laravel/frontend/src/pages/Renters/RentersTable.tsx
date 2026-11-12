@@ -1,7 +1,109 @@
 import { Link } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 import { formatMoney } from '@/lib/money';
 import type { Paginated, Renter } from '@/types';
 import { initials } from '@/pages/Houses/helpers';
+
+interface CallOption {
+    label: string;
+    value: string;
+}
+
+function callOptions(r: Renter): CallOption[] {
+    const options: CallOption[] = [];
+    if (r.phone) {
+        options.push({ label: `Call ${r.name}`, value: r.phone });
+    }
+    if (r.next_of_kin_phone) {
+        options.push({
+            label: r.next_of_kin_name
+                ? `Call ${r.next_of_kin_name} (Next of Kin)`
+                : 'Call Next of Kin',
+            value: r.next_of_kin_phone,
+        });
+    }
+    return options;
+}
+
+/**
+ * One-click contact for a renter row.
+ *
+ * Clicking the phone icon shows who can be called (the renter and/or their
+ * next of kin). Selecting an option opens a `tel:` link so the device can
+ * place the call immediately - the mobile dialler on phones, or a linked
+ * calling app on a capable laptop - without opening the renter's profile
+ * first.
+ */
+function ContactButton({ renter }: { renter: Renter }) {
+    const [open, setOpen] = useState(false);
+    const buttonRef = useRef<HTMLDivElement>(null);
+    const options = callOptions(renter);
+
+    useEffect(() => {
+        if (!open) return;
+        function onClickOutside(e: MouseEvent) {
+            if (buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', onClickOutside);
+        return () => document.removeEventListener('mousedown', onClickOutside);
+    }, [open]);
+
+    // Always render a phone button. If no number is on file, show it greyed-out
+    // and disabled so the user can see at a glance that the field is empty.
+    const hasOptions = options.length > 0;
+
+    return (
+        <div ref={buttonRef} className="relative inline-block">
+            <button
+                type="button"
+                disabled={!hasOptions}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (hasOptions) setOpen((o) => !o);
+                }}
+                aria-label={hasOptions ? `Contact ${renter.name}` : `No phone on file for ${renter.name}`}
+                title={
+                    !hasOptions
+                        ? 'No phone number on file'
+                        : options.length === 1
+                        ? options[0]!.label
+                        : `Call ${renter.name} or next of kin`
+                }
+                className={`p-1.5 transition-colors rounded ${
+                    hasOptions
+                        ? 'text-slate-400 hover:text-blue-600 cursor-pointer'
+                        : 'text-slate-200 cursor-not-allowed'
+                }`}
+            >
+                <i className="fas fa-phone text-sm" aria-hidden="true" />
+            </button>
+            {open && hasOptions && (
+                <div className="absolute right-0 z-20 mt-1 flex flex-col gap-0.5 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 min-w-[190px]">
+                    {options.map((o, i) => (
+                        <a
+                            key={i}
+                            href={`tel:${o.value}`}
+                            onClick={() => setOpen(false)}
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                        >
+                            <i
+                                className={`fas ${i === 0 ? 'fa-phone' : 'fa-user-shield'} w-4 text-center text-slate-400`}
+                                aria-hidden="true"
+                            />
+                            <span className="flex flex-col leading-tight">
+                                <span className="font-medium">{o.label}</span>
+                                <span className="text-xs text-slate-400">{o.value}</span>
+                            </span>
+                        </a>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 interface TableProps {
     renters: Paginated<Renter>;
@@ -102,6 +204,7 @@ export default function RentersTable({
                                                     ) : null}
                                                 </>
                                             )}
+                                            <ContactButton renter={r} />
                                         </div>
                                     </td>
                                 </tr>

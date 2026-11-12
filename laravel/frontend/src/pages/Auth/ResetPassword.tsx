@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { ThemeToggle } from '@/components/ui';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 /**
@@ -53,9 +54,12 @@ export default function ResetPassword({ email }: Props) {
                 </div>
 
                 <div className="relative z-10 w-full max-w-md bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-6 sm:p-8">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-lg text-white">RF</div>
-                        <span className="font-bold text-xl text-slate-900">RentalFlow</span>
+                    <div className="mb-6 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-lg text-white">RF</div>
+                            <span className="font-bold text-xl text-slate-900">RentalFlow</span>
+                        </div>
+                        <ThemeToggle />
                     </div>
 
                     <h1 className="text-2xl font-bold text-slate-900 mb-1">Choose a new password</h1>
