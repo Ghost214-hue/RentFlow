@@ -56,21 +56,25 @@ class Caretaker extends Authenticatable
         return Role::Caretaker;
     }
 
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     /**
      * Property ids this caretaker may act on.
+     *
+     * Reads from the caretaker_property pivot table instead of the legacy
+     * CSV `assigned_properties` column.
      *
      * @return array<int, int>
      */
     public function assignedPropertyIds(): array
     {
-        if ($this->assigned_properties === null || trim($this->assigned_properties) === '') {
-            return [];
-        }
-
-        return array_values(array_filter(array_map(
-            static fn (string $id): int => (int) trim($id),
-            explode(',', $this->assigned_properties),
-        )));
+        return $this->properties()
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
     }
 
     public function isAssignedTo(int $propertyId): bool
@@ -78,8 +82,26 @@ class Caretaker extends Authenticatable
         return in_array($propertyId, $this->assignedPropertyIds(), true);
     }
 
+    /**
+     * Properties this caretaker is assigned to (via the pivot table).
+     */
+    public function properties(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(
+            Property::class,
+            'caretaker_property',
+            'caretaker_id',
+            'property_id'
+        )->withPivot('owner_id')->wherePivot('owner_id', $this->owner_id);
+    }
+
     public function owner(): BelongsTo
     {
         return $this->belongsTo(Owner::class, 'owner_id');
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->status === 'suspended';
     }
 }

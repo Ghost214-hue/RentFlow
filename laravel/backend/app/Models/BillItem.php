@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Support\TenantContext;
+use App\Models\Concerns\BelongsToOwner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use RuntimeException;
 
 /**
  * A charge line on a bill. Maps the EXISTING `bill_items` table.
  *
- * There is NO owner_id on this table, so tenancy is scoped THROUGH the parent
- * bill. The global scope below restricts reads and writes to items whose bill
- * belongs to the current owner; without it, a leaked item id would expose
- * another owner's charges.
+ * owner_id is stamped on create so the BelongsToOwner global scope can
+ * restrict reads/writes to the current owner's rows directly, without
+ * traversing through the parent bill.
  *
  * @property int $id
+ * @property int $owner_id
  * @property int $bill_id
  * @property string $type     Rent|Deposit|Water|Electricity|Other
  * @property string $amount
@@ -26,10 +25,13 @@ use RuntimeException;
  */
 class BillItem extends Model
 {
+    use BelongsToOwner;
+
     protected $table = 'bill_items';
 
     /** @return array<int, string> */
     protected $fillable = [
+        'owner_id',
         'bill_id',
         'type',
         'description',
@@ -37,25 +39,6 @@ class BillItem extends Model
         'paid',
         'status',
     ];
-
-    protected static function booted(): void
-    {
-        static::addGlobalScope('ownerThroughBill', static function (Builder $query): void {
-            $ownerId = TenantContext::id();
-
-            if ($ownerId === null) {
-                throw new RuntimeException(sprintf(
-                    'No owner context resolved for %s. Refusing to run an unscoped query.',
-                    static::class,
-                ));
-            }
-
-            $query->whereHas(
-                'bill',
-                static fn (Builder $bill): Builder => $bill->where('owner_id', $ownerId),
-            );
-        });
-    }
 
     /** @return array<string, string> */
     protected function casts(): array

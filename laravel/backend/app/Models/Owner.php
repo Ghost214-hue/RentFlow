@@ -64,6 +64,11 @@ class Owner extends Authenticatable
         return Role::Owner;
     }
 
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     public function properties(): HasMany
     {
         return $this->hasMany(Property::class, 'owner_id');
@@ -77,5 +82,10 @@ class Owner extends Authenticatable
     public function caretakers(): HasMany
     {
         return $this->hasMany(Caretaker::class, 'owner_id');
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->status === 'suspended';
     }
 }

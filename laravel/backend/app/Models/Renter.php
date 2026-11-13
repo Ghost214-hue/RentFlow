@@ -104,6 +104,11 @@ class Renter extends Authenticatable
         return Role::Tenant;
     }
 
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
@@ -139,5 +144,10 @@ class Renter extends Authenticatable
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->status === 'suspended' || $this->status === 'terminated';
     }
 }

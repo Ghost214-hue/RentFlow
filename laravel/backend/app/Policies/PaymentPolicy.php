@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\Caretaker;
+use App\Models\House;
 use App\Models\Owner;
 use App\Models\Payment;
 use App\Models\Renter;
+use App\Services\PermissionService;
 
 /**
  * Who may do what with a Payment. DENY BY DEFAULT.
@@ -18,9 +20,11 @@ use App\Models\Renter;
  */
 class PaymentPolicy
 {
+    public function __construct(private readonly PermissionService $permissions) {}
+
     public function viewAny(Owner|Caretaker|Renter $actor): bool
     {
-        return true;
+        return $this->permissions->allows($actor, 'payments.view');
     }
 
     public function view(Owner|Caretaker|Renter $actor, Payment $payment): bool
@@ -38,10 +42,14 @@ class PaymentPolicy
         return (int) $payment->tenant_id === (int) $actor->getKey();
     }
 
-    /** Owners, caretakers and renters (self-pay) may all record a payment. */
+    /** Only roles with payments.record ability may record a payment. Renters only for themselves. */
     public function create(Owner|Caretaker|Renter $actor): bool
     {
-        return true;
+        if ($actor instanceof Renter) {
+            return true; // self-pay always allowed
+        }
+
+        return $this->permissions->allows($actor, 'payments.record');
     }
 
     /**
@@ -60,5 +68,15 @@ class PaymentPolicy
     public function delete(Owner|Caretaker|Renter $actor, Payment $payment): bool
     {
         return $actor instanceof Owner && ! $payment->allocations()->exists();
+    }
+
+    /** Reverse a payment — owner only, and caretakers with explicit payments.reverse grant. */
+    public function reverse(Owner|Caretaker|Renter $actor, Payment $payment): bool
+    {
+        if ($actor instanceof Owner) {
+            return true;
+        }
+
+        return $this->permissions->allows($actor, 'payments.reverse');
     }
 }

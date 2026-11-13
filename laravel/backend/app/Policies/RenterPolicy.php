@@ -73,21 +73,13 @@ class RenterPolicy
     }
 
     /**
-     * Only an owner terminates, and a caretaker may act only on renters in
-     * their assigned properties.
-     *
-     * A renter cannot terminate themselves: they REQUEST to leave, which
-     * creates a pending record the owner then approves.
+     * Only an owner terminates. Caretakers may never terminate tenancies
+     * unless the owner explicitly grants it via caretaker_permissions.
      */
     public function terminate(Owner|Caretaker|Renter $actor, Renter $renter): bool
     {
         if ($actor instanceof Owner) {
             return true;
-        }
-
-        if ($actor instanceof Caretaker) {
-            return $renter->property_id !== null
-                && $actor->isAssignedTo((int) $renter->property_id);
         }
 
         return false;
