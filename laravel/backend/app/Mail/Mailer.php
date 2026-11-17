@@ -66,21 +66,43 @@ final class Mailer
             // stack trace is about delivery rather than about the caller.
             $rendered = $this->renderer->render($template, $variables);
 
+            // The delivery log is an audit trail: it must NEVER hold live
+            // setup/reset/invoice links. Mask them in the stored body, while
+            // the outgoing email keeps the real link.
+            $storedBody = self::maskLinks($rendered['body']);
+
             $log = EmailLog::query()->create([
                 'to_email' => $toEmail,
                 'to_name' => $toName,
                 'subject' => $rendered['subject'],
-                'body' => $rendered['body'],
+                'body' => $storedBody,
                 'status' => EmailLogStatus::Pending,
                 // NOT NULL with no default; set now and updated on real delivery.
                 'sent_at' => $scheduledAt ?? CarbonImmutable::now(),
             ]);
 
-            DeliverMail::dispatch($log->getKey(), $ownerId)
+            // Pass the unmasked body so the actual email keeps live links.
+            DeliverMail::dispatch($log->getKey(), $ownerId, $rendered['body'])
                 ->delay($scheduledAt ?? CarbonImmutable::now());
 
             return $log;
         });
+    }
+
+    /**
+     * Replace setup, reset and invoice links with a placeholder so secrets
+     * are never persisted in the delivery log.
+     *
+     * @param  string  $body  Rendered email body (HTML or plain text)
+     * @return string
+     */
+    public static function maskLinks(string $body): string
+    {
+        return preg_replace(
+            '/https?:\/\/[^\s<>"\']+/',
+            '[LINK REDACTED]',
+            $body,
+        );
     }
 
     /**

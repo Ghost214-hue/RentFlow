@@ -77,7 +77,7 @@ jobs:
                   MAIL_MAILER=array
                   HASH_DRIVER=argon
                   BCRYPT_ROUNDS=4
-              EOF
+              shell: bash
 
             - name: Run migrations
               run: php artisan migrate --force --working-dir=${{ env.BACKEND_DIR }}

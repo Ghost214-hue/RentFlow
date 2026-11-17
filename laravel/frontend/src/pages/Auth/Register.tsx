@@ -76,7 +76,7 @@ export default function Register({ flash }: Props) {
                     style={{ animation: 'authFadeSlide 0.45s cubic-bezier(0.22,1,0.36,1) both' }}
                 >
                     {/* ── Brand panel (blue) – LEFT on register ── */}
-                    <div className="relative hidden md:flex md:w-5/12 flex-col justify-between bg-gradient-to-b from-blue-900 to-blue-700 p-12 text-white overflow-hidden">
+                    <div className="relative hidden md:flex md:w-1/2 flex-col justify-between bg-gradient-to-b from-blue-900 to-blue-700 p-12 text-white overflow-hidden">
                         {/* Logo */}
                         <div className="flex items-center gap-3 relative z-10">
                             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm border border-white/20">
@@ -125,7 +125,7 @@ export default function Register({ flash }: Props) {
                     </div>
 
                     {/* ── Form panel (white) – RIGHT on register ── */}
-                    <div className="flex-1 flex flex-col justify-center bg-white px-8 py-12 md:px-12">
+                    <div className="md:w-1/2 flex flex-col justify-center bg-white px-8 py-12 md:px-12">
 
                         {/* Mobile logo */}
                         <div className="mb-7 flex items-center gap-2 md:hidden">

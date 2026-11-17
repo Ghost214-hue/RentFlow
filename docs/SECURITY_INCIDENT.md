@@ -107,3 +107,27 @@ The dump was already pushed; `.gitignore` affects **new** commits only. Both ste
 - `laravel/database/schema/mysql-schema.sql` (Phase 1) holds **structure only, no rows** — the CI/dev baseline, explicitly not a data dump.
 - Phase 0 restores from a **sanitised** copy: real schema, fabricated rows. Golden masters and fixtures use generated PII.
 - `composer audit`, `npm audit` and secret scanning enter CI in Phase 1.
+
+---
+
+## 6. Credential rotation checklist (owner action)
+
+Do **not** rotate anything from this repository — these are infrastructure actions performed by the system owner.
+
+| # | Item | Why |
+|---|------|-----|
+| 1 | **`APP_KEY`** | Encrypts session cookies and other encrypted values. A leaked dump may contain ciphertext encrypted under the old key. |
+| 2 | **Mail credentials (SMTP/API password)** | If credentials were reused or appear in any log, an attacker could send mail as the application. |
+| 3 | **Password-setup tokens** (`DELETE FROM password_setup_tokens;`) | Plaintext bearer tokens were in the dump. Invalidate all outstanding invitations. |
+| 4 | **Git history purge** | `git filter-repo` to remove the SQL dump from all branches, tags, and clones. Force-push and require re-clone. |
+| 5 | **GitHub Support ticket** | If the repo was ever public, request blob URL/cache removal at https://support.github.com/contact. |
+| 6 | **Database credentials** | The dump proves host/user/schema; rotate DB user passwords. |
+| 7 | **`JWT_SECRET`** (if ever used) | Any JWTs signed with it remain forgeable until rotated. |
+| 8 | **Renter password reset** | `tenants.password` hashes were public; force password reset or notify renters per applicable law. |
+
+Verification after rotation:
+- [ ] All users signed out; login works with new credentials
+- [ ] `password_setup_tokens` table is empty
+- [ ] New setup/reset emails deliver after rotation
+- [ ] History purge verified: `git log --all --oneline -- '*.sql'` returns nothing
+- [ ] A fresh `git clone` contains no `.sql` outside `migrations/`

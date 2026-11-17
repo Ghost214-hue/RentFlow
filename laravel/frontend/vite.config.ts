@@ -8,7 +8,7 @@ import path from 'node:path';
 export default defineConfig({
     plugins: [
         laravel({
-            input: ['resources/css/app.css', 'resources/js/app.tsx'],
+            input: ['src/css/app.css', 'src/app.tsx'],
             publicDirectory: '../backend/public',
             refresh: true,
             fonts: [

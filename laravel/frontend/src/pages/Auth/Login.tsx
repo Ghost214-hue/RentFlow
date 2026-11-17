@@ -34,7 +34,7 @@ export default function Login({ flash }: Props) {
                     style={{ animation: 'authFadeSlide 0.45s cubic-bezier(0.22,1,0.36,1) both' }}
                 >
                     {/* ── Form panel (white) – left on login ── */}
-                    <div className="flex-1 flex flex-col justify-center bg-white px-10 py-14 md:px-14 order-1">
+                    <div className="md:w-1/2 flex flex-col justify-center bg-white px-10 py-14 md:px-14 order-1">
 
                         {/* Mobile logo */}
                         <div className="mb-7 flex items-center gap-2 md:hidden">
@@ -158,7 +158,7 @@ export default function Login({ flash }: Props) {
                     </div>
 
                     {/* ── Brand panel (blue) – right on login ── */}
-                    <div className="relative hidden md:flex md:w-5/12 flex-col justify-between bg-gradient-to-b from-blue-900 to-blue-700 p-14 text-white overflow-hidden order-2">
+                    <div className="relative hidden md:flex md:w-1/2 flex-col justify-between bg-gradient-to-b from-blue-900 to-blue-700 p-14 text-white overflow-hidden order-2">
                         {/* Logo */}
                         <div className="flex items-center gap-3 relative z-10">
                             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm border border-white/20">

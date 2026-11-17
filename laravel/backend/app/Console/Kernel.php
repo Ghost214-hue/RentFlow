@@ -28,6 +28,7 @@ class Kernel extends BaseKernel
         SendRentReminders::class,
         IdentityAudit::class,
         IdentityBackfill::class,
+        AdminCredentialSeeder::class,
     ];
 
     /**

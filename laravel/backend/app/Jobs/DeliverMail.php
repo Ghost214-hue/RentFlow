@@ -49,6 +49,8 @@ class DeliverMail implements ShouldQueue
     public function __construct(
         public readonly int $logId,
         public readonly int $ownerId,
+        /** @var string|null Unmasked body for the actual send; null falls back to the stored (masked) body. */
+        public readonly ?string $body = null,
     ) {}
 
     public function handle(): void
@@ -70,8 +72,13 @@ class DeliverMail implements ShouldQueue
                 return;
             }
 
+            // Use the unmasked body when the caller provided it (fresh sends
+            // from Mailer::send()); otherwise fall back to the stored body,
+            // which has links masked for the audit trail.
+            $sendBody = $this->body ?? (string) $log->body;
+
             Mail::to($log->to_email, $log->to_name)
-                ->send(new RenderedMail((string) $log->subject, (string) $log->body));
+                ->send(new RenderedMail((string) $log->subject, $sendBody));
 
             $log->forceFill([
                 'status' => EmailLogStatus::Sent,
