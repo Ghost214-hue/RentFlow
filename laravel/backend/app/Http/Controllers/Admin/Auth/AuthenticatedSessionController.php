@@ -6,18 +6,20 @@ namespace App\Http\Controllers\Admin\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
+use App\Services\TwoFactor;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 
 class AuthenticatedSessionController extends Controller
 {
-    public function create()
+    public function create(): \Illuminate\View\View
     {
         return view('admin.auth.login');
     }
 
-    public function store(Request $request)
+    public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
         $request->validate([
             'email' => ['required', 'email', 'max:255'],
@@ -32,6 +34,13 @@ class AuthenticatedSessionController extends Controller
                 ->withErrors(['email' => 'The provided credentials are incorrect.']);
         }
 
+        // Block login for suspended admins.
+        if ($admin->status !== 'active') {
+            return back()
+                ->withInput()
+                ->withErrors(['email' => 'This account is suspended. Contact a super admin.']);
+        }
+
         // Check 2FA
         if ($admin->two_factor_required && empty($admin->two_factor_secret)) {
             return back()
@@ -44,15 +53,26 @@ class AuthenticatedSessionController extends Controller
                 ->with('status', 'Please verify your two-factor authentication.');
         }
 
-        $request->session()->put('admin_id', $admin->id);
-        $request->session()->put('admin_2fa_verified', true);
+        // Log the admin in via the admin guard.
+        Auth::guard('admin')->login($admin);
+
+        // Regenerate the session to prevent session fixation.
+        $request->session()->regenerate();
+
+        // Clear the 2FA verified flag after successful login.
+        $request->session()->forget('admin_2fa_verified');
 
         return redirect()->intended(route('admin.dashboard'));
     }
 
-    public function destroy(Request $request)
+    public function destroy(Request $request): \Illuminate\Http\RedirectResponse
     {
-        $request->session()->forget(['admin_id', 'admin_2fa_verified']);
+        // Log out via the admin guard.
+        Auth::guard('admin')->logout();
+
+        // Invalidate the session to prevent session fixation attacks.
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
         return redirect()->route('admin.login');
     }

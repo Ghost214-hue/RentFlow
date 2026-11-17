@@ -19,7 +19,7 @@ return [
     'abilities' => [
 
         // Payments
-        'payments.record'   => ['owner', 'caretaker', 'tenant'],
+        'payments.record'   => ['owner', 'caretaker'],
         'payments.reverse'  => ['owner'],
         'payments.confirm'  => ['tenant'],
         'payments.view'     => ['owner', 'caretaker', 'tenant'],
