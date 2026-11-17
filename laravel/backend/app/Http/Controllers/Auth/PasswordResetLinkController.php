@@ -8,8 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Services\PasswordResetService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,8 +24,6 @@ use Inertia\Response;
  */
 class PasswordResetLinkController extends Controller
 {
-    private const MAX_ATTEMPTS = 5;
-
     public function __construct(private readonly PasswordResetService $resets) {}
 
     public function create(): Response
@@ -43,17 +39,9 @@ class PasswordResetLinkController extends Controller
             'email' => ['required', 'email', 'max:255'],
         ]);
 
-        // Throttled per address AND per session, so neither one address nor one
-        // attacker cycling addresses can be used to flood a real mailbox.
-        $key = 'password-reset:'.mb_strtolower((string) $data['email']);
-
-        if (RateLimiter::tooManyAttempts($key, self::MAX_ATTEMPTS)) {
-            throw ValidationException::withMessages([
-                'email' => 'Too many reset requests. Please wait a few minutes and try again.',
-            ]);
-        }
-
-        RateLimiter::hit($key, 600);
+        // Throttled by the `password-reset` named limiter on the route (per
+        // email+IP), so neither one address nor one attacker cycling addresses
+        // can flood a real mailbox.
 
         $this->resets->request((string) $data['email']);
 

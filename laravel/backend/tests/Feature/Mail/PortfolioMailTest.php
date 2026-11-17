@@ -382,3 +382,45 @@ it('marks a delivery failed rather than leaving it pending forever', function ()
     // enum, so the raw value would be the enum instance rather than a string.
     expect(EmailLog::withoutOwnerScope()->latest('id')->first()->status)->toBe(EmailLogStatus::Failed);
 });
+
+// --- secrets are never stored in the delivery log ------------------------
+
+it('masks links in the stored email log body while sending live links', function (): void {
+    // A real-looking setup link that must NOT persist in the log.
+    $liveLink = 'https://rentflow.example.test/password/setup?token=abc123secret';
+
+    $log = app(\App\Mail\Mailer::class)->send(
+        \App\Mail\MailTemplate::TenantWelcome,
+        (int) $this->owner->id,
+        'renter@example.test',
+        'Ada Renter',
+        [
+            'tenant' => 'Ada Renter',
+            'property' => 'Sunrise Court',
+            'house' => 'A1',
+            'email' => 'renter@example.test',
+            'setup_link' => $liveLink,
+        ],
+    );
+
+    // Stored body: link must be redacted.
+    expect($log->body)->not->toContain($liveLink)
+        ->and($log->body)->toContain('[LINK REDACTED]');
+
+    // Sent email: a mail was sent to the recipient (the mailer keeps the live
+    // link for the actual send; the unit test below covers the masking rule).
+    Mail::assertSent(function (\App\Mail\RenderedMail $mail): bool {
+        return $mail->hasTo('renter@example.test');
+    });
+});
+
+it('maskLinks replaces http and https URLs with a placeholder', function (): void {
+    $body = 'Click https://example.test/setup?token=secret or http://example.test/reset?code=123456.';
+
+    $masked = \App\Mail\Mailer::maskLinks($body);
+
+    expect($masked)->not->toContain('https://example.test')
+        ->and($masked)->not->toContain('http://example.test')
+        ->and($masked)->toContain('[LINK REDACTED]')
+        ->and($masked)->toContain('Click [LINK REDACTED] or [LINK REDACTED]');
+});

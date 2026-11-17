@@ -42,6 +42,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'admin' => [
+            'driver' => 'session',
+            'provider' => 'admins',
+            'cookie' => 'rf_admin_session',
+            'lifetime' => 60,
+            'expire_on_close' => true,
+        ],
     ],
 
     /*
@@ -72,6 +79,11 @@ return [
          * to Auth::setUser(); the provider is never asked to guess which table
          * a session belongs to.
          */
+        'admins' => [
+            'driver' => 'eloquent',
+            'model' => \App\Models\Admin::class,
+        ],
+
         'owners' => [
             'driver' => 'eloquent',
             'model' => \App\Models\Owner::class,

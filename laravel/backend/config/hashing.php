@@ -22,7 +22,14 @@ return [
     |
     */
 
-    'driver' => env('HASH_DRIVER', 'bcrypt'),
+    'driver' => env('HASH_DRIVER', 'argon'),
+
+    'argon' => [
+        'memory' => (int) env('ARGON_MEMORY', 65536),
+        'threads' => (int) env('ARGON_THREADS', 1),
+        'time' => (int) env('ARGON_TIME', 4),
+        'verify' => true,
+    ],
 
     'bcrypt' => [
         'rounds' => (int) env('BCRYPT_ROUNDS', 10),
@@ -31,13 +38,6 @@ return [
         // silently truncates beyond 72 bytes, so without this a 1MB password
         // "works" while only its first 72 bytes matter. Rejecting it is honest.
         'limit' => 72,
-    ],
-
-    'argon' => [
-        'memory' => (int) env('ARGON_MEMORY', 65536),
-        'threads' => (int) env('ARGON_THREADS', 1),
-        'time' => (int) env('ARGON_TIME', 4),
-        'verify' => true,
     ],
 
     'rehash_on_login' => true,

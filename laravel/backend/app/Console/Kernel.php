@@ -4,6 +4,8 @@ namespace App\Console;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as Kernel as BaseKernel;
+use App\Console\Commands\IdentityAudit;
+use App\Console\Commands\IdentityBackfill;
 use App\Console\Commands\SendMonthlyBills;
 use App\Console\Commands\SendRentReminders;
 
@@ -24,6 +26,9 @@ class Kernel extends BaseKernel
     protected $commands = [
         SendMonthlyBills::class,
         SendRentReminders::class,
+        IdentityAudit::class,
+        IdentityBackfill::class,
+        AdminCredentialSeeder::class,
     ];
 
     /**

@@ -4,7 +4,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { formatMoney } from '@/lib/money';
 import type { RenterProfileProps } from '@/types';
 
-const fieldClass = 'w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white';
+const fieldClass = 'w-full px-4 py-2.5 rounded-xl border border-slate-300 bg-white dark:bg-slate-800 dark:text-white';
 
 function Field({ id, label, error, children }: {
     id: string; label: string; error?: string; children: React.ReactNode;
@@ -77,7 +77,7 @@ export default function RenterProfile({ renter, flash }: RenterProfileProps) {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2 space-y-6">
                         <form onSubmit={submit} className="space-y-6" noValidate>
-                            <section className="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
+                            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-blue-500/40 dark:border-blue-500/20">
                                 <h2 className="font-semibold text-slate-900 mb-4">Contact Details</h2>
 
                                 <div className="space-y-4">
@@ -107,10 +107,25 @@ export default function RenterProfile({ renter, flash }: RenterProfileProps) {
                                                 onChange={(e) => setData('id_number', e.target.value)} className={fieldClass} />
                                         </Field>
                                     </div>
+                                    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-600">
+                                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">ID Documents</h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                            <div className="border rounded px-3 py-2 bg-slate-50 dark:bg-slate-700">
+                                                <span className="font-medium text-slate-600 dark:text-slate-400">ID Scan</span>
+                                                <input type="file" className="mt-1 block w-full text-xs text-slate-500 dark:text-slate-400 file-select" />
+                                                <span className="ml-2 text-slate-400 dark:text-slate-500">Click to upload</span>
+                                            </div>
+                                            <div className="border rounded px-3 py-2 bg-slate-50 dark:bg-slate-700">
+                                                <span className="font-medium text-slate-600 dark:text-slate-400">KRA PIN Document</span>
+                                                <input type="file" className="mt-1 block w-full text-xs text-slate-500 dark:text-slate-400 file-select" />
+                                                <span className="ml-2 text-slate-400 dark:text-slate-500">Click to upload</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
 
-                            <section className="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
+                            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-emerald-500/40 dark:border-emerald-500/20">
                                 <h2 className="font-semibold text-slate-900 mb-1">Next of Kin</h2>
                                 <p className="text-sm text-slate-500 mb-4">Who we should contact in an emergency.</p>
 
@@ -133,7 +148,7 @@ export default function RenterProfile({ renter, flash }: RenterProfileProps) {
                                 </div>
                             </section>
 
-                            <section className="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
+                            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-violet-500/40 dark:border-violet-500/20">
                                 <h2 className="font-semibold text-slate-900 mb-1">Change Password</h2>
                                 <p className="text-sm text-slate-500 mb-4">Leave blank to keep your current password.</p>
 
@@ -169,7 +184,7 @@ export default function RenterProfile({ renter, flash }: RenterProfileProps) {
                     </div>
 
                     <aside className="space-y-6">
-                        <section className="bg-white rounded-2xl shadow-sm border border-blue-100/50 p-6">
+                        <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-amber-500/40 dark:border-amber-500/20">
                             <h2 className="font-semibold text-slate-900 mb-4">Your Tenancy</h2>
 
                             <dl className="space-y-3 text-sm">
@@ -190,7 +205,7 @@ export default function RenterProfile({ renter, flash }: RenterProfileProps) {
                                 ))}
                             </dl>
 
-                            <p className="mt-4 pt-4 border-t border-blue-50 text-xs text-slate-400">
+                            <p className="mt-4 pt-4 border-t border-amber-500 dark:border-amber-400 text-xs text-slate-400 dark:text-slate-500">
                                 Contact your landlord to change any tenancy detail.
                             </p>
                         </section>

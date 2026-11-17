@@ -1,0 +1,117 @@
+name: CI
+
+on:
+    push:
+        branches: [feat/ui-refinements, main]
+    pull_request:
+        branches: [feat/ui-refinements, main]
+
+permissions:
+    contents: read
+
+env:
+    BACKEND_DIR: laravel/backend
+    FRONTEND_DIR: laravel/frontend
+
+jobs:
+    php:
+        runs-on: ubuntu-latest
+        env:
+            APP_ENV: testing
+            APP_MAINTENANCE_DRIVER: file
+            BCRYPT_ROUNDS: 4
+            HASH_DRIVER: argon
+            ARGON_MEMORY: 1024
+            ARGON_THREADS: 1
+            ARGON_TIME: 1
+            DB_CONNECTION: mysql
+            DB_DATABASE: rentalflow_test
+            MAIL_MAILER: array
+            QUEUE_CONNECTION: sync
+            SESSION_DRIVER: array
+            CACHE_STORE: array
+            PULSE_ENABLED: false
+            TELESCOPE_ENABLED: false
+            NIGHTWATCH_ENABLED: false
+
+        services:
+            mysql:
+                image: mysql:8.0
+                env:
+                    MYSQL_ROOT_PASSWORD: root
+                    MYSQL_DATABASE: rentalflow_test
+                ports:
+                    - 3306:3306
+                options: --health-cmd="mysqladmin ping -h 127.0.0.1" --health-interval=10s --health-timeout=5s --health-retries=3
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '8.3'
+                  extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, mysql, pdo_mysql
+                  coverage: none
+
+            - name: Install Composer dependencies
+              run: composer install --no-interaction --no-progress --working-dir=${{ env.BACKEND_DIR }}
+
+            - name: Create .env for testing
+              run: |
+                  cp ${{ env.BACKEND_DIR }}/.env.example ${{ env.BACKEND_DIR }}/.env
+                  php artisan key:generate --working-dir=${{ env.BACKEND_DIR }}
+                  cat >> ${{ env.BACKEND_DIR }}/.env <<'EOF'
+
+                  # CI overrides
+                  APP_ENV=testing
+                  APP_DEBUG=false
+                  DB_CONNECTION=mysql
+                  DB_HOST=127.0.0.1
+                  DB_PORT=3306
+                  DB_DATABASE=rentalflow_test
+                  DB_USERNAME=root
+                  DB_PASSWORD=
+                  SESSION_DRIVER=array
+                  QUEUE_CONNECTION=sync
+                  CACHE_STORE=array
+                  MAIL_MAILER=array
+                  HASH_DRIVER=argon
+                  BCRYPT_ROUNDS=4
+              shell: bash
+
+            - name: Run migrations
+              run: php artisan migrate --force --working-dir=${{ env.BACKEND_DIR }}
+
+            - name: Rebuild test database
+              run: php artisan rentflow:test-db --source=rentalflow --target=rentalflow_test --working-dir=${{ env.BACKEND_DIR }}
+
+            - name: Run Pest
+              run: php artisan test
+              working-directory: ${{ env.BACKEND_DIR }}
+              env:
+                  DB_PORT: ${{ job.services.mysql.ports[3306] }}
+
+    node:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: npm
+                  cache-dependency-path: ${{ env.FRONTEND_DIR }}/package-lock.json
+
+            - name: Install frontend dependencies
+              run: npm ci
+              working-directory: ${{ env.FRONTEND_DIR }}
+
+            - name: Build frontend assets
+              run: npm run build
+              working-directory: ${{ env.FRONTEND_DIR }}
+
+            - name: Verify build output
+              run: |
+                  test -d ${{ env.BACKEND_DIR }}/public/build
+                  ls -la ${{ env.BACKEND_DIR }}/public/build

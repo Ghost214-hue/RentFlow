@@ -12,6 +12,8 @@ use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Renter;
 use App\Support\Amount;
+use App\Support\Rate;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -80,6 +82,83 @@ class DashboardController extends Controller
             'outstanding' => Amount::toString(
                 Amount::atLeastZero($expected->minus($collected))
             ),
+            'monthly' => $this->monthlyStats(),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     months: array<int, array{label: string, billed: string, collected: string, billedHeight: string, collectedHeight: string}>,
+     *     current: array{label: string, billed: string, collected: string, outstanding: string, collectionRate: string}
+     * }
+     */
+    private function monthlyStats(): array
+    {
+        $currentMonth = CarbonImmutable::now()->startOfMonth();
+        $months = collect(range(5, 0))
+            ->map(fn (int $offset): CarbonImmutable => $currentMonth->subMonths($offset));
+        $keys = $months->map(fn (CarbonImmutable $month): string => $month->format('Y-m'));
+        $firstMonth = $keys->first();
+        $lastMonth = $keys->last();
+
+        $billedByMonth = Bill::query()
+            ->whereBetween('month', [$firstMonth, $lastMonth])
+            ->selectRaw('month, SUM(total) AS amount')
+            ->groupBy('month')
+            ->pluck('amount', 'month');
+
+        $collectedByMonth = Payment::query()
+            ->whereIn('status', BillSnapshotBuilder::SETTLED)
+            ->whereBetween('date', [
+                $currentMonth->subMonths(5)->toDateString(),
+                $currentMonth->endOfMonth()->toDateString(),
+            ])
+            ->selectRaw("DATE_FORMAT(date, '%Y-%m') AS period, SUM(amount) AS amount")
+            ->groupBy('period')
+            ->pluck('amount', 'period');
+
+        $monthlyAmounts = $months->map(function (CarbonImmutable $month) use ($billedByMonth, $collectedByMonth): array {
+            $key = $month->format('Y-m');
+
+            return [
+                'month' => $month,
+                'billed' => Amount::of($billedByMonth->get($key, '0.00')),
+                'collected' => Amount::of($collectedByMonth->get($key, '0.00')),
+            ];
+        });
+
+        $maxBilled = Amount::zero();
+        $maxCollected = Amount::zero();
+        foreach ($monthlyAmounts as $amounts) {
+            if ($amounts['billed']->compareTo($maxBilled) > 0) {
+                $maxBilled = $amounts['billed'];
+            }
+            if ($amounts['collected']->compareTo($maxCollected) > 0) {
+                $maxCollected = $amounts['collected'];
+            }
+        }
+
+        $trend = $monthlyAmounts->map(fn (array $amounts): array => [
+            'label' => $amounts['month']->format('M'),
+            'billed' => Amount::toString($amounts['billed']),
+            'collected' => Amount::toString($amounts['collected']),
+            'billedHeight' => Rate::of($amounts['billed'], $maxBilled),
+            'collectedHeight' => Rate::of($amounts['collected'], $maxCollected),
+        ])->all();
+
+        $current = $monthlyAmounts->last();
+
+        return [
+            'months' => $trend,
+            'current' => [
+                'label' => $currentMonth->format('F Y'),
+                'billed' => Amount::toString($current['billed']),
+                'collected' => Amount::toString($current['collected']),
+                'outstanding' => Amount::toString(Amount::atLeastZero(
+                    $current['billed']->minus($current['collected'])
+                )),
+                'collectionRate' => Rate::of($current['collected'], $current['billed']),
+            ],
         ];
     }
 }

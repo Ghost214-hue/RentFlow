@@ -39,7 +39,8 @@ use Illuminate\Support\Facades\Route;
  */
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
-    Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+    Route::post('/login', [AuthenticatedSessionController::class, 'store'])
+        ->middleware('throttle:login');
 
     /*
      * Password reset. This route DID NOT EXIST -- the login screen linked to
@@ -52,10 +53,12 @@ Route::middleware('guest')->group(function (): void {
     Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
     Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
+        ->middleware('throttle:password-reset')
         ->name('password.email');
     Route::get('/reset-password', [NewPasswordController::class, 'create'])
         ->name('password.reset');
     Route::post('/reset-password', [NewPasswordController::class, 'store'])
+        ->middleware('throttle:password-reset')
         ->name('password.update');
 
     /*

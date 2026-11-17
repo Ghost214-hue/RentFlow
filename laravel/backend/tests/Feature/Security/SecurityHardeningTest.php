@@ -2,20 +2,7 @@
 
 declare(strict_types=1);
 
-/*
-|--------------------------------------------------------------------------
-| Security hardening
-|--------------------------------------------------------------------------
-|
-| These pin the fixes for issues found by auditing the real configuration
-| rather than by reading a checklist. Each test states the attack it stops.
-|
-| The headline one is the JWT bridge. JWT_SECRET shipped EMPTY, and
-| hash_hmac() accepts a blank key and still produces a verifiable MAC -- so
-| anybody could compute a valid signature for a token of their choosing and
-| impersonate any owner. It is genuinely exploitable, not theoretical.
-|
-*/
+
 
 use App\Http\Middleware\AuthenticateLegacyJwt;
 use App\Models\Owner;
@@ -143,7 +130,7 @@ it('throttles the expensive and mail-sending writes', function (): void {
 it('registers every named rate limiter it advertises', function (): void {
     $request = Request::create('/renters', 'GET');
 
-    foreach (['login', 'session', 'writes', 'reads', 'mail'] as $name) {
+    foreach (['login', 'session', 'writes', 'reads', 'mail', 'password-reset'] as $name) {
         $resolver = app(RateLimiter::class)->limiter($name);
 
         expect($resolver)->toBeInstanceOf(Closure::class);
@@ -155,15 +142,49 @@ it('registers every named rate limiter it advertises', function (): void {
     }
 });
 
+// --- JWT is permanently disabled ----------------------------------------
+
+/*
+ * JWT_SECRET shipped EMPTY in the legacy app, and hash_hmac() accepts a blank
+ * key and still produces a verifiable MAC. Anyone could forge a token and
+ * impersonate any owner. Sessions are the only way in, so JWT_SECRET must
+ * never be set and config/jwt.php must never return a driver/secret.
+ */
+it('has no JWT_SECRET configured', function (): void {
+    expect(env('JWT_SECRET'))->toBeNull()
+        ->or->toBe('')
+        ->or->toBeFalse();
+});
+
+it('has no JWT config (JWT is disabled)', function (): void {
+    expect(config('jwt'))->toBe([]);
+});
+
+it('has no JWT middleware registered', function (): void {
+    $middlewareAliases = app('router')->getMiddleware();
+
+    foreach ($middlewareAliases as $alias) {
+        expect($alias)->not->toBe('jwt.auth');
+        expect($alias)->not->toBe('jwt.refresh');
+    }
+
+    foreach (app('router')->getRoutes()->getRoutes() as $route) {
+        foreach ($route->gatherMiddleware() as $middleware) {
+            expect((string) $middleware)->not->toContain('jwt');
+        }
+    }
+});
+
 // --- hashing ----------------------------------------------------------
 
 /*
- * The COST itself is not asserted: phpunit.xml pins BCRYPT_ROUNDS=4 so the
- * suite is not dominated by hashing, and .env pins 12. What matters here is that
- * the config exists and is wired to the environment rather than hard-coded.
+ * The COST itself is not asserted: phpunit.xml pins BCRYPT_ROUNDS=4 and
+ * ARGON_TIME=1 so the suite is not dominated by hashing, and .env pins
+ * BCRYPT_ROUNDS=12 / ARGON_TIME=4. What matters here is that the config
+ * exists and is wired to the environment rather than hard-coded.
  */
-it('pins bcrypt with an explicit 72-byte limit', function (): void {
-    expect(config('hashing.driver'))->toBe('bcrypt')
+it('pins argon2id with an explicit 72-byte bcrypt limit', function (): void {
+    expect(config('hashing.driver'))->toBe('argon')
         // bcrypt silently ignores bytes past 72, so a 1MB 'password' would
         // authenticate on its first 72 bytes. The limit makes that explicit.
         ->and(config('hashing.bcrypt.limit'))->toBe(72)

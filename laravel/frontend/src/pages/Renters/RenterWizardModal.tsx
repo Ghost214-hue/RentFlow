@@ -75,7 +75,7 @@ const EMPTY: Form = {
     rent: '', deposit: '', opening_balance: '',
 };
 
-const fieldClass = 'w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white';
+const fieldClass = 'w-full px-4 py-2.5 rounded-xl border border-slate-300 bg-white dark:bg-slate-800 dark:text-white';
 
 interface ModalProps {
     editing: Renter | null;

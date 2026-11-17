@@ -12,7 +12,7 @@ return new class extends Migration
     {
         Schema::create('sms_logs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('owner_id')->constrained('owners')->onDelete('cascade');
+            $table->unsignedBigInteger('owner_id')->index();
             $table->string('to_phone');
             $table->string('to_name')->nullable();
             $table->text('message');

@@ -9,7 +9,7 @@ createInertiaApp({
     title: (title: string) => (title ? `${title} - ${appName}` : appName),
 
     resolve: async (name: string) => {
-        // Every page under resources/js/pages is addressable by its path,
+        // Every page under src/pages is addressable by its path,
         // e.g. 'Houses/Index' -> ./pages/Houses/Index.tsx
         const pages = import.meta.glob<{ default: ResolvedComponent }>(
             './pages/**/*.tsx',
