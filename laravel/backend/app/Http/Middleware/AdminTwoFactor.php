@@ -10,6 +10,9 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Require two-factor authentication before any admin page loads.
  * Two-factor is mandatory for super admin staff.
+ *
+ * The enrolment and verification routes are registered OUTSIDE this
+ * middleware (see routes/admin.php), so redirecting to them cannot loop.
  */
 class AdminTwoFactor
 {
@@ -21,13 +24,17 @@ class AdminTwoFactor
             return redirect()->route('admin.login');
         }
 
-        // If 2FA is not yet enrolled, redirect to enrollment.
-        if ($admin->two_factor_required && empty($admin->two_factor_secret)) {
+        if (! $admin->two_factor_required) {
+            return $next($request);
+        }
+
+        // Not enrolled yet: send them to enrolment.
+        if (empty($admin->two_factor_secret)) {
             return redirect()->route('admin.2fa.enroll');
         }
 
-        // If 2FA is required but not verified this session, redirect to verify.
-        if ($admin->two_factor_required && ! $request->session()->get('admin_2fa_verified')) {
+        // Enrolled but not verified this session: send them to verify.
+        if (! $request->session()->get('admin_2fa_verified')) {
             return redirect()->route('admin.2fa.verify');
         }
 

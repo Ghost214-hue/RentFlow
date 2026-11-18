@@ -4,95 +4,81 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
-use App\Support\TenantContext;
 use App\Http\Controllers\Controller;
+use App\Models\EmailLog;
+use App\Models\House;
 use App\Models\Owner;
 use App\Models\Property;
 use App\Models\Renter;
-use App\Support\CrossTenant;
+use App\Support\Amount;
 use App\Support\PlatformContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): \Illuminate\View\View
+    public function __invoke(Request $request): View
     {
-        // Use CrossTenant::run() for all cross-owner queries.
-        // This ensures an audit row is written for every cross-owner read
-        // (actor = admin, target_owner_id, reason).
+        /*
+         * Every figure below is a platform-wide read, so it runs inside
+         * PlatformContext::run(). That clears the owner scope and writes one
+         * audit_logs row for the whole dashboard load.
+         *
+         * The previous version called BillSnapshot::currentMonth(), which is
+         * owner-scoped and throws when no owner context is set.
+         */
+        $totals = PlatformContext::run('Admin dashboard platform totals', function (): array {
+            $owners = Owner::query()->get(['id', 'status', 'created_at']);
 
-        $reason = 'Admin dashboard platform totals calculation';
-
-        // Compute platform totals via CrossTenant with grouped SQL.
-        // We temporarily clear the owner context and query globally.
-        $previous = \App\Support\TenantContext::id();
-        \App\Support\TenantContext::clear();
-
-        try {
-            // Owners: count active/suspended/new this month
-            $owners = Owner::query()
-                ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
-                ->get();
-
-            $ownerCount = $owners->count();
-            $activeOwnerCount = $owners->where('status', 'active')->count();
-            $suspendedOwnerCount = $owners->where('status', 'suspended')->count();
-
-            // New signups this month: owners created in the last 30 days
-            $newSignupCount = Owner::where('created_at', '>=', now()->subMonths(1))->count();
-
-            // Properties and units via CrossTenant
             $propertyCount = Property::withoutOwnerScope()->count();
-            // Count total units across all properties
-            $unitCount = \App\Models\House::withoutOwnerScope()
-                ->whereIn('property_id', Property::withoutOwnerScope()->pluck('id'))
-                ->count();
+            $unitCount = House::withoutOwnerScope()->count();
+            $occupiedUnits = House::withoutOwnerScope()->where('status', 'occupied')->count();
 
-            // Active renters (across all properties)
-            $activeRenterCount = Renter::where('status', 'active')->count();
+            $activeRenterCount = Renter::withoutOwnerScope()->where('status', 'active')->count();
 
-            // Financials via BillSnapshot (this month) - using CrossTenant
-            // Since BillSnapshot::currentMonth() is owner-scoped, we compute manually
-            // using grouped SQL through CrossTenant. For now, use the existing methods
-            // but ensure we have an owner context, or fall back to platform totals.
-            $bills = \App\Billing\BillSnapshot::currentMonth();
-            $collected = \App\Billing\BillSnapshot::collectedThisMonth();
-            $collectionRate = $bills->total > 0
-                ? $collected / $bills->total
-                : 0;
+            $month = now()->format('Y-m');
 
-            $billedTotal = $bills->total;
-            $collectedTotal = $collected;
-            $outstandingTotal = $bills->total - $collected;
+            $billed = Amount::of(
+                DB::table('bills')->where('month', $month)->sum('total'),
+            );
 
-            // Email failures in last 24h
-            $emailFailuresLast24h = \App\Models\EmailLog::where('status', 'failed')
-                ->where('sent_at', '>=', now()->subDay())
-                ->count();
-            $emailSuccessLast24h = \App\Models\EmailLog::where('status', 'sent')
-                ->where('sent_at', '>=', now()->subDay())
-                ->count();
+            $collected = Amount::of(
+                DB::table('payments')
+                    ->where('status', 'completed')
+                    ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()])
+                    ->sum('amount'),
+            );
 
-        } finally {
-            // Restore previous owner context
-            \App\Support\TenantContext::set($previous);
-        }
+            $outstanding = Amount::atLeastZero($billed->subtract($collected));
 
-        return view('admin.dashboard', [
-            'ownerCount' => $ownerCount,
-            'activeOwnerCount' => $activeOwnerCount,
-            'suspendedOwnerCount' => $suspendedOwnerCount,
-            'newSignupCount' => $newSignupCount,
-            'propertyCount' => $propertyCount,
-            'unitCount' => $unitCount,
-            'activeRenterCount' => $activeRenterCount,
-            'billedTotal' => $billedTotal,
-            'collectedTotal' => $collectedTotal,
-            'outstandingTotal' => $outstandingTotal,
-            'collectionRate' => $collectionRate,
-            'emailFailuresLast24h' => $emailFailuresLast24h,
-            'emailSuccessLast24h' => $emailSuccessLast24h,
-        ]);
+            $collectionRate = $billed->isPositive()
+                ? (float) $collected->getAmount() / (float) $billed->getAmount()
+                : 0.0;
+
+            return [
+                'ownerCount' => $owners->count(),
+                'activeOwnerCount' => $owners->where('status', 'active')->count(),
+                'suspendedOwnerCount' => $owners->where('status', 'suspended')->count(),
+                'newSignupCount' => $owners->where('created_at', '>=', now()->subMonth())->count(),
+                'propertyCount' => $propertyCount,
+                'unitCount' => $unitCount,
+                'occupiedUnits' => $occupiedUnits,
+                'occupancyRate' => $unitCount > 0 ? $occupiedUnits / $unitCount : 0.0,
+                'activeRenterCount' => $activeRenterCount,
+                'billedTotal' => Amount::toString($billed),
+                'collectedTotal' => Amount::toString($collected),
+                'outstandingTotal' => Amount::toString($outstanding),
+                'collectionRate' => $collectionRate,
+                'emailFailuresLast24h' => EmailLog::where('status', 'failed')
+                    ->where('sent_at', '>=', now()->subDay())
+                    ->count(),
+                'emailSuccessLast24h' => EmailLog::where('status', 'sent')
+                    ->where('sent_at', '>=', now()->subDay())
+                    ->count(),
+            ];
+        });
+
+        return view('admin.dashboard', $totals);
     }
 }

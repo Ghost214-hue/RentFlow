@@ -6,20 +6,20 @@ namespace App\Http\Controllers\Admin\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
-use App\Services\TwoFactor;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
 {
-    public function create(): \Illuminate\View\View
+    public function create(): View
     {
         return view('admin.auth.login');
     }
 
-    public function store(Request $request): \Illuminate\Http\RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
         $request->validate([
             'email' => ['required', 'email', 'max:255'],
@@ -41,31 +41,33 @@ class AuthenticatedSessionController extends Controller
                 ->withErrors(['email' => 'This account is suspended. Contact a super admin.']);
         }
 
-        // Check 2FA
-        if ($admin->two_factor_required && empty($admin->two_factor_secret)) {
-            return back()
-                ->withInput()
-                ->withErrors(['email' => 'Account requires two-factor authentication setup.']);
-        }
-
-        if ($admin->two_factor_required && ! $request->session()->get('admin_2fa_verified')) {
-            return redirect()->route('admin.2fa.verify')
-                ->with('status', 'Please verify your two-factor authentication.');
-        }
-
-        // Log the admin in via the admin guard.
+        /*
+         * Log the admin in BEFORE the 2FA gate.
+         *
+         * The previous version redirected to admin.2fa.verify without logging
+         * in, so AdminTwoFactor saw no authenticated user and bounced straight
+         * back to the login page: an infinite loop.
+         */
         Auth::guard('admin')->login($admin);
 
         // Regenerate the session to prevent session fixation.
         $request->session()->regenerate();
 
-        // Clear the 2FA verified flag after successful login.
+        // A fresh login is never pre-verified.
         $request->session()->forget('admin_2fa_verified');
+
+        if ($admin->two_factor_required) {
+            if (empty($admin->two_factor_secret)) {
+                return redirect()->route('admin.2fa.enroll');
+            }
+
+            return redirect()->route('admin.2fa.verify');
+        }
 
         return redirect()->intended(route('admin.dashboard'));
     }
 
-    public function destroy(Request $request): \Illuminate\Http\RedirectResponse
+    public function destroy(Request $request): RedirectResponse
     {
         // Log out via the admin guard.
         Auth::guard('admin')->logout();

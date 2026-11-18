@@ -2,7 +2,7 @@ import { Link, usePage, router } from '@inertiajs/react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@/types';
 import { ThemeToggle } from '@/components/ui';
-import { NAV, PAGE_TITLES } from './AppLayout';
+import { PAGE_TITLES, useVisibleNav } from './AppLayout';
 import { useState } from 'react';
 
 interface ShellProps {
@@ -17,7 +17,8 @@ export function Shell({ children, title, subtitle }: ShellProps) {
     const user = (page.props.auth as { user: AuthUser | null } | undefined)
         ?.user;
     const pathname = page.url.split('?')[0] ?? '/';
-    const items = user ? (NAV[user.role] ?? []) : [];
+    // Ability-gated: entries the actor cannot use are filtered out.
+    const items = useVisibleNav();
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     function isActive(href: string): boolean {

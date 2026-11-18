@@ -31,7 +31,14 @@ final class CrossTenant
         'App\Jobs\DeliverMail',
         'App\Mail\Mailer',
         'App\Support\CrossTenant',
+        'App\Support\PlatformContext',
         'App\Console\Commands\SecurityAudit',
+        'App\Http\Controllers\Admin\DashboardController',
+        'App\Http\Controllers\Admin\OwnerController',
+        'App\Http\Controllers\Admin\SupportAccessController',
+        'App\Http\Controllers\Admin\EmailHealthController',
+        'App\Http\Controllers\Admin\SecurityController',
+        'App\Http\Controllers\Admin\SystemController',
     ];
 
     /**
@@ -59,7 +66,11 @@ final class CrossTenant
         try {
             return $fn();
         } finally {
-            TenantContext::set($previous);
+            if ($previous === null) {
+                TenantContext::clear();
+            } else {
+                TenantContext::set($previous);
+            }
         }
     }
 
@@ -76,7 +87,11 @@ final class CrossTenant
         try {
             return $fn();
         } finally {
-            TenantContext::set($previous);
+            if ($previous === null) {
+                TenantContext::clear();
+            } else {
+                TenantContext::set($previous);
+            }
         }
     }
 }

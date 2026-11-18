@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Illuminate\Foundation\Configuration;
-
 use App\Http\Middleware\AdminAuth;
 use App\Http\Middleware\AdminGuest;
-use App\Http\Middleware\AdminTwoFactor;
 use App\Http\Middleware\AdminThrottleLogin;
+use App\Http\Middleware\AdminTwoFactor;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveTenantBeforeBindings;
 use App\Http\Middleware\SecurityHeaders;
@@ -16,8 +14,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
-use Illuminate\Payment\Middleware\SubstituteBindings;
-use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -26,13 +23,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (Application $app): void {
             // Admin routes are loaded here so /admin/* is never 404.
+            //
+            // The `web` group is applied HERE and not again inside
+            // routes/admin.php: Laravel does not de-duplicate gathered
+            // middleware, so declaring `web` in both places runs StartSession
+            // twice and corrupts the session.
             $app->router->middleware('web')->group(__DIR__ . '/../routes/admin.php');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-    
         $middleware->web(
             replace: [
+                // NOTE: this was previously Illuminate\Payment\Middleware\...
+                // which does not exist; the correct namespace is Routing.
                 SubstituteBindings::class => ResolveTenantBeforeBindings::class,
             ],
             append: [
@@ -43,10 +46,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ],
         );
 
-       
-
-        // Register the admin middleware aliases used by routes/admin.php.
-        // (Defined in AppServiceProvider::boot())
+        // Admin middleware aliases used by routes/admin.php.
+        $middleware->alias([
+            'admin.auth' => AdminAuth::class,
+            'admin.guest' => AdminGuest::class,
+            'admin.2fa' => AdminTwoFactor::class,
+            'admin.throttle' => AdminThrottleLogin::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
