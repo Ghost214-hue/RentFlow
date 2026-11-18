@@ -22,7 +22,6 @@ use Illuminate\Session\Middleware\StartSession;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__ . '/../routes/web.php',
-        api: __DIR__ . '/../routes/api.php',
         commands: __DIR__ . '/../routes/console.php',
         health: '/up',
         then: function (Application $app): void {
@@ -47,12 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
        
 
         // Register the admin middleware aliases used by routes/admin.php.
-        $middleware->alias([
-            'admin.auth'       => AdminAuth::class,
-            'admin.guest'      => AdminGuest::class,
-            'admin.2fa'       => AdminTwoFactor::class,
-            'admin.throttle'   => AdminThrottleLogin::class,
-        ]);
+        // (Defined in AppServiceProvider::boot())
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -8,18 +8,15 @@ use App\Models\Caretaker;
 use App\Models\Owner;
 use App\Models\PropertyDocument;
 use App\Models\Renter;
+use App\Services\PermissionService;
 
-/**
- * Who may do what with a rules document. DENY BY DEFAULT.
- *
- * These are the landlord's terms, so a renter may READ them but never change
- * them. A document with a null property_id applies portfolio-wide.
- */
 class PropertyDocumentPolicy
 {
+    public function __construct(private readonly PermissionService $permissions) {}
+
     public function viewAny(Owner|Caretaker|Renter $actor): bool
     {
-        return true;
+        return $this->permissions->allows($actor, 'documents.view');
     }
 
     public function view(Owner|Caretaker|Renter $actor, PropertyDocument $document): bool
@@ -34,8 +31,6 @@ class PropertyDocumentPolicy
             return $document->property_id === null || in_array((int) $document->property_id, $ids, true);
         }
 
-        // A renter sees active documents for their own property, and the
-        // portfolio-wide ones.
         if (! $document->is_active) {
             return false;
         }
@@ -44,10 +39,9 @@ class PropertyDocumentPolicy
             || (int) $document->property_id === (int) $actor->property_id;
     }
 
-    /** Only the owner authors the terms. */
     public function create(Owner|Caretaker|Renter $actor): bool
     {
-        return $actor instanceof Owner;
+        return $this->permissions->allows($actor, 'documents.manage');
     }
 
     public function update(Owner|Caretaker|Renter $actor, PropertyDocument $document): bool

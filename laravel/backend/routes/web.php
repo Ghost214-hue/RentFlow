@@ -131,6 +131,7 @@ Route::middleware(['auth', 'throttle:session'])->group(function (): void {
     Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
     Route::post('/payments', [PaymentController::class, 'store'])->middleware('throttle:writes')->name('payments.store');
     Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm'])->name('payments.confirm');
+    Route::post('/payments/{payment}/reverse', [PaymentController::class, 'reverse'])->middleware('throttle:writes')->name('payments.reverse');
 
     // Properties. Unit counts are recomputed from the house rows on every read.
     Route::get('/properties', [PropertyController::class, 'index'])->name('properties.index');

@@ -8,17 +8,15 @@ use App\Models\Caretaker;
 use App\Models\Owner;
 use App\Models\Property;
 use App\Models\Renter;
+use App\Services\PermissionService;
 
-/**
- * Who may do what with a Property.
- *
- * DENY BY DEFAULT — see HousePolicy for the same rationale.
- */
 class PropertyPolicy
 {
+    public function __construct(private readonly PermissionService $permissions) {}
+
     public function viewAny(Owner|Caretaker|Renter $actor): bool
     {
-        return $actor instanceof Owner || $actor instanceof Caretaker;
+        return $this->permissions->allows($actor, 'properties.view');
     }
 
     public function view(Owner|Caretaker|Renter $actor, Property $property): bool
@@ -27,14 +25,13 @@ class PropertyPolicy
             return true;
         }
 
-        // Caretakers see the properties they are assigned to.
         return $actor instanceof Caretaker
             && $actor->isAssignedTo((int) $property->getKey());
     }
 
     public function create(Owner|Caretaker|Renter $actor): bool
     {
-        return $actor instanceof Owner;
+        return $this->permissions->allows($actor, 'properties.manage');
     }
 
     public function update(Owner|Caretaker|Renter $actor, Property $property): bool
@@ -44,6 +41,6 @@ class PropertyPolicy
 
     public function delete(Owner|Caretaker|Renter $actor, Property $property): bool
     {
-        return $actor instanceof Owner;
+        return $actor instanceof Owner && ! $property->isOccupied();
     }
 }
