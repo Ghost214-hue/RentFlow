@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\SupportAccessController;
 use App\Http\Controllers\Admin\EmailHealthController;
 use App\Http\Controllers\Admin\SecurityController;
 use App\Http\Controllers\Admin\SystemController;
+use App\Http\Controllers\Admin\Audit\IndexController as AuditIndexController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -80,5 +81,8 @@ Route::prefix('admin')
 
             // System.
             Route::get('/system', [SystemController::class, '__invoke'])->name('system');
+
+            // Audit Logs.
+            Route::get('/audit', [AuditIndexController::class, '__invoke'])->name('audit.index');
         });
     });

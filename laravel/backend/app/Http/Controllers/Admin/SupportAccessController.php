@@ -5,32 +5,38 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\SupportAccessGrant;
-use App\Models\Owner;
 use App\Models\Admin as AdminModel;
+use App\Models\Owner;
+use App\Models\SupportAccessGrant;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class SupportAccessController extends Controller
 {
-    public function index(Request $request): \Illuminate\View\View
+    public function index(Request $request): Response
     {
         // Audit: list support access grants
         \App\Models\AuditLog::log('view', 'support_access_list', 0, 'Admin viewed support access grants', request()->ip(), request()->header('User-Agent'));
 
-        $grants = SupportAccessGrant::where('owner_id', '!=', null)
+        $grants = SupportAccessGrant::with(['owner:id,name', 'admin:id,name'])
+            ->whereNotNull('owner_id')
             ->when($request->filled('owner_id'), fn ($q) => $q->where('owner_id', $request->integer('owner_id')))
+            ->orderByDesc('id')
             ->get();
 
-        $owners = Owner::withoutOwnerScope()->get();
+        $owners = Owner::withoutOwnerScope()->orderBy('name')->get(['id', 'name']);
+        $admins = AdminModel::where('status', 'active')->orderBy('name')->get(['id', 'name']);
 
-        return view('admin.support.index', [
+        return Inertia::render('Admin/Support/Index', [
             'grants' => $grants,
             'owners' => $owners,
+            'admins' => $admins,
         ]);
     }
 
-    public function store(Request $request): \Illuminate\Http\RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
         // Audit: create support access grant
         \App\Models\AuditLog::log('create', 'support_access_create', 0, 'Admin created support access grant', request()->ip(), request()->header('User-Agent'));
@@ -63,7 +69,7 @@ class SupportAccessController extends Controller
         return back()->with('success', 'Support access grant created.');
     }
 
-    public function destroy(SupportAccessGrant $grant): \Illuminate\Http\RedirectResponse
+    public function destroy(SupportAccessGrant $grant): RedirectResponse
     {
         // Audit: revoke support access grant
         \App\Models\AuditLog::log('delete', 'support_access_revoke', $grant->id, 'Admin revoked support access grant', request()->ip(), request()->header('User-Agent'));

@@ -156,10 +156,26 @@ export const NAV: Record<string, NavItem[]> = {
             icon: 'fa-file-alt',
         },
     ],
+    admin: [
+        { href: '/admin', label: 'Platform Overview', icon: 'fa-chart-pie' },
+        { href: '/admin/owners', label: 'Owners', icon: 'fa-user-tie' },
+        { href: '/admin/support/access', label: 'Support Access', icon: 'fa-key' },
+        { href: '/admin/email-health', label: 'Email Health', icon: 'fa-envelope-circle-check' },
+        { href: '/admin/security', label: 'Security', icon: 'fa-shield-halved' },
+        { href: '/admin/system', label: 'System', icon: 'fa-server' },
+        { href: '/admin/audit', label: 'Audit Logs', icon: 'fa-clipboard-list' },
+    ],
 };
 
 const PAGE_TITLES: Record<string, string> = {
     '/': 'Dashboard',
+    '/admin': 'Platform Overview',
+    '/admin/owners': 'Owner Management',
+    '/admin/support/access': 'Support Access Grants',
+    '/admin/email-health': 'Email & Queue Health',
+    '/admin/security': 'Security Metrics',
+    '/admin/system': 'System Status',
+    '/admin/audit': 'Platform Audit Logs',
     '/renter/dashboard': 'My Dashboard',
     '/renter/profile': 'My Profile',
     '/houses': 'Houses & Units',

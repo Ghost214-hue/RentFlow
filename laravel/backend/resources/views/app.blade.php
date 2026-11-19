@@ -14,6 +14,7 @@
     --}}
     <title inertia>{{ config('app.name', 'RentFlow') }}</title>
 
+    @viteReactRefresh
     @vite(['src/css/app.css', 'src/app.tsx'])
     @inertiaHead
 </head>

@@ -151,9 +151,7 @@ it('registers every named rate limiter it advertises', function (): void {
  * never be set and config/jwt.php must never return a driver/secret.
  */
 it('has no JWT_SECRET configured', function (): void {
-    expect(env('JWT_SECRET'))->toBeNull()
-        ->or->toBe('')
-        ->or->toBeFalse();
+    expect(in_array(env('JWT_SECRET'), [null, '', false], true))->toBeTrue();
 });
 
 it('has no JWT config (JWT is disabled)', function (): void {

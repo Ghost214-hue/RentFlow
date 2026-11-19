@@ -189,7 +189,7 @@ class RenterController extends Controller
             ->where('status', 'occupied')
             ->update(['status' => 'vacant', 'tenant_id' => null]);
 
-        $propertyId ??= (int) House::withoutOwnerScope()
+        $propertyId ??= (int) House::query()
             ->whereKey($houseId)
             ->value('property_id');
 

@@ -128,7 +128,7 @@ export function Shell({ children, title, subtitle }: ShellProps) {
 
                         <button
                             type="button"
-                            onClick={() => router.post('/logout')}
+                            onClick={() => router.post(user?.role === 'admin' ? '/admin/logout' : '/logout')}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-raised text-text-muted transition-colors hover:text-danger"
                             aria-label="Sign out"
                         >

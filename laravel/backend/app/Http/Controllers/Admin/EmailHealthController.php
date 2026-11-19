@@ -7,11 +7,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\EmailLog;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class EmailHealthController extends Controller
 {
-    public function __invoke(Request $request): \Illuminate\View\View
+    public function __invoke(Request $request): Response
     {
         // Audit: view email health
         \App\Models\AuditLog::log('view', 'email_health', 0, 'Admin viewed email health', request()->ip(), request()->header('User-Agent'));
@@ -29,14 +30,14 @@ class EmailHealthController extends Controller
             });
         }
 
-        $logs = $query->orderByDesc('sent_at')->orderByDesc('id')->paginate(25);
+        $logs = $query->orderByDesc('sent_at')->orderByDesc('id')->paginate(25)->withQueryString();
 
         $summary = EmailLog::query()
             ->selectRaw('status, COUNT(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        return view('admin.email-health', [
+        return Inertia::render('Admin/EmailHealth', [
             'logs' => $logs,
             'summary' => $summary,
             'filters' => $request->only(['status', 'search']),

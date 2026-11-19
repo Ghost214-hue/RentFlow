@@ -27,7 +27,7 @@ class PaymentPolicy
         }
 
         if ($actor instanceof Caretaker) {
-            $house = App\Models\House::withoutOwnerScope()->find($payment->house_id);
+            $house = \App\Models\House::find($payment->house_id);
 
             return $house !== null && $actor->isAssignedTo((int) $house->property_id);
         }
@@ -37,7 +37,7 @@ class PaymentPolicy
 
     public function create(Owner|Caretaker|Renter $actor): bool
     {
-        return false;
+        return $this->permissions->allows($actor, 'payments.record');
     }
 
     public function update(Owner|Caretaker|Renter $actor, Payment $payment): bool

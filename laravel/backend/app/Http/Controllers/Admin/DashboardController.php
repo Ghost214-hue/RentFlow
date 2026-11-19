@@ -14,11 +14,12 @@ use App\Support\Amount;
 use App\Support\PlatformContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request): Response
     {
         /*
          * Every figure below is a platform-wide read, so it runs inside
@@ -79,6 +80,6 @@ class DashboardController extends Controller
             ];
         });
 
-        return view('admin.dashboard', $totals);
+        return Inertia::render('Admin/Dashboard', $totals);
     }
 }

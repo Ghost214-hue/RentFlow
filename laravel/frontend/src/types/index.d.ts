@@ -6,8 +6,8 @@
  * DTOs by spatie/laravel-typescript-transformer.
  */
 
-/** The three actor kinds. NOTE: "tenant" in the API means a RENTER. */
-export type Role = 'owner' | 'caretaker' | 'tenant';
+/** The actor kinds. NOTE: "tenant" in the API means a RENTER. */
+export type Role = 'owner' | 'caretaker' | 'tenant' | 'admin';
 
 export interface AuthUser {
     id: number;

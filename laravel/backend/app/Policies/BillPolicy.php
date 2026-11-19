@@ -27,7 +27,7 @@ class BillPolicy
         }
 
         if ($actor instanceof Caretaker) {
-            $house = App\Models\House::withoutOwnerScope()->find($bill->house_id);
+            $house = \App\Models\House::find($bill->house_id);
 
             return $house !== null && $actor->isAssignedTo((int) $house->property_id);
         }
@@ -56,7 +56,7 @@ class BillPolicy
 
     private function propertyIdOf(Bill $bill): ?int
     {
-        $house = App\Models\House::withoutOwnerScope()->find($bill->house_id);
+        $house = \App\Models\House::find($bill->house_id);
 
         return $house === null ? null : (int) $house->property_id;
     }

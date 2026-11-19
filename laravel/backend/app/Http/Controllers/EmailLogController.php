@@ -13,15 +13,6 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/**
- * Email delivery log.
- *
- * Ported from EmailLogController and frontend/pages/email-logs.php.
- *
- * READ ONLY. The log is written by the mail queue as mail is sent; nothing in
- * the UI may edit or delete a delivery record, because that would destroy the
- * evidence of what was actually sent to a renter.
- */
 class EmailLogController extends Controller
 {
     public function index(Request $request): Response
@@ -36,12 +27,14 @@ class EmailLogController extends Controller
                     $term = '%'.$request->string('search').'%';
                     $w->where('to_email', 'like', $term)->orWhere('subject', 'like', $term);
                 }))
-            // A renter sees only mail addressed to them. Staff see the whole
-            // portfolio, already scoped by the owner tenancy.
-            ->when(
-                $actor instanceof Renter,
-                fn ($q) => $q->where('to_email', $actor->email),
-            );
+            // A renter sees only mail addressed to them.
+            ->when($actor instanceof Renter, fn ($q) => $q->where('to_email', $actor->email))
+            // Caretakers see only logs for their assigned properties.
+            ->when($actor instanceof Caretaker, fn ($q) => $q->whereHas('property', fn ($prop) =>
+                $actor->isAssignedTo((int) $prop->id)))
+
+            // Staff (owners) see the whole portfolio, already scoped by the owner tenancy.
+            ;
 
         $logs = $query->orderByDesc('sent_at')->orderByDesc('id')
             ->paginate($perPage)->withQueryString();
@@ -56,18 +49,18 @@ class EmailLogController extends Controller
                 'data' => $logs->map(fn (EmailLog $l) => [
                     'id' => (int) $l->id,
                     'to_email' => (string) $l->to_email,
-                    'to_name' => $l->to_name,
+                    'to_name' => (string) $l->to_name,
                     'subject' => (string) $l->subject,
                     'status' => $l->status instanceof \BackedEnum ? $l->status->value : (string) $l->status,
                     'error' => $l->error,
                     'sent_at' => $l->sent_at?->toIso8601String(),
                 ])->all(),
-                'meta' => [
-                    'current_page' => $logs->currentPage(),
-                    'last_page' => $logs->lastPage(),
-                    'per_page' => $logs->perPage(),
-                    'total' => $logs->total(),
-                ],
+            ],
+            'meta' => [
+                'current_page' => $logs->currentPage(),
+                'last_page' => $logs->lastPage(),
+                'per_page' => $logs->perPage(),
+                'total' => $logs->total(),
             ],
             'summary' => [
                 'sent' => (int) ($summary[EmailLogStatus::Sent->value] ?? 0),

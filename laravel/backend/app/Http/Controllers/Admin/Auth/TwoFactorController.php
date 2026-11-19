@@ -9,7 +9,8 @@ use App\Services\TwoFactor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class TwoFactorController extends Controller
 {
@@ -17,7 +18,7 @@ class TwoFactorController extends Controller
     {
     }
 
-    public function enroll(Request $request): View|RedirectResponse
+    public function enroll(Request $request): Response|RedirectResponse
     {
         $admin = Auth::guard('admin')->user();
 
@@ -32,7 +33,7 @@ class TwoFactorController extends Controller
             $request->session()->put('admin_2fa_pending_secret', $secret);
         }
 
-        return view('admin.auth.2fa.enroll', [
+        return Inertia::render('Admin/Auth/TwoFactorEnroll', [
             'secret' => $secret,
             'qrUrl' => $this->twoFactor->qrCodeUrl($admin, $secret),
         ]);
@@ -67,9 +68,9 @@ class TwoFactorController extends Controller
             ->with('recovery_codes', $recoveryCodes);
     }
 
-    public function showVerify(): View
+    public function showVerify(): Response
     {
-        return view('admin.auth.2fa.verify');
+        return Inertia::render('Admin/Auth/TwoFactorVerify');
     }
 
     public function verify(Request $request): RedirectResponse

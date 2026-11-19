@@ -79,6 +79,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
+            if ($request->is('admin') || $request->is('admin/*')) {
+                if ($request->is('admin/login')) {
+                    return null;
+                }
+
+                $request->session()->put('url.intended', $request->fullUrl());
+
+                return redirect()->route('admin.login');
+            }
+
             // Opening the login page while already logged in should go home,
             // not bounce back to a loop.
             if ($request->is('login')) {

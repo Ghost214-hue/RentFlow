@@ -27,8 +27,7 @@ class MaintenanceRecordPolicy
         }
 
         if ($actor instanceof Caretaker) {
-            $propertyId = $record->property_id ?? House::withoutOwnerScope()
-                ->whereKey($record->house_id)
+            $propertyId = $record->property_id ?? House::whereKey($record->house_id)
                 ->value('property_id');
 
             return $record->assigned_to === $actor->name

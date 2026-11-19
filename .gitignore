@@ -58,3 +58,4 @@ build/
 
 # Local private scratch (restored DB copies, sanitised dumps in progress)
 /private/
+.aider*

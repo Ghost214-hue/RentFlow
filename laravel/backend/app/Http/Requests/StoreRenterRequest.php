@@ -87,8 +87,7 @@ class StoreRenterRequest extends FormRequest
                 return;
             }
 
-            $house = \App\Models\House::withoutOwnerScope()
-                ->find($this->integer('house_id'));
+            $house = \App\Models\House::find($this->integer('house_id'));
 
             if ($house === null) {
                 return;

@@ -15,6 +15,10 @@ export const ProfileSwitcher = () => {
         return null;
     }
 
+    function logout(event: MouseEvent<HTMLButtonElement, MouseEvent>): void {
+        throw new Error('Function not implemented.');
+    }
+
     return (
         <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-300">

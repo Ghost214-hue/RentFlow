@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin\Audit;
 
+use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
-use Illuminate\Routing\ControllerManager;
-use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class IndexController extends Controller
 {
-    public function __invoke(Request $request)
+    public function __invoke(Request $request): Response
     {
         // Build query
         $query = AuditLog::query();
@@ -39,14 +40,13 @@ class IndexController extends Controller
         
         // Paginate
         $logs = $query->latest('id')
-            ->paginate($request->integer('per_page', 25));
+            ->paginate($request->integer('per_page', 25))
+            ->withQueryString();
         
-        return response()->json([
-            'html' => view('admin.audit.partial', [
-                'logs' => $logs,
-                'total' => $total,
-            ])->render(),
+        return Inertia::render('Admin/Audit/Index', [
+            'logs' => $logs,
             'total' => $total,
+            'filters' => $request->only(['action', 'actor', 'from_date', 'to_date']),
         ]);
     }
 }
