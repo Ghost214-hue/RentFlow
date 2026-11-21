@@ -57,6 +57,7 @@ export const NAV: Record<string, NavItem[]> = {
         },
         { href: '/caretakers', label: 'Caretakers', icon: 'fa-user-shield' },
         { href: '/payments', label: 'Payments', icon: 'fa-money-bill-wave' },
+        { href: '/expenses', label: 'Expenses', icon: 'fa-wallet', ability: 'expenses.view' },
         { href: '/bills', label: 'Bills', icon: 'fa-file-invoice-dollar' },
         {
             href: '/maintenance',
@@ -79,11 +80,6 @@ export const NAV: Record<string, NavItem[]> = {
             icon: 'fa-chart-pie',
         },
         {
-            href: '/terminations',
-            label: 'Terminations',
-            icon: 'fa-door-open',
-        },
-        {
             href: '/email-logs',
             label: 'Email Delivery',
             icon: 'fa-envelope-open-text',
@@ -104,6 +100,7 @@ export const NAV: Record<string, NavItem[]> = {
             icon: 'fa-user-slash',
         },
         { href: '/payments', label: 'Payments', icon: 'fa-money-bill-wave' },
+        { href: '/expenses', label: 'Expenses', icon: 'fa-wallet', ability: 'expenses.view' },
         { href: '/bills', label: 'Bills', icon: 'fa-file-invoice-dollar' },
         {
             href: '/maintenance',
@@ -120,14 +117,9 @@ export const NAV: Record<string, NavItem[]> = {
             label: 'Rules',
             icon: 'fa-file-alt',
         },
-        // Email Delivery is deliberately absent: the controller scopes the log
-        // to the owner, not to the caretaker's assigned properties, so listing
-        // it here exposed the whole portfolio's mail. Re-add once the log is
-        // scoped to assigned properties.
+       
     ],
     tenant: [
-        // A renter's pages live under /renter. Pointing at '/' or '/profile'
-        // sent them to an owner dashboard or a 404.
         {
             href: '/renter/dashboard',
             label: 'Dashboard',
@@ -183,13 +175,13 @@ const PAGE_TITLES: Record<string, string> = {
     '/renters': 'Renters',
     '/renters/former': 'Former Renters',
     '/payments': 'Payments',
+    '/expenses': 'Expenses',
     '/bills': 'Bills',
     '/caretakers': 'Caretakers',
     '/maintenance': 'Maintenance',
     '/complaints': 'Complaints',
     '/documents': 'Rules',
     '/reports': 'Reports',
-    '/terminations': 'Terminations',
     '/email-logs': 'Email Delivery',
 };
 

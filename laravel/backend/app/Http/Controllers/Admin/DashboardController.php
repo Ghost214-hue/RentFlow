@@ -82,4 +82,26 @@ class DashboardController extends Controller
 
         return Inertia::render('Admin/Dashboard', $totals);
     }
+
+    /**
+     * Get recent system errors/incidents for the error dashboard.
+     */
+    public function errors(Request $request): Response
+    {
+        // Get pagination parameters
+        $perPage = max(5, min((int) $request->integer('per_page', 20), 100));
+        $page = $request->integer('page', 1);
+
+        // Query error/incedent data - customize based on your error tracking setup
+        // This is a placeholder - implement based on your error tracking service (Sentry, Bugsnag, etc.)
+        $errors = [];
+
+        return Inertia::render('Admin/ErrorDashboard', [
+            'errors' => $errors,
+            'total' => count($errors),
+            'page' => $page,
+            'perPage' => $perPage,
+            'canPaginate' => false, // Set to true if you implement pagination
+        ]);
+    }
 }

@@ -382,6 +382,19 @@ export interface ShareRow {
     share: string;
 }
 
+/** An outgoing expense: security, caretaker, maintenance, utilities, other. */
+export interface Expense {
+    id: number;
+    amount: string;
+    category: string;
+    description: string | null;
+    date: string | null;
+    paid_to: string | null;
+    receipt: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
 /**
  * Props for the consolidated reports page.
  *
@@ -463,6 +476,12 @@ export interface ReportsProps {
         counts: { settled: number; pending: number; failed: number };
         method_share: ShareRow[];
         type_breakdown: ShareRow[];
+    };
+    /** Money out: total expenses, by category and by month. */
+    expenses: {
+        total: string;
+        by_category: Array<{ label: string; amount: string; count: number; share: string }>;
+        by_month: Array<{ month: string; amount: string; count: number }>;
     };
     /** Legacy TenancyVacancyReportController. */
     occupancy: {

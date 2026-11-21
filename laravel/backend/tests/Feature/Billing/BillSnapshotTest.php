@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 use App\Billing\BillSnapshotBuilder;
 use App\Models\Bill;
+use App\Models\BillItem;
 use App\Models\House;
 use App\Models\Owner;
 use App\Models\Payment;
@@ -274,6 +275,44 @@ it('keeps one renter arrears out of another bill', function (): void {
 
     // The other renter's unpaid January must not appear in this renter's bill.
     expect(Amount::toString($this->snapshots->build($feb->fresh())->openingBalance))->toBe('0.00');
+
+    TenantContext::clear();
+});
+
+it('totals zero for a legacy bill with no bill_items, and reflects backfilled items', function (): void {
+    TenantContext::set((int) $this->owner->id);
+
+    // A bill with no items mirrors the imported legacy bills: every figure
+    // is derived from bill_items, so it totals zero -- the bug as reported.
+    $bill = Bill::factory()->forTenant($this->renter)
+        ->forMonth('2026-01')
+        ->create();
+
+    $snapshot = $this->snapshots->build($bill->fresh());
+
+    expect(Amount::toString($snapshot->total))->toBe('0.00')
+        ->and(Amount::toString($snapshot->paid))->toBe('0.00')
+        ->and(Amount::toString($snapshot->balance))->toBe('0.00')
+        ->and($snapshot->status->value)->toBe('paid');
+
+    // Backfilling one rent item restores the charged amount. This is exactly
+    // what the backfill migration does for every legacy bill missing items,
+    // across all months and all owners.
+    BillItem::query()->create([
+        'bill_id' => $bill->getKey(),
+        'type' => 'Rent',
+        'description' => 'Monthly Rent',
+        'amount' => '6500.00',
+        'paid' => '0.00',
+        'status' => 'pending',
+    ]);
+
+    $snapshot = $this->snapshots->build($bill->fresh());
+
+    expect(Amount::toString($snapshot->total))->toBe('6500.00')
+        ->and(Amount::toString($snapshot->paid))->toBe('0.00')
+        ->and(Amount::toString($snapshot->balance))->toBe('6500.00')
+        ->and($snapshot->status->value)->toBe('pending');
 
     TenantContext::clear();
 });

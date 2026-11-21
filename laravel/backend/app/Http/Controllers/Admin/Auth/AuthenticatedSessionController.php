@@ -54,8 +54,13 @@ class AuthenticatedSessionController extends Controller
         // Regenerate the session to prevent session fixation.
         $request->session()->regenerate();
 
-        // A fresh login is never pre-verified.
-        $request->session()->forget('admin_2fa_verified');
+        // Preserve 2FA verified state from previous session if it exists,
+        // but reset for a fresh login attempt without existing 2FA verification.
+        if ($request->session()->has('admin_2fa_verified') && $request->session()->get('admin_2fa_verified')) {
+            // Admin had already completed 2FA - preserve the verified state
+        } else {
+            $request->session()->forget('admin_2fa_verified');
+        }
 
         if ($admin->two_factor_required) {
             if (empty($admin->two_factor_secret)) {

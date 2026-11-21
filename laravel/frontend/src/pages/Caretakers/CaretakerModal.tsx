@@ -21,8 +21,6 @@ function Field({ id, label, error, children }: {
         </div>
     );
 }
-
-/** Add / edit a caretaker and the properties they are assigned to. */
 export default function CaretakerModal({ editing, properties, onClose }: Props) {
     const { data, setData, post, put, processing, errors, clearErrors } = useForm({
         name: '',
@@ -59,14 +57,33 @@ export default function CaretakerModal({ editing, properties, onClose }: Props) 
         event.preventDefault();
         clearErrors();
 
-        const options = { preserveScroll: true, onSuccess: () => onClose() };
+        const options = { preserveScroll: true };
 
         if (editing) {
-            put(`/caretakers/${editing.id}`, options);
+            put(`/caretakers/${editing.id}`, options)
+                .then(() => onClose())
+                .catch((error: any) => {
+                    // @ts-ignore
+                    if (error.status === 422) {
+                        // @ts-ignore
+                        Object.keys(error.errors).forEach((key: string) => {
+                            // @ts-ignore
+                            setErrors({ ...errors, [key]: error.errors[key][0] });
+                        });
+                    } else {
+                        // @ts-ignore
+                        console.error('Error updating caretaker:', error);
+                    }
+                });
             return;
         }
 
-        post('/caretakers', options);
+        post('/caretakers', options)
+            .then(() => onClose())
+            .catch((error: any) => {
+                // @ts-ignore
+                console.error('Error creating caretaker:', error);
+        });
     }
 
     return (

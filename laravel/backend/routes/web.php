@@ -13,6 +13,7 @@ use App\Http\Controllers\CaretakerDashboardController;
 use App\Http\Controllers\ComplaintController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailLogController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\HouseController;
 use App\Http\Controllers\MaintenanceRecordController;
 use App\Http\Controllers\PaymentController;
@@ -25,31 +26,10 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\TenancyTerminationController;
 use Illuminate\Support\Facades\Route;
 
-/*
-| RentFlow routes.
-|
-| Every authenticated route runs through the legacy JWT bridge so a user
-| signed in to the old PHP app is also signed in here. That middleware is
-| removed at cutover.
-*/
-
-/*
- * Login is public: the JWT bridge middleware must NOT run here, or the
- * form could never be submitted by a signed-out visitor.
- */
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
     Route::post('/login', [AuthenticatedSessionController::class, 'store'])
         ->middleware('throttle:login');
-
-    /*
-     * Password reset. This route DID NOT EXIST -- the login screen linked to
-     * /forgot-password and got a 404, which is why the link appeared broken.
-     *
-     * Two steps, both under `guest`: request a code, then set a new password
-     * with it. The controllers guarantee the response is identical whether or
-     * not the address has an account, so that rule cannot be forgotten here.
-     */
     Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
     Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
@@ -61,26 +41,12 @@ Route::middleware('guest')->group(function (): void {
         ->middleware('throttle:password-reset')
         ->name('password.update');
 
-    /*
-     * Self-serve owner registration. This route DID NOT EXIST either -- the login
-     * screen linked to /signup and 404'd, the same bug as forgot-password.
-     *
-     * Only owners register here. Renters and caretakers are created by an owner
-     * and invited, because letting anyone claim a tenancy would mean anyone
-     * could attach themselves to a property.
-     */
     Route::get('/register', [RegisteredUserController::class, 'create'])
         ->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store'])
         ->middleware('throttle:register')
         ->name('register.store');
 
-    /*
-     * First-password setup for an invited renter or caretaker.
-     *
-     * Reached from a link in an email, so it runs under `guest`: the person
-     * clicking it has no session yet. The token in the URL is the credential.
-     */
     Route::get('/setup-password', [SetupPasswordController::class, 'show'])
         ->name('password.setup');
     Route::post('/setup-password', [SetupPasswordController::class, 'store'])
@@ -91,11 +57,6 @@ Route::middleware('guest')->group(function (): void {
         ->name('password.setup.resend');
 });
 
-/*
- * `throttle:session` is a broad backstop across the authenticated area, on top
- * of the per-route limits below. One authenticated actor cannot hammer the app
- * even where an individual endpoint's own allowance is generous.
- */
 Route::middleware(['auth', 'throttle:session'])->group(function (): void {
     Route::get('/', DashboardController::class)->name('dashboard');
 
@@ -107,10 +68,8 @@ Route::middleware(['auth', 'throttle:session'])->group(function (): void {
     Route::put('/houses/{house}', [HouseController::class, 'update'])->name('houses.update');
     Route::delete('/houses/{house}', [HouseController::class, 'destroy'])->name('houses.destroy');
 
-    // Renters. NOTE: the parameter is {renter}, not {tenant}, to match the
-    // model name; the URL is /renters in the new app while the DB table
-    // stays `tenants`.
     Route::get('/renters', [RenterController::class, 'index'])->name('renters.index');
+    Route::get('/renters/former', [RenterController::class, 'former'])->name('renters.former');
     Route::post('/renters', [RenterController::class, 'store'])->middleware('throttle:mail')->name('renters.store');
     Route::get('/renters/{renter}', [RenterController::class, 'show'])->name('renters.show');
     Route::put('/renters/{renter}', [RenterController::class, 'update'])->name('renters.update');
@@ -172,6 +131,12 @@ Route::middleware(['auth', 'throttle:session'])->group(function (): void {
 
     // Reports. Computed from the ledger at read time; there is no reports table.
     Route::get('/reports', [ReportController::class, 'index'])->middleware('throttle:reads')->name('reports.index');
+
+    // Expenses — money going out: security, caretaker, maintenance, etc.
+    Route::get('/expenses', [ExpenseController::class, 'index'])->name('expenses.index');
+    Route::post('/expenses', [ExpenseController::class, 'store'])->middleware('throttle:writes')->name('expenses.store');
+    Route::put('/expenses/{expense}', [ExpenseController::class, 'update'])->middleware('throttle:writes')->name('expenses.update');
+    Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy'])->middleware('throttle:writes')->name('expenses.destroy');
 
     // Email delivery log. Read only: the mail queue writes it.
     Route::get('/email-logs', [EmailLogController::class, 'index'])->middleware('throttle:reads')->name('email-logs.index');

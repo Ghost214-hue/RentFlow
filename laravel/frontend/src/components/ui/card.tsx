@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react';
+import { Link } from '@inertiajs/react';
 
 function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(' ');
@@ -44,7 +45,9 @@ interface StatCardProps extends HTMLAttributes<HTMLDivElement> {
     label: string;
     value: string;
     icon: string;
-    tone?: 'primary' | 'success' | 'warning' | 'danger' | 'info';
+    tone?: 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'rose';
+    /** Optional link to navigate when the card is clicked. */
+    href?: string;
 }
 
 const toneMap: Record<NonNullable<StatCardProps['tone']>, string> = {
@@ -53,6 +56,7 @@ const toneMap: Record<NonNullable<StatCardProps['tone']>, string> = {
     warning: 'from-amber-500 to-amber-600',
     danger: 'from-red-500 to-red-600',
     info: 'from-violet-500 to-violet-600',
+    rose: 'from-rose-500 to-rose-600',
 };
 
 export function StatCard({
@@ -61,22 +65,34 @@ export function StatCard({
     icon,
     tone = 'primary',
     className,
+    href,
     ...props
 }: StatCardProps) {
-    return (
-        <Card
-            className={cn('glow-border p-5 transition-transform duration-200 hover:-translate-y-0.5', className)}
-            {...props}
-        >
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    <p className="text-sm font-medium text-text-muted">{label}</p>
-                    <p className="mt-2 text-2xl font-bold tracking-tight text-text">{value}</p>
-                </div>
-                <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg', toneMap[tone])}>
-                    <i className={`fas ${icon}`} aria-hidden="true" />
-                </div>
+    const cardContent = (
+        <div className="flex items-start justify-between gap-3">
+            <div>
+                <p className="text-sm font-medium text-text-muted">{label}</p>
+                <p className="mt-2 text-2xl font-bold tracking-tight text-text">{value}</p>
             </div>
+            <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg shrink-0', toneMap[tone])}>
+                <i className={`fas ${icon} text-xl`} aria-hidden="true" />
+            </div>
+        </div>
+    );
+
+    if (!href) {
+        return (
+            <Card className={cn('glow-border p-5 transition-transform duration-200 hover:-translate-y-0.5', className)} {...props}>
+                {cardContent}
+            </Card>
+        );
+    }
+
+    return (
+        <Card className={cn('glow-border transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg', className)}>
+            <Link href={href} className="block p-5" {...(props as any)}>
+                {cardContent}
+            </Link>
         </Card>
     );
 }

@@ -26,6 +26,7 @@ export default defineConfig({
         },
     },
     server: {
+        host: '127.0.0.1', // Bind to IPv4 only; CSP does not support bracketed IPv6 literals ([::1])
         watch: {
             ignored: ['**/storage/framework/views/**'],
         },

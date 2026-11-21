@@ -17,6 +17,10 @@ class MaintenanceRecordPolicy
 
     public function viewAny(Owner|Caretaker|Renter $actor): bool
     {
+        if ($actor instanceof Owner) {
+            return true;
+        }
+
         return $this->permissions->allows($actor, 'maintenance.view');
     }
 

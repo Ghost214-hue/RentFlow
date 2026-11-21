@@ -33,10 +33,10 @@ Route::prefix('admin')
 
         // Login is public under admin guard.
         Route::middleware('admin.guest')->group(function () {
-            Route::get('/login', [AdminAuthController::class, 'create'])->name('login');
+            Route::get('/login', [AdminAuthController::class, 'create'])->name('admin.login');
             Route::post('/login', [AdminAuthController::class, 'store'])
                 ->middleware('throttle:admin-login')
-                ->name('login.store');
+                ->name('admin.login.store');
         });
 
         /*
@@ -84,5 +84,8 @@ Route::prefix('admin')
 
             // Audit Logs.
             Route::get('/audit', [AuditIndexController::class, '__invoke'])->name('audit.index');
+
+        // Error Dashboard.
+        Route::get('/errors', [DashboardController::class, 'errors'])->name('errors.index');
         });
     });

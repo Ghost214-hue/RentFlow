@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Billing\BillSnapshotBuilder;
 use App\Models\Bill;
 use App\Models\Caretaker;
+use App\Models\Expense;
 use App\Models\House;
 use App\Models\Payment;
 use App\Models\Property;
@@ -63,6 +64,7 @@ class DashboardController extends Controller
         $collected = Amount::sum([
             Payment::query()->whereIn('status', BillSnapshotBuilder::SETTLED)->sum('amount'),
         ]);
+        $expenses = Amount::sum([Expense::query()->sum('amount')]);
 
         $units = House::query()->selectRaw(
             "COUNT(*) AS total,
@@ -79,6 +81,7 @@ class DashboardController extends Controller
             'vacantUnits' => max(0, $total - $occupied),
             'expected' => Amount::toString($expected),
             'collected' => Amount::toString($collected),
+            'expenses' => Amount::toString($expenses),
             'outstanding' => Amount::toString(
                 Amount::atLeastZero($expected->minus($collected))
             ),

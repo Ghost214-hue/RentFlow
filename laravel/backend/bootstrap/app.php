@@ -13,6 +13,7 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 
@@ -43,6 +44,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 // Appended LAST so headers land on whatever the response turned
                 // out to be, including a rendered error page.
                 SecurityHeaders::class,
+                // CORS: allows the Vite dev server (port 5173) and any configured
+                // frontend origin to call the Laravel API without being blocked.
+                HandleCors::class,
             ],
         );
 

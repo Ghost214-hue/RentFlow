@@ -22,8 +22,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Renters (DB table `tenants`).
- *
+
  * Tenancy comes from the BelongsToOwner global scope; the caretaker
  * restriction (assigned properties only) is applied here and in RenterPolicy.
  */
@@ -75,6 +74,46 @@ class RenterController extends Controller
         $unit = $renter->load('house')->house?->unit ?? 'their unit';
 
         return back()->with('success', "{$renter->name} added to unit {$unit}.");
+    }
+
+    public function former(Request $request): Response
+    {
+        $this->authorize('viewAny', Renter::class);
+
+        $perPage = max(5, min((int) $request->integer('per_page', 15), 100));
+        $actor = $request->user();
+
+        $query = Renter::query()
+            ->with(['property:id,name', 'house:id,unit,rent'])
+            ->where('status', 'terminated')
+            ->when($request->filled('search'), fn ($q) => $q->where('name', 'like', '%'.$request->string('search').'%'))
+            ->when($request->filled('property_id'), fn ($q) => $q->where('property_id', $request->integer('property_id')));
+
+        // A renter has no list view; they only see their own record.
+        if ($actor instanceof Renter) {
+            $query->whereKey($actor->getKey());
+        }
+
+        // A caretaker only ever sees renters in their assigned properties.
+        if ($actor instanceof Caretaker) {
+            $ids = $actor->assignedPropertyIds();
+            $query->whereIn('property_id', $ids === [] ? [0] : $ids);
+        }
+
+        $renters = $query->orderBy('name')->paginate($perPage)->withQueryString();
+
+        return Inertia::render('Renters/Index', [
+            'renters' => RenterResource::collection($renters),
+            'properties' => $this->propertiesFor($actor),
+            'vacantHouses' => [],
+            'filters' => [
+                'search' => $request->string('search')->toString() ?: null,
+                'status' => 'terminated',
+                'property_id' => $request->integer('property_id') ?: null,
+            ],
+            'flash' => [],
+            'former' => true,
+        ]);
     }
 
     public function update(StoreRenterRequest $request, Renter $renter): RedirectResponse

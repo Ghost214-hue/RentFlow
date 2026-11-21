@@ -71,7 +71,7 @@ it('sends the baseline security headers', function (): void {
     $response->assertHeader('X-Frame-Options', 'DENY');
     // The reset URL carries an email address; it must not leak to third parties.
     $response->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    $response->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()');
+    $response->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 });
 
 it('sends a content security policy that forbids inline scripts', function (): void {
