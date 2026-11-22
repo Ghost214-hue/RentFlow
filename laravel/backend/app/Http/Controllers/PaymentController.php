@@ -143,6 +143,10 @@ class PaymentController extends Controller
                 $payment->status = 'reversed';
                 $payment->save();
 
+                // Rebuild bill statuses, item paid amounts and tenant balance
+                // from the ledger, so the reversed money re-appears as owed.
+                (new \App\Billing\TenantLedger)->reconcile((int) $payment->tenant_id);
+
                 // Write audit row
                 \App\Models\AuditLog::log(
                     'reverse',

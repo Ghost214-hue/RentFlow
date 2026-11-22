@@ -4,162 +4,149 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Enums\BillStatus;
+use App\Actions\GenerateMonthlyBills;
+use App\Billing\BillSnapshotBuilder;
 use App\Mail\MailTemplate;
 use App\Mail\PortfolioMailer;
 use App\Models\Bill;
-use App\Models\House;
-use App\Models\Renter;
+use App\Models\Owner;
 use App\Models\RentReminder;
 use App\Services\SmsService;
-use App\Services\SmsTemplateRenderer;
 use App\Support\Amount;
+use App\Support\CrossTenant;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Mail;
 
 /**
- * Sends monthly bills to all tenants on the 1st day of each month.
+ * Generates this month's bills for every owner, then notifies the tenants
+ * whose bill was created in this run.
  *
- * This command:
- * - Creates bills for the current month for all active tenancies
- * - Sends email notifications to renters with their bill details
- * - Is idempotent - safe to run multiple times per month
+ * Fixed from the previous version, which could never produce a usable bill:
+ *  - it looked for houses with status 'active' (units are 'occupied') and a
+ *    `tenancy` relation that does not exist, so it matched nothing;
+ *  - it created bills with a total but no bill_items, so they could not be paid;
+ *  - it only ran on day 1, so one missed run meant no bills all month;
+ *  - Laravel 11 ignores app/Console/Kernel.php, so it was never scheduled.
  *
- * Run: php artisan send:monthly:bills
+ * Now it runs DAILY and is idempotent: bills that already exist are untouched
+ * and only newly created bills trigger a notification. A server that was down
+ * on the 1st simply catches up on the next run.
+ *
+ * Run: php artisan send:monthly:bills [--no-notify]
  */
 class SendMonthlyBills extends Command
 {
-    protected $signature = 'send:monthly:bills';
-    protected $description = 'Send monthly bills to all tenants on the 1st day of the month';
+    protected $signature = 'send:monthly:bills {--no-notify : Create bills but send no email/SMS}';
+
+    protected $description = 'Generate this month\'s bills for all owners and notify tenants (idempotent, safe to run daily)';
 
     public function handle(): int
     {
-        $currentMonth = CarbonImmutable::now()->format('Y-m');
-        $currentDay = CarbonImmutable::now()->day;
+        $month = CarbonImmutable::now()->format('Y-m');
+        $day = (int) CarbonImmutable::now()->format('j');
+        $from = (int) config('billing.generation_day', 1);
 
-        // Only run on the 1st day of the month
-        if ($currentDay !== 1) {
-            $this->components->info("This command should only run on the 1st day of the month. Today is day {$currentDay}.");
+        if ($day < $from) {
+            $this->components->info("Bills are generated from day {$from}; today is day {$day}.");
+
             return self::SUCCESS;
         }
 
-        $this->components->info("Generating bills for {$currentMonth}...");
+        $created = 0;
+        $emails = 0;
+        $sms = 0;
 
-        // Get all active houses/tenancies
-        $houses = House::where('status', 'active')->get();
+        $ownerIds = CrossTenant::run('list owners for monthly billing', fn () => Owner::query()->pluck('id')->all());
 
-        $billsCreated = 0;
-        $sentEmails = 0;
-        $sentSms = 0;
+        foreach ($ownerIds as $ownerId) {
+            CrossTenant::runAsOwner((int) $ownerId, 'monthly bill generation', function () use ($ownerId, $month, &$created, &$emails, &$sms): void {
+                try {
+                    $result = (new GenerateMonthlyBills)->handle(month: $month);
+                } catch (\Throwable $e) {
+                    $this->components->error("Owner {$ownerId}: {$e->getMessage()}");
 
-        $smsService = app(SmsService::class);
+                    return;
+                }
 
-        foreach ($houses as $house) {
-            $tenancy = $house->tenancy;
+                $created += $result['generated'];
 
-            if (!$tenancy || !$tenancy->renter_id) {
-                continue;
-            }
+                if ($this->option('no-notify') || $result['created_ids'] === []) {
+                    return;
+                }
 
-            $renterId = $tenancy->renter_id;
-            $renter = Renter::find($renterId);
+                foreach (Bill::query()->with(['house', 'renter'])->whereIn('id', $result['created_ids'])->get() as $bill) {
+                    [$e, $s] = $this->notify($bill, $month);
+                    $emails += $e;
+                    $sms += $s;
+                }
+            });
+        }
 
-            if (!$renter || !$renter->email) {
-                continue;
-            }
+        $this->components->info("Monthly bills {$month}: created {$created}, emails {$emails}, SMS {$sms}");
 
-            // Check if bill already exists for this month
-            $existingBill = Bill::where('house_id', $house->id)
-                ->where('month', $currentMonth)
-                ->where('tenant_id', $renterId)
-                ->first();
+        return self::SUCCESS;
+    }
 
-            if ($existingBill) {
-                $this->components->info("Bill already exists for {$renter->name} - {$currentMonth}");
-                continue;
-            }
+    /** @return array{0: int, 1: int} */
+    private function notify(Bill $bill, string $month): array
+    {
+        $renter = $bill->renter;
+        $house = $bill->house;
 
-            // Create the bill
-            $dueDate = CarbonImmutable::now()->endOfMonth()->format('Y-m-d');
-            $rentAmount = $tenancy->rent ?? 0;
+        if ($renter === null || $house === null) {
+            return [0, 0];
+        }
 
-            $bill = Bill::create([
-                'house_id' => $house->id,
-                'tenant_id' => $renterId,
-                'month' => $currentMonth,
-                'due_date' => $dueDate,
-                'status' => BillStatus::Pending->value,
-                'total' => Amount::of($rentAmount),
-                'description' => "Monthly rent for {$currentMonth}",
-            ]);
+        // Amount due INCLUDES arrears brought forward and credit applied.
+        $snap = (new BillSnapshotBuilder)->build($bill);
+        $vars = [
+            'tenant' => (string) $renter->name,
+            'month' => $month,
+            'amount' => Amount::toString($snap->total),
+            'balance' => Amount::toString($snap->balance),
+            'due_date' => (string) $bill->due_date?->format('Y-m-d'),
+            'payment_instructions' => PortfolioMailer::paymentInstructions($house),
+        ];
 
-            $billsCreated++;
+        $emails = 0;
+        $sms = 0;
 
-            // Send email notification using existing Mailer class
+        if (($renter->email ?? '') !== '') {
             try {
                 $log = app(\App\Mail\Mailer::class)->trySend(
                     MailTemplate::RentReminder,
                     (int) $house->owner_id,
                     (string) $renter->email,
                     (string) $renter->name,
-                    [
-                        'tenant' => (string) $renter->name,
-                        'month' => $currentMonth,
-                        'amount' => Amount::toString(Amount::of($rentAmount)),
-                        'balance' => Amount::toString(Amount::of($renter->balance ?? '0.00')),
-                        'payment_instructions' => PortfolioMailer::paymentInstructions($house),
-                    ],
+                    $vars,
                 );
 
-                if ($log === null) {
-                    continue;
+                if ($log !== null) {
+                    RentReminder::create([
+                        'tenant_id' => $renter->getKey(),
+                        'house_id' => $house->getKey(),
+                        'bill_id' => $bill->getKey(),
+                        'month' => $month,
+                        'amount' => $vars['amount'],
+                        'sent_at' => CarbonImmutable::now(),
+                        'status' => 'sent',
+                    ]);
+                    $emails++;
                 }
-
-                // Record rent reminder
-                RentReminder::create([
-                    'tenant_id' => $renterId,
-                    'house_id' => $house->id,
-                    'bill_id' => $bill->id,
-                    'month' => $currentMonth,
-                    'amount' => Amount::toString(Amount::of($rentAmount)),
-                    'sent_at' => CarbonImmutable::now(),
-                    'status' => 'sent',
-                ]);
-
-                $sentEmails++;
-
-                // Send SMS notification if renter has a phone number
-                if (($renter->phone ?? '') !== '') {
-                    try {
-                        $smsService->trySend(
-                            'bill_generated',
-                            (int) $house->owner_id,
-                            (string) $renter->phone,
-                            (string) $renter->name,
-                            [
-                                'tenant' => (string) $renter->name,
-                                'month' => $currentMonth,
-                                'amount' => Amount::toString(Amount::of($rentAmount)),
-                                'due_date' => $dueDate,
-                                'balance' => Amount::toString(Amount::of($renter->balance ?? '0.00')),
-                                'payment_instructions' => PortfolioMailer::paymentInstructions($house),
-                            ],
-                        );
-                        $sentSms++;
-                    } catch (\Exception $e) {
-                        $this->warning("Failed to send bill SMS to {$renter->name}: " . $e->getMessage());
-                    }
-                }
-            } catch (\Exception $e) {
-                $this->warning("Failed to send bill email to {$renter->name}: " . $e->getMessage());
+            } catch (\Throwable $e) {
+                $this->components->warn("Email to {$renter->name} failed: {$e->getMessage()}");
             }
         }
 
-        $this->components->info(
-            "Monthly bills: Created {$billsCreated}, Emails sent {$sentEmails}, SMS sent {$sentSms}"
-        );
+        if (($renter->phone ?? '') !== '') {
+            try {
+                app(SmsService::class)->trySend('bill_generated', (int) $house->owner_id, (string) $renter->phone, (string) $renter->name, $vars);
+                $sms++;
+            } catch (\Throwable $e) {
+                $this->components->warn("SMS to {$renter->name} failed: {$e->getMessage()}");
+            }
+        }
 
-        return self::SUCCESS;
+        return [$emails, $sms];
     }
 }

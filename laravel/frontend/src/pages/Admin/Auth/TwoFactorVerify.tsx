@@ -61,7 +61,8 @@ export default function TwoFactorVerify() {
                                         required
                                         autoFocus
                                         value={verifyForm.data.code}
-                                        onChange={(e) => verifyForm.setData('code', e.target.value)}
+                                        maxLength={7}
+                                        onChange={(e) => verifyForm.setData('code', e.target.value.replace(/[^\d ]/g, ''))}
                                         className="block w-full rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-center text-2xl tracking-[0.3em] font-mono text-white placeholder-slate-600 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                                     />
                                 </div>
@@ -103,7 +104,7 @@ export default function TwoFactorVerify() {
                                         id="recoveryCode"
                                         type="text"
                                         autoComplete="off"
-                                        placeholder="abcd-efgh-ijkl"
+                                        placeholder="ABCDE-12345"
                                         required
                                         autoFocus
                                         value={recoveryForm.data.code}

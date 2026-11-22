@@ -7,7 +7,7 @@ namespace App\Enums;
 /**
  * `payments.status` in the database.
  *
- * The DB column is an ENUM of ('completed','pending','failed'). Legacy code
+ * The DB column is an ENUM of ('completed','pending','failed','reversed') (see migration 2026_11_22_000001). Legacy code
  * also wrote 'confirmed', which the column cannot store (defect 2), so that
  * vocabulary is normalised on the way in and is not part of this enum.
  */
@@ -16,6 +16,8 @@ enum PaymentStatus: string
     case Pending = 'pending';
     case Completed = 'completed';
     case Failed = 'failed';
+    /** Money returned / undone. Never settled, holds no allocations. */
+    case Reversed = 'reversed';
 
     /** @return array<int, string> */
     public static function values(): array
@@ -32,6 +34,7 @@ enum PaymentStatus: string
         return match (strtolower($value)) {
             'confirmed', 'paid', 'completed' => self::Completed,
             'failed', 'declined' => self::Failed,
+            'reversed' => self::Reversed,
             default => self::Pending,
         };
     }

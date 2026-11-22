@@ -101,17 +101,16 @@ final class Authenticator
 
     private function passwordMatches(string $hashedPassword): bool
     {
-        $algorithm = password_get_info($hashedPassword)['algoName'] ?? 'unknown';
+        if (strlen($hashedPassword) === 0) {
+            return false;
+        }
 
-        $driver = match ($algorithm) {
-            'bcrypt' => 'bcrypt',
-            'argon2i' => 'argon',
-            'argon2id' => 'argon2id',
-            default => null,
-        };
-
-        return $driver !== null
-            && Hash::driver($driver)->check($this->password, $hashedPassword);
+        // password_verify() is algorithm-agnostic: it reads the algorithm
+        // prefix ($2y$, $argon2i$, $argon2id$) from the hash itself, so it
+        // correctly verifies bcrypt, argon2i, and argon2id hashes alike.
+        // Using Laravel's Hash facade here would throw on algorithm mismatch
+        // (e.g. an imported argon2i hash checked by an argon2id hasher).
+        return password_verify($this->password, $hashedPassword);
     }
 
     /**

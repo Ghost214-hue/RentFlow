@@ -33,7 +33,7 @@ final class GenerateMonthlyBills
 {
     /**
      * @param  array<string, string>  $utilityCharges  house id => amount
-     * @return array{generated: int, skipped: int, bill_ids: array<int, int>}
+     * @return array{generated: int, skipped: int, bill_ids: array<int, int>, created_ids: array<int, int>}
      */
     public function handle(
         ?int $propertyId = null,
@@ -44,7 +44,7 @@ final class GenerateMonthlyBills
     ): array {
         $currentMonth = now()->format('Y-m');
         $month ??= $currentMonth;
-        $dueDate ??= now()->format('Y-m-05');
+        $dueDate ??= now()->format('Y-m-').str_pad((string) config('billing.due_day', 5), 2, '0', STR_PAD_LEFT);
 
         // Bills can only be generated for the current month.
         if ($month !== $currentMonth) {
@@ -55,7 +55,7 @@ final class GenerateMonthlyBills
 
         // Optional gate: set BILL_GENERATION_DAY to only allow generation
         // from a given day of the month. Unset or 0 allows any day.
-        $generationDay = (int) (env('BILL_GENERATION_DAY') ?: 0);
+        $generationDay = (int) config('billing.generation_day', 0);
 
         if ($generationDay > 0 && (int) now()->format('j') < $generationDay) {
             throw ValidationException::withMessages([
@@ -75,8 +75,10 @@ final class GenerateMonthlyBills
         $generated = 0;
         $skipped = 0;
         $billIds = [];
+        $createdIds = [];
+        $renterIds = [];
 
-        DB::transaction(function () use ($houses, $month, $dueDate, $utilityCharges, &$generated, &$skipped, &$billIds): void {
+        DB::transaction(function () use ($houses, $month, $dueDate, $utilityCharges, &$generated, &$skipped, &$billIds, &$createdIds, &$renterIds): void {
             foreach ($houses as $house) {
                 // IDEMPOTENT: an existing bill for this renter + month is
                 // left completely untouched.
@@ -152,9 +154,17 @@ final class GenerateMonthlyBills
 
                 $generated++;
                 $billIds[] = (int) $bill->getKey();
+                $createdIds[] = (int) $bill->getKey();
+                $renterIds[(int) $house->tenant_id] = true;
+            }
+
+            // Absorb any advance payment / overpayment the tenant already
+            // holds, so the new bill starts from what is REALLY owed.
+            foreach (array_keys($renterIds) as $renterId) {
+                (new \App\Billing\TenantLedger)->reconcile($renterId);
             }
         });
 
-        return ['generated' => $generated, 'skipped' => $skipped, 'bill_ids' => $billIds];
+        return ['generated' => $generated, 'skipped' => $skipped, 'bill_ids' => $billIds, 'created_ids' => $createdIds];
     }
 }

@@ -56,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.guest' => AdminGuest::class,
             'admin.2fa' => AdminTwoFactor::class,
             'admin.throttle' => AdminThrottleLogin::class,
+            'admin.role' => \App\Http\Middleware\AdminRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

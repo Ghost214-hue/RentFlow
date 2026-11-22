@@ -20,6 +20,14 @@ interface Props {
         expected: string;
         collected: string;
         expenses: string;
+        /** Ledger-based, all months: unpaid charges. Never double counts arrears. */
+        outstanding: string;
+        /** Unpaid charges on bills past their due date. */
+        overdue: string;
+        /** Unpaid charges from months before the current one. */
+        arrears: string;
+        /** Cash received but not yet applied to any charge (prepayments/overpayments). */
+        credit: string;
         monthly: {
             months: MonthlyPoint[];
             current: {
@@ -27,6 +35,8 @@ interface Props {
                 billed: string;
                 collected: string;
                 outstanding: string;
+                arrears: string;
+                overdue: string;
                 collectionRate: string;
             };
         };
@@ -44,7 +54,8 @@ export default function Dashboard({ stats }: Props) {
         { label: 'Occupancy', value: `${occupancy}%`, icon: 'fa-chart-pie', tone: 'warning' as const, href: '/reports?tab=occupancy' },
         { label: 'Collected this month', value: formatMoney(monthly.current.collected), icon: 'fa-money-bill-wave', tone: 'info' as const, href: '/reports?tab=revenue' },
         { label: 'Expenses', value: formatMoney(stats.expenses), icon: 'fa-wallet', tone: 'rose' as const, href: '/reports?tab=revenue' },
-        { label: 'Outstanding', value: formatMoney(monthly.current.outstanding), icon: 'fa-hourglass-half', tone: 'rose' as const, href: '/reports?tab=billing' },
+        { label: 'Outstanding (all months)', value: formatMoney(stats.outstanding), icon: 'fa-hourglass-half', tone: 'rose' as const, href: '/reports?tab=billing' },
+        { label: 'Overdue', value: formatMoney(stats.overdue), icon: 'fa-triangle-exclamation', tone: 'rose' as const, href: '/reports?tab=billing' },
     ];
 
     return (
@@ -129,7 +140,7 @@ export default function Dashboard({ stats }: Props) {
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                                 <MonthlyMetric label="Billed this month" value={formatMoney(monthly.current.billed)} icon="fa-file-invoice-dollar" tone="primary" href="/reports?tab=billing" />
                                 <MonthlyMetric label="Collected this month" value={formatMoney(monthly.current.collected)} icon="fa-circle-check" tone="success" href="/reports?tab=revenue" />
-                                <MonthlyMetric label="Outstanding balance" value={formatMoney(monthly.current.outstanding)} icon="fa-hourglass-half" tone="warning" href="/reports?tab=billing" />
+                                <MonthlyMetric label="Unpaid this month" value={formatMoney(monthly.current.outstanding)} icon="fa-hourglass-half" tone="warning" href="/reports?tab=billing" />
                                 <MonthlyMetric label="Collection rate" value={`${monthly.current.collectionRate}%`} icon="fa-bullseye" tone="info" href="/reports?tab=overview" />
                             </div>
                         </CardBody>

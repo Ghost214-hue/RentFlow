@@ -88,7 +88,6 @@ final class BillingReport
     {
         $today = CarbonImmutable::today();
         $rows = $this->scope->bills()
-            ->whereIn('status', self::UNSETTLED)
             ->whereNotNull('due_date')
             ->whereDate('due_date', '<', $today)
             ->get(['id', 'month', 'due_date', 'total']);

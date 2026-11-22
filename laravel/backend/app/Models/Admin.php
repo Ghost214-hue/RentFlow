@@ -46,6 +46,8 @@ class Admin extends Authenticatable
 
     protected $casts = [
         'two_factor_required' => 'boolean',
+        // Encrypted at rest (needs the text column from migration 2026_11_21_000004).
+        'two_factor_secret' => 'encrypted',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

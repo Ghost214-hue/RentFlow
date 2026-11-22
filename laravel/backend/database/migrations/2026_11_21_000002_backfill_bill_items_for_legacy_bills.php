@@ -8,6 +8,7 @@ use App\Models\Owner;
 use App\Support\Amount;
 use App\Support\TenantContext;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Backfill bill_items for legacy bills.
@@ -29,6 +30,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Legacy schema may not exist on fresh installs; nothing to backfill.
+        if (! Schema::hasTable('owners')) {
+            return;
+        }
         Owner::query()->orderBy('id')->chunkById(100, function ($owners): void {
             foreach ($owners as $owner) {
                 TenantContext::set((int) $owner->id);

@@ -1,5 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
 import { type FormEvent } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface Props {
     secret: string;
@@ -33,16 +34,22 @@ export default function TwoFactorEnroll({ secret, qrUrl }: Props) {
                     </div>
 
                     <p className="text-sm text-slate-300 mb-4 leading-relaxed">
-                        Add this secret key to your authenticator app (e.g. Google Authenticator, 1Password, Authy), then enter the 6-digit confirmation code below.
+                        Scan this QR code with your authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password), then enter the 6-digit code it shows.
                     </p>
 
+                    <div className="mb-4 flex justify-center">
+                        <div className="rounded-2xl bg-white p-3">
+                            <QRCodeSVG value={qrUrl} size={176} level="M" />
+                        </div>
+                    </div>
+
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-4 space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Secret Key</div>
+                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Can&apos;t scan? Enter this key manually</div>
                         <code className="block select-all font-mono text-sm text-indigo-300 break-all bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
                             {secret}
                         </code>
                         <div className="text-xs text-slate-500 pt-1">
-                            Or configure via URI: <span className="text-slate-400 break-all select-all font-mono">{qrUrl}</span>
+                            Choose &quot;time based&quot;. If codes are rejected, set your phone&apos;s clock to automatic.
                         </div>
                     </div>
 
@@ -66,7 +73,8 @@ export default function TwoFactorEnroll({ secret, qrUrl }: Props) {
                                 required
                                 autoFocus
                                 value={data.code}
-                                onChange={(e) => setData('code', e.target.value)}
+                                maxLength={7}
+                                onChange={(e) => setData('code', e.target.value.replace(/[^\d ]/g, ''))}
                                 className="block w-full rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-center text-xl tracking-[0.3em] font-mono text-white placeholder-slate-600 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                             />
                         </div>

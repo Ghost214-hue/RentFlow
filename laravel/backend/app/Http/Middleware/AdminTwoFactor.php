@@ -9,10 +9,14 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Require two-factor authentication before any admin page loads.
- * Two-factor is mandatory for super admin staff.
  *
- * The enrolment and verification routes are registered OUTSIDE this
- * middleware (see routes/admin.php), so redirecting to them cannot loop.
+ * Mandatory for every platform admin: the per-row two_factor_required flag can
+ * no longer switch it off (only ADMIN_REQUIRE_2FA=false, for local dev).
+ * The "verified" marker stores the ADMIN'S ID, so it cannot carry over from
+ * another admin's session.
+ *
+ * Enrolment/verification routes sit OUTSIDE this middleware (routes/admin.php)
+ * so redirecting to them cannot loop.
  */
 class AdminTwoFactor
 {
@@ -24,17 +28,24 @@ class AdminTwoFactor
             return redirect()->route('admin.login');
         }
 
-        if (! $admin->two_factor_required) {
+        // A suspended admin loses access immediately, mid-session too.
+        if ($admin->status !== 'active') {
+            Auth::guard('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('admin.login')->withErrors(['email' => 'This account is suspended.']);
+        }
+
+        if (! config('admin.require_2fa', true)) {
             return $next($request);
         }
 
-        // Not enrolled yet: send them to enrolment.
         if (empty($admin->two_factor_secret)) {
             return redirect()->route('admin.2fa.enroll');
         }
 
-        // Enrolled but not verified this session: send them to verify.
-        if (! $request->session()->get('admin_2fa_verified')) {
+        if ((int) $request->session()->get('admin_2fa_verified') !== (int) $admin->getKey()) {
             return redirect()->route('admin.2fa.verify');
         }
 

@@ -194,10 +194,8 @@ class RenterController extends Controller
                 'created_at' => $m->created_at?->toIso8601String(),
             ]);
 
-        // Outstanding from unpaid bills, not the drifting balance cache.
-        $unpaid = Amount::sum(
-            $renter->bills()->whereIn('status', ['pending', 'partial', 'overdue'])->pluck('total')
-        );
+        // Month-by-month statement from the allocation ledger (see TenantStatement).
+        $statement = (new \App\Billing\TenantStatement)->build($renter);
 
         return Inertia::render('Renters/Show', [
             'renter' => RenterResource::make($renter)->resolve(),
@@ -206,8 +204,9 @@ class RenterController extends Controller
                 'payments' => $payments,
                 'complaints' => $complaints,
                 'maintenance' => $maintenance,
-                'unpaid_total' => Amount::toString($unpaid),
+                'unpaid_total' => $statement['summary']['outstanding'],
             ],
+            'statement' => $statement,
             'flash' => ['success' => $request->session()->get('success')],
         ]);
     }

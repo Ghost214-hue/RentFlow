@@ -34,13 +34,10 @@ class AdminCredentialSeeder extends Seeder
             'status' => 'active',
         ]);
 
-        // Generate TOTP secret and recovery codes
-        $admin->two_factor_secret = bin2hex(random_bytes(20));
-        $admin->two_factor_recovery = implode(',', array_map(
-            fn() => bin2hex(random_bytes(8)),
-            range(1, 8)
-        ));
-        $admin->save();
+        // NOTE: do NOT pre-fill two_factor_secret / two_factor_recovery here.
+        // A random hex string is not a valid base32 TOTP secret and nobody holds
+        // a matching authenticator, so the admin would be locked out at 2FA.
+        // Leave both empty: first login forces proper enrolment (QR + recovery codes).
 
         $this->command->info('Super admin credentials created successfully.');
         $this->command->info('Email: ' . $adminEmail);

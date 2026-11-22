@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Billing\BillSnapshotBuilder;
+use App\Billing\PortfolioTotals;
 use App\Models\Bill;
 use App\Models\Caretaker;
 use App\Models\Expense;
@@ -60,10 +61,10 @@ class DashboardController extends Controller
         // Money is aggregated in SQL (never in the browser) and emitted as
         // strings. Amount::of() normalises the SUM() result, which MySQL may
         // return as a float for a DECIMAL column.
-        $expected = Amount::sum([Bill::query()->sum('total')]);
-        $collected = Amount::sum([
-            Payment::query()->whereIn('status', BillSnapshotBuilder::SETTLED)->sum('amount'),
-        ]);
+        // One ledger-based calculation feeds every card, so billed, collected,
+        // outstanding, overdue and arrears always agree with each other and
+        // with the bills page.
+        $totals = PortfolioTotals::compute(Bill::query(), Payment::query());
         $expenses = Amount::sum([Expense::query()->sum('amount')]);
 
         $units = House::query()->selectRaw(
@@ -79,23 +80,24 @@ class DashboardController extends Controller
             'units' => $total,
             'occupiedUnits' => $occupied,
             'vacantUnits' => max(0, $total - $occupied),
-            'expected' => Amount::toString($expected),
-            'collected' => Amount::toString($collected),
+            'expected' => $totals['billed'],
+            'collected' => $totals['collected'],
             'expenses' => Amount::toString($expenses),
-            'outstanding' => Amount::toString(
-                Amount::atLeastZero($expected->minus($collected))
-            ),
-            'monthly' => $this->monthlyStats(),
+            'outstanding' => $totals['outstanding'],
+            'overdue' => $totals['overdue'],
+            'arrears' => $totals['arrears'],
+            'credit' => $totals['credit'],
+            'monthly' => $this->monthlyStats($totals),
         ];
     }
 
     /**
      * @return array{
      *     months: array<int, array{label: string, billed: string, collected: string, billedHeight: string, collectedHeight: string}>,
-     *     current: array{label: string, billed: string, collected: string, outstanding: string, collectionRate: string}
+     *     current: array{label: string, billed: string, collected: string, outstanding: string, arrears: string, overdue: string, collectionRate: string}
      * }
      */
-    private function monthlyStats(): array
+    private function monthlyStats(array $totals): array
     {
         $currentMonth = CarbonImmutable::now()->startOfMonth();
         $months = collect(range(5, 0))
@@ -155,12 +157,14 @@ class DashboardController extends Controller
             'months' => $trend,
             'current' => [
                 'label' => $currentMonth->format('F Y'),
-                'billed' => Amount::toString($current['billed']),
-                'collected' => Amount::toString($current['collected']),
-                'outstanding' => Amount::toString(Amount::atLeastZero(
-                    $current['billed']->minus($current['collected'])
-                )),
-                'collectionRate' => Rate::of($current['collected'], $current['billed']),
+                // This month's charges vs the money allocated to them. Arrears
+                // from earlier months are reported separately, never mixed in.
+                'billed' => $totals['month_billed'],
+                'collected' => $totals['month_settled'],
+                'outstanding' => $totals['month_outstanding'],
+                'arrears' => $totals['arrears'],
+                'overdue' => $totals['overdue'],
+                'collectionRate' => Rate::of(Amount::of($totals['month_settled']), Amount::of($totals['month_billed'])),
             ],
         ];
     }

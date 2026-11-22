@@ -28,14 +28,13 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('admin')
     ->name('admin.')
-    ->middleware(['admin.throttle'])
     ->group(function () {
 
         // Login is public under admin guard.
         Route::middleware('admin.guest')->group(function () {
             Route::get('/login', [AdminAuthController::class, 'create'])->name('login');
             Route::post('/login', [AdminAuthController::class, 'store'])
-                ->middleware('throttle:admin-login')
+                ->middleware(['admin.throttle', 'throttle:admin-login'])
                 ->name('login.store');
         });
 
@@ -54,6 +53,13 @@ Route::prefix('admin')
             Route::post('/2fa/recovery', [TwoFactorController::class, 'recover'])->name('2fa.recovery');
         });
 
+        // Recovery codes: shown once after enrolment/regeneration (already verified).
+        Route::middleware(['admin.auth', 'admin.2fa'])->group(function () {
+            Route::get('/2fa/codes', [TwoFactorController::class, 'showCodes'])->name('2fa.codes');
+            Route::post('/2fa/codes/ack', [TwoFactorController::class, 'acknowledgeCodes'])->name('2fa.codes.ack');
+            Route::post('/2fa/codes/regenerate', [TwoFactorController::class, 'regenerateCodes'])->name('2fa.codes.regenerate');
+        });
+
         // Authenticated admin routes require 2FA.
         Route::middleware(['admin.auth', 'admin.2fa'])->group(function () {
             Route::post('/logout', [AdminAuthController::class, 'destroy'])->name('logout');
@@ -64,14 +70,14 @@ Route::prefix('admin')
             // Owners.
             Route::get('/owners', [AdminOwnerController::class, 'index'])->name('owners.index');
             Route::get('/owners/{owner}', [AdminOwnerController::class, 'show'])->name('owners.show');
-            Route::post('/owners/{owner}/activate', [AdminOwnerController::class, 'activate'])->name('owners.activate');
-            Route::post('/owners/{owner}/suspend', [AdminOwnerController::class, 'suspend'])->name('owners.suspend');
-            Route::post('/owners/{owner}/reset', [AdminOwnerController::class, 'sendReset'])->name('owners.reset');
+            Route::post('/owners/{owner}/activate', [AdminOwnerController::class, 'activate'])->middleware('admin.role:super_admin,support')->name('owners.activate');
+            Route::post('/owners/{owner}/suspend', [AdminOwnerController::class, 'suspend'])->middleware('admin.role:super_admin,support')->name('owners.suspend');
+            Route::post('/owners/{owner}/reset', [AdminOwnerController::class, 'sendReset'])->middleware('admin.role:super_admin,support')->name('owners.reset');
 
             // Support access grants.
             Route::get('/support/access', [SupportAccessController::class, 'index'])->name('support.index');
-            Route::post('/support/access', [SupportAccessController::class, 'store'])->name('support.store');
-            Route::delete('/support/access/{grant}', [SupportAccessController::class, 'destroy'])->name('support.destroy');
+            Route::post('/support/access', [SupportAccessController::class, 'store'])->middleware('admin.role:super_admin')->name('support.store');
+            Route::delete('/support/access/{grant}', [SupportAccessController::class, 'destroy'])->middleware('admin.role:super_admin')->name('support.destroy');
 
             // Email & queue health.
             Route::get('/email-health', [EmailHealthController::class, '__invoke'])->name('email.health');
@@ -80,7 +86,7 @@ Route::prefix('admin')
             Route::get('/security', [SecurityController::class, '__invoke'])->name('security');
 
             // System.
-            Route::get('/system', [SystemController::class, '__invoke'])->name('system');
+            Route::get('/system', [SystemController::class, '__invoke'])->middleware('admin.role:super_admin')->name('system');
 
             // Audit Logs.
             Route::get('/audit', [AuditIndexController::class, '__invoke'])->name('audit.index');

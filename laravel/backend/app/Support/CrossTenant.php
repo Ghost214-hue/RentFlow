@@ -7,19 +7,7 @@ namespace App\Support;
 use Closure;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Cross-tenant execution with audit trail.
- *
- * Runs a callback without the BelongsToOwner owner scope, used only where
- * cross-owner access is genuinely intended (auth bootstrap, CLI jobs, mailers,
- * admin platform queries). Every invocation writes an audit entry so bypasses
- * are never silent.
- *
- * Usage:
- *     CrossTenant::run('send rent reminders for all owners', function () {
- *         Property::withoutOwnerScope()->each(...);
- *     });
- */
+
 final class CrossTenant
 {
     /** Approved call sites for withoutGlobalScopes / withoutOwnerScope. */
@@ -36,6 +24,7 @@ final class CrossTenant
         'App\Http\Requests\RegisterRequest',
         'App\Console\Commands\SendRentReminders',
         'App\Console\Commands\SendMonthlyBills',
+        'App\Console\Commands\ReconcileBilling',
         'App\Jobs\DeliverMail',
         'App\Mail\Mailer',
         'App\Mail\PortfolioMailer',

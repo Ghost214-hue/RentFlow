@@ -38,23 +38,20 @@ class DashboardController extends Controller
 
             $activeRenterCount = Renter::withoutOwnerScope()->where('status', 'active')->count();
 
-            $month = now()->format('Y-m');
-
-            $billed = Amount::of(
-                DB::table('bills')->where('month', $month)->sum('total'),
+            // Ledger-based totals across ALL owners (same maths as every other
+            // screen). The old code called Money::subtract(), which does not
+            // exist (Brick uses minus()), so this page threw a 500 after login.
+            $t = \App\Billing\PortfolioTotals::compute(
+                \App\Models\Bill::withoutOwnerScope(),
+                \App\Models\Payment::withoutOwnerScope(),
             );
 
-            $collected = Amount::of(
-                DB::table('payments')
-                    ->where('status', 'completed')
-                    ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()])
-                    ->sum('amount'),
-            );
-
-            $outstanding = Amount::atLeastZero($billed->subtract($collected));
+            $billed = Amount::of($t['month_billed']);
+            $collected = Amount::of($t['month_settled']);
+            $outstanding = Amount::of($t['month_outstanding']);
 
             $collectionRate = $billed->isPositive()
-                ? (float) $collected->getAmount() / (float) $billed->getAmount()
+                ? (float) $collected->getAmount()->toFloat() / (float) $billed->getAmount()->toFloat()
                 : 0.0;
 
             return [
@@ -71,6 +68,9 @@ class DashboardController extends Controller
                 'collectedTotal' => Amount::toString($collected),
                 'outstandingTotal' => Amount::toString($outstanding),
                 'collectionRate' => $collectionRate,
+                'overdueTotal' => $t['overdue'],
+                'arrearsTotal' => $t['arrears'],
+                'creditTotal' => $t['credit'],
                 'emailFailuresLast24h' => EmailLog::where('status', 'failed')
                     ->where('sent_at', '>=', now()->subDay())
                     ->count(),

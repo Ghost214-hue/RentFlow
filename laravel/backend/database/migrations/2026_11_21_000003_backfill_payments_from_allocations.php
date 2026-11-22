@@ -4,26 +4,18 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
-/**
- * Recover payment header rows from orphaned allocation ledger.
- *
- * The `payment_allocations` table holds 104 allocation rows referencing 97
- * distinct `payment_id`s, but the `payments` header table was empty, so the
- * Payments page showed "No payments recorded." every allocation links to a
- * valid `bill_item` → `bill`, from which we can derive the real payment
- * header: owner, tenant, house, month and amount.
- *
- * Non-recoverable fields (method, date, receipt, reference) are left NULL
- * rather than fabricated; `description` marks these as recovered rows.
- *
- * Idempotent: only runs when the `payments` table is empty, so it never
- * duplicates or overwrites payments recorded through the UI.
- */
+
 return new class extends Migration
 {
     public function up(): void
     {
+        // Legacy schema may not exist on fresh installs; nothing to recover.
+        if (! Schema::hasTable('payment_allocations')) {
+            return;
+        }
+
         // Never clobber payments that were recorded through the UI.
         if (DB::table('payments')->count() > 0) {
             return;

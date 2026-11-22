@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,8 +29,12 @@ class AuthenticatedSessionController extends Controller
         ]);
 
         $admin = Admin::where('email', $request->email)->first();
+        $limiterKey = 'admin:login:'.strtolower((string) $request->email).'|'.$request->ip();
 
         if (! $admin || ! Hash::check($request->password, $admin->password)) {
+            // Only FAILED logins count towards the lockout.
+            RateLimiter::hit($limiterKey, 900);
+
             return back()
                 ->withInput()
                 ->withErrors(['email' => 'The provided credentials are incorrect.']);
@@ -49,25 +54,22 @@ class AuthenticatedSessionController extends Controller
          * in, so AdminTwoFactor saw no authenticated user and bounced straight
          * back to the login page: an infinite loop.
          */
+        RateLimiter::clear($limiterKey);
+
         Auth::guard('admin')->login($admin);
 
         // Regenerate the session to prevent session fixation.
         $request->session()->regenerate();
 
-        // Preserve 2FA verified state from previous session if it exists,
-        // but reset for a fresh login attempt without existing 2FA verification.
-        if ($request->session()->has('admin_2fa_verified') && $request->session()->get('admin_2fa_verified')) {
-            // Admin had already completed 2FA - preserve the verified state
-        } else {
-            $request->session()->forget('admin_2fa_verified');
-        }
+        // A fresh password login ALWAYS starts un-verified. The old code kept a
+        // previous 'verified' flag, so a second admin signing in on the same
+        // browser session skipped 2FA entirely.
+        $request->session()->forget('admin_2fa_verified');
 
-        if ($admin->two_factor_required) {
-            if (empty($admin->two_factor_secret)) {
-                return redirect()->route('admin.2fa.enroll');
-            }
-
-            return redirect()->route('admin.2fa.verify');
+        if (config('admin.require_2fa', true)) {
+            return empty($admin->two_factor_secret)
+                ? redirect()->route('admin.2fa.enroll')
+                : redirect()->route('admin.2fa.verify');
         }
 
         return redirect()->intended(route('admin.dashboard'));

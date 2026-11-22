@@ -73,7 +73,7 @@ final class RecordPayment
 
             $this->allocate($payment, $renter, $amount, (string) ($attributes['month'] ?? ''), (string) ($attributes['type'] ?? 'Mixed'));
 
-            $this->refreshCachedBalances($renter);
+            (new \App\Billing\TenantLedger)->reconcile((int) $renter->getKey());
 
             return $payment->fresh(['allocations', 'renter', 'house']);
         });
