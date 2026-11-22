@@ -32,6 +32,10 @@ class CaretakerFactory extends Factory
     {
         return $this->state(fn (): array => [
             'assigned_properties' => implode(',', array_map('intval', $propertyIds)),
-        ]);
+        ])->afterCreating(function (Caretaker $caretaker) use ($propertyIds) {
+            if (! empty($propertyIds)) {
+                $caretaker->properties()->syncWithPivotValues($propertyIds, ['owner_id' => $caretaker->owner_id]);
+            }
+        });
     }
 }

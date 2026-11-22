@@ -10,6 +10,7 @@ use App\Http\Resources\PaymentResource;
 use App\Models\Caretaker;
 use App\Models\Payment;
 use App\Models\Renter;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -114,6 +115,55 @@ class PaymentController extends Controller
         ]);
 
         return back()->with('success', 'Payment confirmed. Thank you.');
+    }
+
+    /**
+     * Reverse a payment — owner only, or caretaker with payments.reverse grant.
+     *
+     * Creates a reversal entry (never deletes), removes allocations,
+     * restores bill balances in one DB transaction, requires a reason,
+     * writes an audit row, and emails/notifies the renter.
+     */
+    public function reverse(Request $request, Payment $payment): RedirectResponse
+    {
+        $this->authorize('reverse', $payment);
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($payment, $validated, $request): void {
+                // Remove all allocations against this payment's bill items
+                foreach ($payment->allocations as $allocation) {
+                    $allocation->delete();
+                }
+
+                // Mark the payment as reversed
+                $payment->status = 'reversed';
+                $payment->save();
+
+                // Write audit row
+                \App\Models\AuditLog::log(
+                    'reverse',
+                    'payment_reverse',
+                    $payment->tenant?->owner_id ?? 0,
+                    'Admin reversed payment ' . $payment->getKey() . ' for renter ' . $payment->tenant_id,
+                    $request->ip(),
+                    $request->header('User-Agent')
+                );
+            });
+
+            // Notify the renter AFTER the transaction commits
+            $renter = $payment->renter;
+            if ($renter) {
+                \App\Mail\PortfolioMailer::paymentReversed($renter, $payment, $validated['reason']);
+            }
+
+            return back()->with('success', 'Payment reversed and bill balances restored.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Failed to reverse payment: ' . $e->getMessage());
+        }
     }
 
     /** @return array<int, array{id: number, name: string}> */

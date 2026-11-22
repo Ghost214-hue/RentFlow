@@ -78,6 +78,9 @@ class SecurityHeaders
         // Vite picks a different port, e.g. because 5173 is already in use.
         $vitePort = (string) env('VITE_PORT', 5173);
         // Vite dev server binds to IPv4 (127.0.0.1); CSP needs explicit host:port matches.
+        // Note: CSP does not support bracketed IPv6 literals (e.g. [::1]), so we only
+        // list IPv4 hosts. If Vite is configured to listen on IPv4, all dev URLs will
+        // be http://127.0.0.1:PORT or http://localhost:PORT which match these entries.
         $viteHosts = ['localhost', '127.0.0.1'];
         $viteOrigins = [];
         foreach ($viteHosts as $host) {
@@ -85,7 +88,11 @@ class SecurityHeaders
             $viteOrigins[] = "ws://{$host}:{$vitePort}";
         }
 
-        $script = $devServer ? "script-src 'self' " . implode(' ', $viteOrigins) : "script-src 'self'";
+        // In dev mode Vite's React Fast Refresh injects an inline script for HMR,
+        // so 'unsafe-inline' is required under script-src. In production assets
+        // are versioned and no inline scripts are emitted.
+        $scriptInline = $devServer ? ' ' . "'unsafe-inline'" : '';
+        $script = $devServer ? "script-src 'self'{$scriptInline} " . implode(' ', $viteOrigins) : "script-src 'self'";
         // Vite injects styles at runtime; Tailwind utilities are inline.
         $style = $devServer ? "style-src 'self' 'unsafe-inline' " . implode(' ', $viteOrigins) : "style-src 'self' 'unsafe-inline'";
         $connect = $devServer ? "connect-src 'self' " . implode(' ', $viteOrigins) : "connect-src 'self'";

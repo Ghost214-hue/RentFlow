@@ -5,36 +5,103 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\EmailLog;
+use App\Models\House;
 use App\Models\Owner;
+use App\Models\Property;
+use App\Models\Renter;
+use App\Support\Amount;
 use App\Support\PlatformContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): \Illuminate\View\View
+    public function __invoke(Request $request): Response
     {
-        // Platform context — never sets owner id.
-        // Admin queries name owners explicitly via CrossTenant::run.
+        /*
+         * Every figure below is a platform-wide read, so it runs inside
+         * PlatformContext::run(). That clears the owner scope and writes one
+         * audit_logs row for the whole dashboard load.
+         *
+         * The previous version called BillSnapshot::currentMonth(), which is
+         * owner-scoped and throws when no owner context is set.
+         */
+        $totals = PlatformContext::run('Admin dashboard platform totals', function (): array {
+            $owners = Owner::query()->get(['id', 'status', 'created_at']);
 
-        $owners = Owner::withoutOwnerScope()
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
-            ->get();
+            $propertyCount = Property::withoutOwnerScope()->count();
+            $unitCount = House::withoutOwnerScope()->count();
+            $occupiedUnits = House::withoutOwnerScope()->where('status', 'occupied')->count();
 
-        // Compute collection rate via BillSnapshot.
-        $bills = \App\Billing\BillSnapshot::currentMonth();
-        $collected = \App\Billing\BillSnapshot::collectedThisMonth();
-        $collectionRate = $bills->total > 0
-            ? $collected / $bills->total
-            : 0;
+            $activeRenterCount = Renter::withoutOwnerScope()->where('status', 'active')->count();
 
-        return view('admin.dashboard', [
-            'owners' => $owners->count(),
-            'billed' => $bills->total,
-            'collected' => $collected,
-            'outstanding' => $bills->total - $collected,
-            'collectionRate' => $collectionRate,
-            'newSignups' => $owners->count(),
+            $month = now()->format('Y-m');
+
+            $billed = Amount::of(
+                DB::table('bills')->where('month', $month)->sum('total'),
+            );
+
+            $collected = Amount::of(
+                DB::table('payments')
+                    ->where('status', 'completed')
+                    ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()])
+                    ->sum('amount'),
+            );
+
+            $outstanding = Amount::atLeastZero($billed->subtract($collected));
+
+            $collectionRate = $billed->isPositive()
+                ? (float) $collected->getAmount() / (float) $billed->getAmount()
+                : 0.0;
+
+            return [
+                'ownerCount' => $owners->count(),
+                'activeOwnerCount' => $owners->where('status', 'active')->count(),
+                'suspendedOwnerCount' => $owners->where('status', 'suspended')->count(),
+                'newSignupCount' => $owners->where('created_at', '>=', now()->subMonth())->count(),
+                'propertyCount' => $propertyCount,
+                'unitCount' => $unitCount,
+                'occupiedUnits' => $occupiedUnits,
+                'occupancyRate' => $unitCount > 0 ? $occupiedUnits / $unitCount : 0.0,
+                'activeRenterCount' => $activeRenterCount,
+                'billedTotal' => Amount::toString($billed),
+                'collectedTotal' => Amount::toString($collected),
+                'outstandingTotal' => Amount::toString($outstanding),
+                'collectionRate' => $collectionRate,
+                'emailFailuresLast24h' => EmailLog::where('status', 'failed')
+                    ->where('sent_at', '>=', now()->subDay())
+                    ->count(),
+                'emailSuccessLast24h' => EmailLog::where('status', 'sent')
+                    ->where('sent_at', '>=', now()->subDay())
+                    ->count(),
+            ];
+        });
+
+        return Inertia::render('Admin/Dashboard', $totals);
+    }
+
+    /**
+     * Get recent system errors/incidents for the error dashboard.
+     */
+    public function errors(Request $request): Response
+    {
+        // Get pagination parameters
+        $perPage = max(5, min((int) $request->integer('per_page', 20), 100));
+        $page = $request->integer('page', 1);
+
+        // Query error/incedent data - customize based on your error tracking setup
+        // This is a placeholder - implement based on your error tracking service (Sentry, Bugsnag, etc.)
+        $errors = [];
+
+        return Inertia::render('Admin/ErrorDashboard', [
+            'errors' => $errors,
+            'total' => count($errors),
+            'page' => $page,
+            'perPage' => $perPage,
+            'canPaginate' => false, // Set to true if you implement pagination
         ]);
     }
 }

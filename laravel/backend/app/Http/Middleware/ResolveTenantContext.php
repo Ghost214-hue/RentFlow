@@ -43,12 +43,29 @@ class ResolveTenantContext
 
         // A session-backed Owner resolves through the default guard.
         if ($user instanceof Owner) {
+            if ($user->isSuspended()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return redirect()->route('login')->withErrors(['email' => 'Your account has been suspended. Please contact support.']);
+            }
+
             TenantContext::set((int) $user->getKey());
 
             return $next($request);
         }
 
         if ($user instanceof Caretaker || $user instanceof Renter) {
+            $owner = Owner::find($user->owner_id);
+            if ($owner !== null && $owner->isSuspended()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return redirect()->route('login')->withErrors(['email' => 'This account has been suspended. Please contact support.']);
+            }
+
             TenantContext::set(TenantContext::resolveForActor($user));
 
             return $next($request);
@@ -99,6 +116,19 @@ class ResolveTenantContext
             $actor = $query->find((int) $actorId);
 
             if ($actor !== null) {
+                if ($actor instanceof Owner && $actor->isSuspended()) {
+                    $request->session()->invalidate();
+                    return redirect()->route('login')->withErrors(['email' => 'Your account has been suspended. Please contact support.']);
+                }
+
+                if ($actor instanceof Caretaker || $actor instanceof Renter) {
+                    $owner = Owner::find($actor->owner_id);
+                    if ($owner !== null && $owner->isSuspended()) {
+                        $request->session()->invalidate();
+                        return redirect()->route('login')->withErrors(['email' => 'This account has been suspended. Please contact support.']);
+                    }
+                }
+
                 Auth::setUser($actor);
                 $request->setUserResolver(static fn () => $actor);
                 TenantContext::set(TenantContext::resolveForActor($actor));

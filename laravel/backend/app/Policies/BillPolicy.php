@@ -9,15 +9,15 @@ use App\Models\Caretaker;
 use App\Models\Owner;
 use App\Models\Property;
 use App\Models\Renter;
+use App\Services\PermissionService;
 
-/**
- * Who may do what with a Bill. DENY BY DEFAULT.
- */
 class BillPolicy
 {
+    public function __construct(private readonly PermissionService $permissions) {}
+
     public function viewAny(Owner|Caretaker|Renter $actor): bool
     {
-        return true;
+        return $this->permissions->allows($actor, 'bills.view');
     }
 
     public function view(Owner|Caretaker|Renter $actor, Bill $bill): bool
@@ -27,28 +27,24 @@ class BillPolicy
         }
 
         if ($actor instanceof Caretaker) {
-            return $this->propertyIdOf($bill) !== null
-                && $actor->isAssignedTo($this->propertyIdOf($bill));
+            $house = \App\Models\House::find($bill->house_id);
+
+            return $house !== null && $actor->isAssignedTo((int) $house->property_id);
         }
 
         return (int) $bill->tenant_id === (int) $actor->getKey();
     }
 
-    /** Only owners and caretakers generate bills; renters never do. */
     public function create(Owner|Caretaker|Renter $actor): bool
     {
-        return $actor instanceof Owner || $actor instanceof Caretaker;
+        return $this->permissions->allows($actor, 'bills.generate');
     }
 
     public function update(Owner|Caretaker|Renter $actor, Bill $bill): bool
     {
-        return $this->view($actor, $bill);
+        return $actor instanceof Owner;
     }
 
-    /**
-     * Only an owner may delete, and never a bill that money has been
-     * allocated to -- that would destroy the payment trail.
-     */
     public function delete(Owner|Caretaker|Renter $actor, Bill $bill): bool
     {
         if (! $actor instanceof Owner) {
@@ -60,7 +56,7 @@ class BillPolicy
 
     private function propertyIdOf(Bill $bill): ?int
     {
-        $house = \App\Models\House::withoutOwnerScope()->find($bill->house_id);
+        $house = \App\Models\House::find($bill->house_id);
 
         return $house === null ? null : (int) $house->property_id;
     }

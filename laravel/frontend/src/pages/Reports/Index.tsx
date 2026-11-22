@@ -1,8 +1,8 @@
-import { Head, router } from '@inertiajs/react';
-import { useState, type ReactNode } from 'react';
+import { Head, Link, router } from '@inertiajs/react';
+import { useEffect, useState, type ReactNode } from 'react';
 import AppLayout from '@/layouts/AppLayout';
 import { formatMoney } from '@/lib/money';
-import type { ReportsProps, ShareRow } from '@/types';
+import type { Expense, ReportsProps, ShareRow } from '@/types';
 
 /**
  * Reports.
@@ -21,28 +21,38 @@ type Tab = 'overview' | 'billing' | 'revenue' | 'occupancy' | 'issues';
 const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'overview', label: 'Overview' },
     { id: 'billing', label: 'Billing' },
-    { id: 'revenue', label: 'Revenue' },
+    { id: 'revenue', label: 'Revenue & Expenses' },
     { id: 'occupancy', label: 'Occupancy' },
     { id: 'issues', label: 'Complaints & Repairs' },
 ];
 
-const panel = 'bg-white rounded-2xl shadow-sm border border-blue-100/50 p-5';
+const panel = 'bg-surface rounded-2xl shadow-card border border-border p-5 text-text backdrop-blur-sm';
 
-function Tile({ label, value, tone = 'slate' }: { label: string; value: string; tone?: string }) {
+function Tile({ label, value, tone = 'slate', href }: { label: string; value: string; tone?: string; href?: string }) {
     const tones: Record<string, string> = {
-        slate: 'bg-slate-100 text-slate-600',
-        blue: 'bg-blue-50 text-blue-700',
-        emerald: 'bg-emerald-50 text-emerald-700',
-        rose: 'bg-rose-50 text-rose-700',
-        violet: 'bg-violet-50 text-violet-700',
-        amber: 'bg-amber-50 text-amber-700',
+        slate: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+        blue: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+        emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
+        rose: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
+        violet: 'bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300',
+        amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
     };
 
-    return (
-        <div className={`${panel} p-4`}>
-            <div className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${tones[tone]}`}>{label}</div>
-            <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
+    const tileContent = (
+        <div className={`${panel} p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg`}>
+            <div className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${tones[tone] || tones.slate}`}>{label}</div>
+            <p className="mt-2 text-xl font-bold text-text">{value}</p>
         </div>
+    );
+
+    if (!href) {
+        return tileContent;
+    }
+
+    return (
+        <Link href={href} className="block transition-transform duration-200 hover:-translate-y-0.5">
+            {tileContent}
+        </Link>
     );
 }
 
@@ -65,12 +75,12 @@ function Bar({ label, amount, share, tone = 'blue' }: { label: string; amount: s
     return (
         <li>
             <div className="flex items-center justify-between text-xs mb-1">
-                <span className="font-medium text-slate-700">{label}</span>
-                <span className="text-slate-500">
+                <span className="font-medium text-text">{label}</span>
+                <span className="text-text-muted">
                     {formatMoney(amount)} · {share}%
                 </span>
             </div>
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div className="h-2 rounded-full bg-border overflow-hidden">
                 <div className={`h-full rounded-full ${tones[tone]}`} style={{ width: `${pct}%` }} />
             </div>
         </li>
@@ -81,7 +91,7 @@ function Section({ title, children, action }: { title: string; children: ReactNo
     return (
         <section className={panel}>
             <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-slate-900">{title}</h2>
+                <h2 className="font-semibold text-text text-base">{title}</h2>
                 {action}
             </div>
             {children}
@@ -90,7 +100,7 @@ function Section({ title, children, action }: { title: string; children: ReactNo
 }
 
 function Empty({ children }: { children: ReactNode }) {
-    return <p className="py-6 text-center text-slate-400 text-sm">{children}</p>;
+    return <p className="py-6 text-center text-text-muted text-sm">{children}</p>;
 }
 
 export default function ReportsIndex(props: ReportsProps) {
@@ -105,6 +115,7 @@ export default function ReportsIndex(props: ReportsProps) {
         composition,
         byHouse,
         revenue,
+        expenses,
         occupancy,
         occupancyByProperty,
         vacantUnits,
@@ -112,7 +123,28 @@ export default function ReportsIndex(props: ReportsProps) {
         maintenance,
     } = props;
 
-    const [tab, setTab] = useState<Tab>('overview');
+    const [tab, setTab] = useState<Tab>(() => {
+        if (typeof window === 'undefined') return 'overview';
+        try {
+            const url = new URL(window.location.href);
+            const t = url.searchParams.get('tab');
+            return (t === 'overview' || t === 'billing' || t === 'revenue' || t === 'occupancy' || t === 'issues') ? t : 'overview';
+        } catch {
+            return 'overview';
+        }
+    });
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            const url = new URL(window.location.href);
+            const t = url.searchParams.get('tab');
+            if (t === 'overview' || t === 'billing' || t === 'revenue' || t === 'occupancy' || t === 'issues') {
+                setTab(t);
+            }
+        } catch {}
+    }, []);
+
     const { counts, money } = summary;
 
     // Widest bar in the series, so the chart scales relatively.
@@ -127,8 +159,8 @@ export default function ReportsIndex(props: ReportsProps) {
                 actions={
                     <div className="flex flex-wrap items-end gap-3">
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
-                            <p className="text-slate-500 mt-1">Portfolio performance</p>
+                            <h1 className="text-2xl font-bold text-text">Reports</h1>
+                            <p className="text-text-muted mt-1">Portfolio performance & financials</p>
                         </div>
 
                         {/*
@@ -138,12 +170,12 @@ export default function ReportsIndex(props: ReportsProps) {
                          * describe different periods without saying so.
                          */}
                         {months.length > 0 && (
-                            <label className="text-xs text-slate-500">
+                            <label className="text-xs text-text-muted">
                                 <span className="block mb-1">Month</span>
                                 <select
                                     value={month}
-                                    onChange={(e) => router.get('/reports', { month: e.target.value }, { preserveState: true })}
-                                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 bg-white"
+                                    onChange={(e) => router.get('/reports', { month: e.target.value, tab }, { preserveState: true })}
+                                    className="rounded-lg border border-border px-3 py-1.5 text-sm text-text bg-surface shadow-sm focus:border-primary focus:ring-1 focus:ring-primary"
                                 >
                                     {months.map((m) => (
                                         <option key={m} value={m}>
@@ -156,16 +188,19 @@ export default function ReportsIndex(props: ReportsProps) {
                     </div>
                 }
             >
-                <nav className="flex flex-wrap gap-1 mb-6 border-b border-slate-200">
+                <nav className="flex flex-wrap gap-1 mb-6 border-b border-border">
                     {TABS.map((t) => (
                         <button
                             key={t.id}
                             type="button"
-                            onClick={() => setTab(t.id)}
-                            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${
+                            onClick={() => {
+                                setTab(t.id);
+                                router.get('/reports', { tab: t.id, month }, { preserveState: true, replace: true });
+                            }}
+                            className={`px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors ${
                                 tab === t.id
-                                    ? 'border-blue-600 text-blue-700'
-                                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                                    ? 'border-primary text-primary'
+                                    : 'border-transparent text-text-muted hover:text-text hover:border-border'
                             }`}
                         >
                             {t.label}
@@ -175,15 +210,23 @@ export default function ReportsIndex(props: ReportsProps) {
 
                 {tab === 'overview' && (
                     <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                            <Tile label="Billed to date" value={formatMoney(money.billed_to_date)} tone="blue" />
-                            <Tile label="Received" value={formatMoney(money.received_to_date)} tone="emerald" />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+                            <Tile label="Billed to date" value={formatMoney(money.billed_to_date)} tone="blue" href="/reports?tab=billing" />
+                            <Tile label="Received" value={formatMoney(money.received_to_date)} tone="emerald" href="/reports?tab=revenue" />
+                            <Tile label="Expenses" value={formatMoney(expenses?.total ?? '0.00')} tone="rose" href="/reports?tab=revenue" />
+                            <Tile
+                                label="Net Profit"
+                                value={formatMoney(String(Number(money.received_to_date || 0) - Number(expenses?.total || 0)))}
+                                tone={Number(money.received_to_date || 0) >= Number(expenses?.total || 0) ? 'emerald' : 'rose'}
+                                href="/reports?tab=revenue"
+                            />
                             <Tile
                                 label="Outstanding"
                                 value={formatMoney(money.outstanding)}
                                 tone={money.outstanding === '0.00' ? 'emerald' : 'rose'}
+                                href="/reports?tab=billing"
                             />
-                            <Tile label="Collection rate" value={`${money.collection_rate}%`} tone="violet" />
+                            <Tile label="Collection rate" value={`${money.collection_rate}%`} tone="violet" href="/reports?tab=overview" />
                         </div>
 
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -198,8 +241,8 @@ export default function ReportsIndex(props: ReportsProps) {
                                 { label: 'Open maintenance', value: counts.open_maintenance },
                             ].map((item) => (
                                 <div key={item.label} className={`${panel} p-4 flex items-center justify-between`}>
-                                    <span className="text-sm text-slate-500">{item.label}</span>
-                                    <span className="text-lg font-bold text-slate-900">{item.value}</span>
+                                    <span className="text-sm text-text-muted">{item.label}</span>
+                                    <span className="text-lg font-bold text-text">{item.value}</span>
                                 </div>
                             ))}
                         </div>
@@ -291,10 +334,10 @@ export default function ReportsIndex(props: ReportsProps) {
                 {tab === 'billing' && (
                     <>
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                            <Tile label="Billed" value={formatMoney(billing.money.billed)} tone="blue" />
-                            <Tile label="Paid" value={formatMoney(billing.money.paid)} tone="emerald" />
-                            <Tile label="Part paid" value={formatMoney(billing.money.partial)} tone="amber" />
-                            <Tile label="Unpaid" value={formatMoney(billing.money.pending)} tone="rose" />
+                            <Tile label="Billed" value={formatMoney(billing.money.billed)} tone="blue" href="/reports?tab=billing" />
+                            <Tile label="Paid" value={formatMoney(billing.money.paid)} tone="emerald" href="/reports?tab=billing" />
+                            <Tile label="Part paid" value={formatMoney(billing.money.partial)} tone="amber" href="/reports?tab=billing" />
+                            <Tile label="Unpaid" value={formatMoney(billing.money.pending)} tone="rose" href="/reports?tab=billing" />
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -383,11 +426,18 @@ export default function ReportsIndex(props: ReportsProps) {
 
                 {tab === 'revenue' && (
                     <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                            <Tile label="Collected" value={formatMoney(revenue.collected)} tone="emerald" />
-                            <Tile label="Pending" value={formatMoney(revenue.pending)} tone="amber" />
-                            <Tile label="Failed" value={formatMoney(revenue.failed)} tone="rose" />
-                            <Tile label="Still in flight" value={formatMoney(revenue.in_flight)} tone="violet" />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4 mb-6">
+                            <Tile label="Collected" value={formatMoney(revenue.collected)} tone="emerald" href="/reports?tab=revenue" />
+                            <Tile label="Expenses" value={formatMoney(expenses.total)} tone="rose" href="/reports?tab=revenue" />
+                            <Tile
+                                label="Net Income"
+                                value={formatMoney(String(Number(revenue.collected) - Number(expenses.total)))}
+                                tone={Number(revenue.collected) >= Number(expenses.total) ? 'emerald' : 'rose'}
+                                href="/reports?tab=revenue"
+                            />
+                            <Tile label="Pending" value={formatMoney(revenue.pending)} tone="amber" href="/reports?tab=revenue" />
+                            <Tile label="Failed" value={formatMoney(revenue.failed)} tone="rose" href="/reports?tab=revenue" />
+                            <Tile label="Still in flight" value={formatMoney(revenue.in_flight)} tone="violet" href="/reports?tab=revenue" />
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -413,19 +463,18 @@ export default function ReportsIndex(props: ReportsProps) {
                                 )}
                             </Section>
 
-                            <Section title="What the money was for">
-                                {revenue.type_breakdown.length === 0 ? (
-                                    <Empty>No settled payments yet.</Empty>
+                            <Section title="Expenses by category">
+                                {expenses.by_category.length === 0 ? (
+                                    <Empty>No expenses recorded yet.</Empty>
                                 ) : (
                                     <ul className="space-y-3">
-                                        {revenue.type_breakdown.map((row: ShareRow) => (
-                                            <Bar
-                                                key={row.label}
-                                                label={`${row.label} · ${row.count} payment${row.count === 1 ? '' : 's'}`}
-                                                amount={row.amount}
-                                                share={row.share}
-                                                tone="blue"
-                                            />
+                                        {expenses.by_category.map((row) => (
+                                            <li key={row.label} className="flex items-center justify-between text-sm">
+                                                <span className="text-slate-600">{row.label}</span>
+                                                <span className="font-medium text-slate-900">
+                                                    {formatMoney(row.amount)} · {row.share}%
+                                                </span>
+                                            </li>
                                         ))}
                                     </ul>
                                 )}
@@ -445,17 +494,19 @@ export default function ReportsIndex(props: ReportsProps) {
                 {tab === 'occupancy' && (
                     <>
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                            <Tile label="Occupancy" value={`${occupancy.units.occupancy_rate}%`} tone="emerald" />
-                            <Tile label="Vacancy" value={`${occupancy.units.vacancy_rate}%`} tone="amber" />
+                            <Tile label="Occupancy" value={`${occupancy.units.occupancy_rate}%`} tone="emerald" href="/reports?tab=occupancy" />
+                            <Tile label="Vacancy" value={`${occupancy.units.vacancy_rate}%`} tone="amber" href="/reports?tab=occupancy" />
                             <Tile
                                 label="Rent lost to vacancy"
                                 value={formatMoney(occupancy.money.lost_monthly)}
                                 tone={occupancy.units.vacant === 0 ? 'emerald' : 'rose'}
+                                href="/reports?tab=occupancy"
                             />
                             <Tile
                                 label="Pending terminations"
                                 value={String(occupancy.terminations.pending)}
                                 tone={occupancy.terminations.pending === 0 ? 'emerald' : 'amber'}
+                                href="/reports?tab=occupancy"
                             />
                         </div>
 

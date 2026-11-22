@@ -19,10 +19,14 @@ return [
     'abilities' => [
 
         // Payments
-        'payments.record'   => ['owner', 'caretaker', 'tenant'],
+        'payments.record'   => ['owner', 'caretaker'],
         'payments.reverse'  => ['owner'],
         'payments.confirm'  => ['tenant'],
         'payments.view'     => ['owner', 'caretaker', 'tenant'],
+
+        // Expenses
+        'expenses.record'   => ['owner', 'caretaker'],
+        'expenses.view'     => ['owner', 'caretaker'],
 
         // Bills
         'bills.generate'    => ['owner'],
@@ -43,6 +47,10 @@ return [
 
         // Reports
         'reports.view'      => ['owner', 'admin'],
+
+        // Maintenance
+        'maintenance.view'   => ['owner', 'caretaker', 'tenant'],
+        'maintenance.manage' => ['owner', 'caretaker'],
     ],
 
     /*
@@ -62,7 +70,9 @@ return [
             'renters.create', 'renters.terminate', 'renters.view',
             'caretakers.manage', 'caretakers.view',
             'properties.manage', 'properties.view',
+            'expenses.record', 'expenses.view',
             'reports.view',
+            'maintenance.view', 'maintenance.manage',
         ],
 
         'caretaker' => [
@@ -72,6 +82,10 @@ return [
             'renters.view',
             'caretakers.view',
             'properties.view',
+            'expenses.record',
+            'expenses.view',
+            'maintenance.view',
+            'maintenance.manage',
         ],
 
         'tenant' => [
@@ -79,6 +93,7 @@ return [
             'payments.view',
             'bills.view',
             'renters.view',
+            'maintenance.view',
         ],
 
         'admin' => [

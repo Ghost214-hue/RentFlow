@@ -7,6 +7,7 @@
  * than a PHP `match` in a template.
  */
 import type { ReactNode } from 'react';
+import { usePage } from '@inertiajs/react';
 import { Shell } from './Shell';
 
 interface NavItem {
@@ -22,6 +23,14 @@ interface NavItem {
      * broken application, which is worse than admitting the gap.
      */
     ready?: boolean;
+
+    /**
+     * Ability required to see this entry, as resolved by PermissionService and
+     * shared from HandleInertiaRequests. When the shared `abilities` list is
+     * absent the entry is shown, so the nav keeps working before the backend
+     * starts sharing abilities.
+     */
+    ability?: string;
 }
 
 /**
@@ -41,8 +50,14 @@ export const NAV: Record<string, NavItem[]> = {
         },
         { href: '/houses', label: 'Houses', icon: 'fa-home' },
         { href: '/renters', label: 'Renters', icon: 'fa-users' },
+        {
+            href: '/renters/former',
+            label: 'Former Renters',
+            icon: 'fa-user-slash',
+        },
         { href: '/caretakers', label: 'Caretakers', icon: 'fa-user-shield' },
         { href: '/payments', label: 'Payments', icon: 'fa-money-bill-wave' },
+        { href: '/expenses', label: 'Expenses', icon: 'fa-wallet', ability: 'expenses.view' },
         { href: '/bills', label: 'Bills', icon: 'fa-file-invoice-dollar' },
         {
             href: '/maintenance',
@@ -65,11 +80,6 @@ export const NAV: Record<string, NavItem[]> = {
             icon: 'fa-chart-pie',
         },
         {
-            href: '/terminations',
-            label: 'Terminations',
-            icon: 'fa-door-open',
-        },
-        {
             href: '/email-logs',
             label: 'Email Delivery',
             icon: 'fa-envelope-open-text',
@@ -84,7 +94,13 @@ export const NAV: Record<string, NavItem[]> = {
         },
         { href: '/houses', label: 'Houses', icon: 'fa-home' },
         { href: '/renters', label: 'Renters', icon: 'fa-users' },
+        {
+            href: '/renters/former',
+            label: 'Former Renters',
+            icon: 'fa-user-slash',
+        },
         { href: '/payments', label: 'Payments', icon: 'fa-money-bill-wave' },
+        { href: '/expenses', label: 'Expenses', icon: 'fa-wallet', ability: 'expenses.view' },
         { href: '/bills', label: 'Bills', icon: 'fa-file-invoice-dollar' },
         {
             href: '/maintenance',
@@ -101,15 +117,9 @@ export const NAV: Record<string, NavItem[]> = {
             label: 'Rules',
             icon: 'fa-file-alt',
         },
-        {
-            href: '/email-logs',
-            label: 'Email Delivery',
-            icon: 'fa-envelope-open-text',
-        },
+       
     ],
     tenant: [
-        // A renter's pages live under /renter. Pointing at '/' or '/profile'
-        // sent them to an owner dashboard or a 404.
         {
             href: '/renter/dashboard',
             label: 'Dashboard',
@@ -138,25 +148,75 @@ export const NAV: Record<string, NavItem[]> = {
             icon: 'fa-file-alt',
         },
     ],
+    admin: [
+        { href: '/admin', label: 'Platform Overview', icon: 'fa-chart-pie' },
+        { href: '/admin/owners', label: 'Owners', icon: 'fa-user-tie' },
+        { href: '/admin/support/access', label: 'Support Access', icon: 'fa-key' },
+        { href: '/admin/email-health', label: 'Email Health', icon: 'fa-envelope-circle-check' },
+        { href: '/admin/security', label: 'Security', icon: 'fa-shield-halved' },
+        { href: '/admin/system', label: 'System', icon: 'fa-server' },
+        { href: '/admin/audit', label: 'Audit Logs', icon: 'fa-clipboard-list' },
+    ],
 };
 
 const PAGE_TITLES: Record<string, string> = {
     '/': 'Dashboard',
+    '/admin': 'Platform Overview',
+    '/admin/owners': 'Owner Management',
+    '/admin/support/access': 'Support Access Grants',
+    '/admin/email-health': 'Email & Queue Health',
+    '/admin/security': 'Security Metrics',
+    '/admin/system': 'System Status',
+    '/admin/audit': 'Platform Audit Logs',
     '/renter/dashboard': 'My Dashboard',
     '/renter/profile': 'My Profile',
     '/houses': 'Houses & Units',
     '/properties': 'Properties',
     '/renters': 'Renters',
+    '/renters/former': 'Former Renters',
     '/payments': 'Payments',
+    '/expenses': 'Expenses',
     '/bills': 'Bills',
     '/caretakers': 'Caretakers',
     '/maintenance': 'Maintenance',
     '/complaints': 'Complaints',
     '/documents': 'Rules',
     '/reports': 'Reports',
-    '/terminations': 'Terminations',
     '/email-logs': 'Email Delivery',
 };
+
+/**
+ * Filter a role's nav down to what the actor is actually allowed to use.
+ *
+ * When `abilities` is null/undefined the full role nav is returned. That is
+ * deliberate: the backend does not share abilities yet, and failing closed
+ * here would blank the sidebar for every user until it does.
+ */
+export function visibleNav(
+    role: string | null | undefined,
+    abilities: string[] | null | undefined,
+): NavItem[] {
+    const items = (role && NAV[role]) || [];
+
+    if (!abilities) {
+        return items;
+    }
+
+    return items.filter(
+        (item) => !item.ability || abilities.includes(item.ability),
+    );
+}
+
+/** Convenience hook for components that render their own nav. */
+export function useVisibleNav(): NavItem[] {
+    const page = usePage();
+    const auth = page.props.auth as
+        | { user: { role: string } | null }
+        | undefined;
+    const abilities = page.props.abilities as string[] | null | undefined;
+
+    return visibleNav(auth?.user?.role ?? null, abilities);
+}
 
 interface LayoutProps {
     children: ReactNode;

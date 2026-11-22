@@ -8,11 +8,13 @@ use App\Models\Bill;
 use App\Models\Renter;
 use App\Reports\BillingReport;
 use App\Reports\ComplaintsReport;
+use App\Reports\ExpenseReport;
 use App\Reports\MaintenanceReport;
 use App\Reports\OccupancyReport;
 use App\Reports\PortfolioReport;
 use App\Reports\RevenueReport;
 use Illuminate\Http\Request;
+use Illuminate\Auth\Access\AuthorizationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -48,6 +50,7 @@ class ReportController extends Controller
         private readonly PortfolioReport $portfolio,
         private readonly BillingReport $billing,
         private readonly RevenueReport $revenue,
+        private readonly ExpenseReport $expenses,
         private readonly OccupancyReport $occupancy,
         private readonly ComplaintsReport $complaints,
         private readonly MaintenanceReport $maintenance,
@@ -78,6 +81,7 @@ class ReportController extends Controller
             'composition' => $this->billing->composition($month),
             'byHouse' => $this->billing->byHouse($month),
             'revenue' => $this->revenue->summary(),
+            'expenses' => $this->expenses->summary(),
             'occupancy' => $this->occupancy->summary(),
             'occupancyByProperty' => $this->occupancy->byProperty(),
             'vacantUnits' => $this->occupancy->vacantUnits(),

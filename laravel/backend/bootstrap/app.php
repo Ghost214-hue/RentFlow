@@ -1,5 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
+use App\Http\Middleware\AdminAuth;
+use App\Http\Middleware\AdminGuest;
+use App\Http\Middleware\AdminThrottleLogin;
+use App\Http\Middleware\AdminTwoFactor;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveTenantBeforeBindings;
 use App\Http\Middleware\SecurityHeaders;
@@ -7,39 +13,30 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
-        web: __DIR__.'/../routes/web.php',
-        api: __DIR__.'/../routes/api.php',
-        commands: __DIR__.'/../routes/console.php',
+        web: __DIR__ . '/../routes/web.php',
+        commands: __DIR__ . '/../routes/console.php',
         health: '/up',
-        // Admin routes are registered separately via AdminKernel
+        then: function (Application $app): void {
+            // Admin routes are loaded here so /admin/* is never 404.
+            //
+            // The `web` group is applied HERE and not again inside
+            // routes/admin.php: Laravel does not de-duplicate gathered
+            // middleware, so declaring `web` in both places runs StartSession
+            // twice and corrupts the session.
+            $app->router->middleware('web')->group(__DIR__ . '/../routes/admin.php');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        /*
-         * Tenancy context must be resolved BEFORE route-model binding.
-         *
-         * SubstituteBindings resolves a {model} parameter before the route's
-         * own middleware (and therefore before authentication) runs. Every
-         * owner-scoped model throws when no context exists, so a route such as
-         * POST /complaints/{complaint}/advance would 500 during binding.
-         *
-         * Laravel's web(replace:) substitutes one middleware for another
-         * and expects a single class name, not a list. ResolveTenantContext is
-         * therefore paired with SubstituteBindings inside one composite
-         * middleware that runs in SubstituteBindings' original slot:
-         *
-         *     ... StartSession -> ResolveTenantBeforeBindings -> (bindings)
-         *
-         * The composite sets the tenancy context and then delegates straight
-         * to SubstituteBindings, which preserves the required ordering without
-         * restating Laravel's default group.
-         */
         $middleware->web(
             replace: [
+                // NOTE: this was previously Illuminate\Payment\Middleware\...
+                // which does not exist; the correct namespace is Routing.
                 SubstituteBindings::class => ResolveTenantBeforeBindings::class,
             ],
             append: [
@@ -47,19 +44,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 // Appended LAST so headers land on whatever the response turned
                 // out to be, including a rendered error page.
                 SecurityHeaders::class,
+                // CORS: allows the Vite dev server (port 5173) and any configured
+                // frontend origin to call the Laravel API without being blocked.
+                HandleCors::class,
             ],
         );
 
-        /*
-         * The legacy JWT bridge (AuthenticateLegacyJwt, LegacyJwt) was REMOVED at
-         * cutover. It accepted an HS256 cookie from the old PHP app so a user signed
-         * in to either app was signed in to both.
-         *
-         * Removing it also closed an authentication bypass: the shared JWT_SECRET
-         * was empty, and hash_hmac() accepts a blank key and still produces a
-         * verifiable MAC, so a forged token had been accepted as any owner. Sessions
-         * are now the only way in.
-         */
+        // Admin middleware aliases used by routes/admin.php.
+        $middleware->alias([
+            'admin.auth' => AdminAuth::class,
+            'admin.guest' => AdminGuest::class,
+            'admin.2fa' => AdminTwoFactor::class,
+            'admin.throttle' => AdminThrottleLogin::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
@@ -84,6 +81,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->expectsJson() || $request->is('api/*')) {
                 return null;
+            }
+
+            if ($request->is('admin') || $request->is('admin/*')) {
+                if ($request->is('admin/login')) {
+                    return null;
+                }
+
+                $request->session()->put('url.intended', $request->fullUrl());
+
+                return redirect()->route('admin.login');
             }
 
             // Opening the login page while already logged in should go home,

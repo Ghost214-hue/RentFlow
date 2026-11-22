@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\Admin\Auth\AuthenticatedSessionController as AdminAuthController;
+use App\Http\Controllers\Admin\Auth\TwoFactorController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Admin\SupportAccessController;
 use App\Http\Controllers\Admin\EmailHealthController;
 use App\Http\Controllers\Admin\SecurityController;
 use App\Http\Controllers\Admin\SystemController;
+use App\Http\Controllers\Admin\Audit\IndexController as AuditIndexController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -18,12 +20,15 @@ use Illuminate\Support\Facades\Route;
 | use their own guard (admin), their own session cookie, and their own
 | middleware group. Controllers are never shared with the owner app.
 |
+| The `web` middleware group is applied by bootstrap/app.php, NOT here.
+| Declaring it in both places runs StartSession twice.
+|
 | All admin routes require two-factor authentication before any page loads.
 */
 
 Route::prefix('admin')
     ->name('admin.')
-    ->middleware(['web', 'admin.throttle'])
+    ->middleware(['admin.throttle'])
     ->group(function () {
 
         // Login is public under admin guard.
@@ -32,6 +37,21 @@ Route::prefix('admin')
             Route::post('/login', [AdminAuthController::class, 'store'])
                 ->middleware('throttle:admin-login')
                 ->name('login.store');
+        });
+
+        /*
+         * Two-factor enrolment and verification.
+         *
+         * These sit under admin.auth but deliberately NOT under admin.2fa:
+         * the 2fa middleware redirects here, so putting them inside it would
+         * loop forever.
+         */
+        Route::middleware('admin.auth')->group(function () {
+            Route::get('/2fa/enroll', [TwoFactorController::class, 'enroll'])->name('2fa.enroll');
+            Route::post('/2fa/enroll', [TwoFactorController::class, 'confirmEnroll'])->name('2fa.enroll.store');
+            Route::get('/2fa/verify', [TwoFactorController::class, 'showVerify'])->name('2fa.verify');
+            Route::post('/2fa/verify', [TwoFactorController::class, 'verify'])->name('2fa.verify.store');
+            Route::post('/2fa/recovery', [TwoFactorController::class, 'recover'])->name('2fa.recovery');
         });
 
         // Authenticated admin routes require 2FA.
@@ -61,5 +81,11 @@ Route::prefix('admin')
 
             // System.
             Route::get('/system', [SystemController::class, '__invoke'])->name('system');
+
+            // Audit Logs.
+            Route::get('/audit', [AuditIndexController::class, '__invoke'])->name('audit.index');
+
+        // Error Dashboard.
+        Route::get('/errors', [AdminDashboardController::class, 'errors'])->name('errors.index');
         });
     });

@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { Card, CardBody, StatCard } from '@/components/ui';
 import AppLayout from '@/layouts/AppLayout';
 import { formatMoney } from '@/lib/money';
@@ -19,6 +19,7 @@ interface Props {
         /** Lifetime totals remain formatted strings; browser code never sums money. */
         expected: string;
         collected: string;
+        expenses: string;
         monthly: {
             months: MonthlyPoint[];
             current: {
@@ -38,10 +39,12 @@ export default function Dashboard({ stats }: Props) {
     const monthly = stats.monthly;
 
     const cards = [
-        { label: 'Properties', value: String(stats.properties), icon: 'fa-building', tone: 'primary' as const },
-        { label: 'Units', value: String(stats.units), icon: 'fa-home', tone: 'success' as const },
-        { label: 'Occupancy', value: `${occupancy}%`, icon: 'fa-chart-pie', tone: 'warning' as const },
-        { label: 'Collected this month', value: formatMoney(monthly.current.collected), icon: 'fa-money-bill-wave', tone: 'info' as const },
+        { label: 'Properties', value: String(stats.properties), icon: 'fa-building', tone: 'primary' as const, href: '/properties' },
+        { label: 'Units', value: String(stats.units), icon: 'fa-home', tone: 'success' as const, href: '/houses' },
+        { label: 'Occupancy', value: `${occupancy}%`, icon: 'fa-chart-pie', tone: 'warning' as const, href: '/reports?tab=occupancy' },
+        { label: 'Collected this month', value: formatMoney(monthly.current.collected), icon: 'fa-money-bill-wave', tone: 'info' as const, href: '/reports?tab=revenue' },
+        { label: 'Expenses', value: formatMoney(stats.expenses), icon: 'fa-wallet', tone: 'rose' as const, href: '/reports?tab=revenue' },
+        { label: 'Outstanding', value: formatMoney(monthly.current.outstanding), icon: 'fa-hourglass-half', tone: 'rose' as const, href: '/reports?tab=billing' },
     ];
 
     return (
@@ -51,13 +54,16 @@ export default function Dashboard({ stats }: Props) {
                 title="Dashboard"
                 subtitle="Your portfolio, at a glance"
                 actions={
-                    <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-muted shadow-card">
+                    <Link
+                        href="/reports"
+                        className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-raised px-4 py-2 text-sm font-medium text-text shadow-sm hover:border-primary/50 hover:text-primary transition-all"
+                    >
                         <i className="fas fa-chart-line text-primary" aria-hidden="true" />
-                        Monthly overview
-                    </div>
+                        Detailed Reports
+                    </Link>
                 }
             >
-                <section aria-label="Portfolio statistics" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <section aria-label="Portfolio statistics" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                     {cards.map((card) => (
                         <StatCard
                             key={card.label}
@@ -65,6 +71,7 @@ export default function Dashboard({ stats }: Props) {
                             value={card.value}
                             icon={card.icon}
                             tone={card.tone}
+                            href={card.href}
                         />
                     ))}
                 </section>
@@ -80,13 +87,13 @@ export default function Dashboard({ stats }: Props) {
                                     Billed by bill month and collections by payment date
                                 </p>
                             </div>
-                            <div className="inline-flex items-center gap-4 text-xs font-medium text-text-muted">
+                            <div className="inline-flex items-center gap-4 text-xs font-semibold text-text-muted">
                                 <span className="inline-flex items-center gap-2">
-                                    <span className="h-2.5 w-2.5 rounded-sm bg-blue-500" aria-hidden="true" />
+                                    <span className="h-2.5 w-2.5 rounded-sm bg-blue-500 shadow-sm" aria-hidden="true" />
                                     Billed
                                 </span>
                                 <span className="inline-flex items-center gap-2">
-                                    <span className="h-2.5 w-2.5 rounded-sm bg-cyan-400" aria-hidden="true" />
+                                    <span className="h-2.5 w-2.5 rounded-sm bg-cyan-400 shadow-sm" aria-hidden="true" />
                                     Collected
                                 </span>
                             </div>
@@ -112,7 +119,7 @@ export default function Dashboard({ stats }: Props) {
                                                 title={`Collected: ${formatMoney(month.collected)}`}
                                             />
                                         </div>
-                                        <span className="mt-2 truncate text-center text-xs font-medium text-text-muted">
+                                        <span className="mt-2 truncate text-center text-xs font-semibold text-text-muted">
                                             {month.label}
                                         </span>
                                     </div>
@@ -120,42 +127,63 @@ export default function Dashboard({ stats }: Props) {
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                <MonthlyMetric label="Billed" value={formatMoney(monthly.current.billed)} icon="fa-file-invoice-dollar" />
-                                <MonthlyMetric label="Collected" value={formatMoney(monthly.current.collected)} icon="fa-circle-check" tone="success" />
-                                <MonthlyMetric label="Outstanding" value={formatMoney(monthly.current.outstanding)} icon="fa-hourglass-half" tone="warning" />
-                                <MonthlyMetric label="Collection rate" value={`${monthly.current.collectionRate}%`} icon="fa-bullseye" tone="info" />
+                                <MonthlyMetric label="Billed this month" value={formatMoney(monthly.current.billed)} icon="fa-file-invoice-dollar" tone="primary" href="/reports?tab=billing" />
+                                <MonthlyMetric label="Collected this month" value={formatMoney(monthly.current.collected)} icon="fa-circle-check" tone="success" href="/reports?tab=revenue" />
+                                <MonthlyMetric label="Outstanding balance" value={formatMoney(monthly.current.outstanding)} icon="fa-hourglass-half" tone="warning" href="/reports?tab=billing" />
+                                <MonthlyMetric label="Collection rate" value={`${monthly.current.collectionRate}%`} icon="fa-bullseye" tone="info" href="/reports?tab=overview" />
                             </div>
                         </CardBody>
                     </Card>
                 </section>
 
-                <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2" aria-label="Portfolio financial totals">
-                    <Card>
-                        <CardBody>
-                            <div className="flex items-center gap-3">
-                                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                                    <i className="fas fa-layer-group" aria-hidden="true" />
-                                </span>
-                                <div>
-                                    <p className="text-sm text-text-muted">All-time billed</p>
-                                    <p className="mt-1 text-xl font-bold text-text">{formatMoney(stats.expected)}</p>
+                <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3" aria-label="Portfolio financial totals">
+                    <Link href="/reports?tab=billing" className="block transition-transform duration-200 hover:-translate-y-0.5">
+                        <Card className="h-full hover:border-primary/40 transition-colors">
+                            <CardBody>
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                        <i className="fas fa-layer-group text-lg" aria-hidden="true" />
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-medium text-text-muted">All-time billed</p>
+                                        <p className="mt-1 text-xl font-bold text-text">{formatMoney(stats.expected)}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        </CardBody>
-                    </Card>
-                    <Card>
-                        <CardBody>
-                            <div className="flex items-center gap-3">
-                                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-success/10 text-success">
-                                    <i className="fas fa-wallet" aria-hidden="true" />
-                                </span>
-                                <div>
-                                    <p className="text-sm text-text-muted">All-time collected</p>
-                                    <p className="mt-1 text-xl font-bold text-text">{formatMoney(stats.collected)}</p>
+                            </CardBody>
+                        </Card>
+                    </Link>
+
+                    <Link href="/reports?tab=revenue" className="block transition-transform duration-200 hover:-translate-y-0.5">
+                        <Card className="h-full hover:border-emerald-500/40 transition-colors">
+                            <CardBody>
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                        <i className="fas fa-money-bill-trend-up text-lg" aria-hidden="true" />
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-medium text-text-muted">All-time collected</p>
+                                        <p className="mt-1 text-xl font-bold text-text">{formatMoney(stats.collected)}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        </CardBody>
-                    </Card>
+                            </CardBody>
+                        </Card>
+                    </Link>
+
+                    <Link href="/expenses" className="block transition-transform duration-200 hover:-translate-y-0.5">
+                        <Card className="h-full hover:border-rose-500/40 transition-colors">
+                            <CardBody>
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                                        <i className="fas fa-wallet text-lg" aria-hidden="true" />
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-medium text-text-muted">All-time expenses</p>
+                                        <p className="mt-1 text-xl font-bold text-text">{formatMoney(stats.expenses)}</p>
+                                    </div>
+                                </div>
+                            </CardBody>
+                        </Card>
+                    </Link>
                 </section>
             </AppLayout>
         </>
@@ -167,30 +195,48 @@ function MonthlyMetric({
     value,
     icon,
     tone = 'primary',
+    href,
 }: {
     label: string;
     value: string;
     icon: string;
-    tone?: 'primary' | 'success' | 'warning' | 'info';
+    tone?: 'primary' | 'success' | 'warning' | 'info' | 'rose';
+    href?: string;
 }) {
     const toneClasses = {
-        primary: 'bg-primary/10 text-primary',
-        success: 'bg-success/10 text-success',
-        warning: 'bg-warning/10 text-warning',
-        info: 'bg-info/10 text-info',
+        primary: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+        success: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        info: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+        rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
     }[tone];
+
+    const content = (
+        <div className="flex items-center gap-3">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneClasses}`}>
+                <i className={`fas ${icon} text-lg`} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+                <p className="text-xs font-medium text-text-muted">{label}</p>
+                <p className="mt-1 truncate text-sm font-bold text-text">{value}</p>
+            </div>
+        </div>
+    );
+
+    if (href) {
+        return (
+            <Link
+                href={href}
+                className="block rounded-[var(--radius-control)] border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/40"
+            >
+                {content}
+            </Link>
+        );
+    }
 
     return (
         <div className="rounded-[var(--radius-control)] border border-border bg-surface p-4">
-            <div className="flex items-center gap-3">
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${toneClasses}`}>
-                    <i className={`fas ${icon}`} aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                    <p className="text-xs font-medium text-text-muted">{label}</p>
-                    <p className="mt-1 truncate text-sm font-bold text-text">{value}</p>
-                </div>
-            </div>
+            {content}
         </div>
     );
 }

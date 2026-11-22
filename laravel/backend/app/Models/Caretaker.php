@@ -71,10 +71,18 @@ class Caretaker extends Authenticatable
      */
     public function assignedPropertyIds(): array
     {
-        return $this->properties()
-            ->pluck('id')
+        $ids = $this->properties()
+            ->pluck('properties.id')
             ->map(fn ($id): int => (int) $id)
             ->all();
+
+        if (empty($ids) && ! empty($this->assigned_properties)) {
+            return array_values(array_filter(
+                array_map('intval', explode(',', (string) $this->assigned_properties))
+            ));
+        }
+
+        return $ids;
     }
 
     public function isAssignedTo(int $propertyId): bool

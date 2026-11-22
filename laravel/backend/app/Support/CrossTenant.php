@@ -26,12 +26,28 @@ final class CrossTenant
     public const ALLOWED_CALLERS = [
         'App\Http\Middleware\ResolveTenantContext',
         'App\Services\Authenticator',
+        'App\Services\AccountSetupService',
+        'App\Services\PasswordResetService',
+        'App\Actions\RecordPayment',
+        'App\Models\RentReminder',
+        'App\Models\Concerns\BelongsToOwner',
+        'App\Http\Controllers\Auth\RegisteredUserController',
+        'App\Http\Controllers\Auth\SetupPasswordController',
+        'App\Http\Requests\RegisterRequest',
         'App\Console\Commands\SendRentReminders',
         'App\Console\Commands\SendMonthlyBills',
         'App\Jobs\DeliverMail',
         'App\Mail\Mailer',
+        'App\Mail\PortfolioMailer',
         'App\Support\CrossTenant',
+        'App\Support\PlatformContext',
         'App\Console\Commands\SecurityAudit',
+        'App\Http\Controllers\Admin\DashboardController',
+        'App\Http\Controllers\Admin\OwnerController',
+        'App\Http\Controllers\Admin\SupportAccessController',
+        'App\Http\Controllers\Admin\EmailHealthController',
+        'App\Http\Controllers\Admin\SecurityController',
+        'App\Http\Controllers\Admin\SystemController',
     ];
 
     /**
@@ -59,7 +75,11 @@ final class CrossTenant
         try {
             return $fn();
         } finally {
-            TenantContext::set($previous);
+            if ($previous === null) {
+                TenantContext::clear();
+            } else {
+                TenantContext::set($previous);
+            }
         }
     }
 
@@ -76,7 +96,11 @@ final class CrossTenant
         try {
             return $fn();
         } finally {
-            TenantContext::set($previous);
+            if ($previous === null) {
+                TenantContext::clear();
+            } else {
+                TenantContext::set($previous);
+            }
         }
     }
 }

@@ -8,18 +8,15 @@ use App\Models\Caretaker;
 use App\Models\EmailLog;
 use App\Models\Owner;
 use App\Models\Renter;
+use App\Services\PermissionService;
 
-/**
- * The email delivery log is READ ONLY.
- *
- * Nothing may be created, edited or deleted through the UI: the log is the
- * evidence of what was actually sent to a renter, and the mail queue writes it.
- */
 class EmailLogPolicy
 {
+    public function __construct(private readonly PermissionService $permissions) {}
+
     public function viewAny(Owner|Caretaker|Renter $actor): bool
     {
-        return true;
+        return $this->permissions->allows($actor, 'reports.view');
     }
 
     public function view(Owner|Caretaker|Renter $actor, EmailLog $log): bool
@@ -28,7 +25,6 @@ class EmailLogPolicy
             return true;
         }
 
-        // A renter sees only mail addressed to them.
         return $actor instanceof Renter && $log->to_email === $actor->email;
     }
 

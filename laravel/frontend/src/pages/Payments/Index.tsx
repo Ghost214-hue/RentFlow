@@ -79,6 +79,34 @@ export default function PaymentsIndex({ payments, renters, filters, flash }: Pro
                 )}
 
                 {!isRenter && (
+                    <>
+                        {(() => {
+                            const pending = payments.data.filter((p) => p.status === 'pending');
+                            const failed = payments.data.filter((p) => p.status === 'failed');
+                            const totalUnpaid = pending.length + failed.length;
+                            if (totalUnpaid === 0) return null;
+                            const unpaidAmount = [...pending, ...failed]
+                                .reduce((sum, p) => sum + Number(p.amount), 0);
+                            return (
+                                <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-100">
+                                    <h3 className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+                                        <i className="fas fa-triangle-exclamation" aria-hidden="true" />
+                                        {totalUnpaid} payment{totalUnpaid === 1 ? '' : 's'} need attention
+                                    </h3>
+                                    <p className="text-sm text-amber-700 mt-1">
+                                        {formatMoney(unpaidAmount)} in {pending.length} pending and {failed.length} failed payment{failed.length === 1 ? '' : 's'}.
+                                        {' '}
+                                        <a href="/reports" className="text-amber-600 hover:underline font-medium">
+                                            View defaulters in Reports
+                                        </a>
+                                    </p>
+                                </div>
+                            );
+                        })()}
+                    </>
+                )}
+
+                {!isRenter && (
                     <div className="mb-4 flex flex-col sm:flex-row gap-3">
                         <select
                             value={filters.renter_id ?? ''}

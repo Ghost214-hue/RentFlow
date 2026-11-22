@@ -53,18 +53,29 @@ class CaretakerController extends Controller
 
     public function update(StoreCaretakerRequest $request, Caretaker $caretaker): RedirectResponse
     {
-        $attributes = $request->caretakerAttributes();
+        try {
+            $attributes = $request->caretakerAttributes();
 
-        // Only rehash when a new password was actually supplied.
-        if (($attributes['password'] ?? null) !== null) {
-            $attributes['password'] = Hash::make($attributes['password']);
-        } else {
-            unset($attributes['password']);
+            // Only rehash when a new password was actually supplied.
+            if (($attributes['password'] ?? null) !== null) {
+                $attributes['password'] = Hash::make($attributes['password']);
+            } else {
+                unset($attributes['password']);
+            }
+
+            $caretaker->update($attributes);
+
+            return back()->with('success', "{$caretaker->name} updated.");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Caretaker update failed', [
+                'caretaker_id' => $caretaker->id,
+                'attributes' => $request->all(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return back()->with('error', 'Failed to update caretaker. Check the logs for details.');
         }
-
-        $caretaker->update($attributes);
-
-        return back()->with('success', "{$caretaker->name} updated.");
     }
 
     public function destroy(Caretaker $caretaker): RedirectResponse

@@ -71,7 +71,7 @@ it('sends the baseline security headers', function (): void {
     $response->assertHeader('X-Frame-Options', 'DENY');
     // The reset URL carries an email address; it must not leak to third parties.
     $response->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    $response->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()');
+    $response->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 });
 
 it('sends a content security policy that forbids inline scripts', function (): void {
@@ -151,9 +151,7 @@ it('registers every named rate limiter it advertises', function (): void {
  * never be set and config/jwt.php must never return a driver/secret.
  */
 it('has no JWT_SECRET configured', function (): void {
-    expect(env('JWT_SECRET'))->toBeNull()
-        ->or->toBe('')
-        ->or->toBeFalse();
+    expect(in_array(env('JWT_SECRET'), [null, '', false], true))->toBeTrue();
 });
 
 it('has no JWT config (JWT is disabled)', function (): void {

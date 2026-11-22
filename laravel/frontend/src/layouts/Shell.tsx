@@ -2,8 +2,8 @@ import { Link, usePage, router } from '@inertiajs/react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@/types';
 import { ThemeToggle } from '@/components/ui';
-import { NAV, PAGE_TITLES } from './AppLayout';
-import { useState } from 'react';
+import { PAGE_TITLES, useVisibleNav } from './AppLayout';
+import { useState, useEffect, useCallback } from 'react';
 
 interface ShellProps {
     children: ReactNode;
@@ -17,25 +17,62 @@ export function Shell({ children, title, subtitle }: ShellProps) {
     const user = (page.props.auth as { user: AuthUser | null } | undefined)
         ?.user;
     const pathname = page.url.split('?')[0] ?? '/';
-    const items = user ? (NAV[user.role] ?? []) : [];
+    // Ability-gated: entries the actor cannot use are filtered out.
+    const items = useVisibleNav();
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     function isActive(href: string): boolean {
         return href === '/' ? pathname === '/' : pathname.startsWith(href);
     }
 
+    /** Close the sidebar and restore body scroll. */
+    const closeSidebar = useCallback(() => {
+        setSidebarOpen(false);
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+    }, []);
+
+    /** Lock body scroll when the sidebar opens on mobile. */
+    useEffect(() => {
+        if (sidebarOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [sidebarOpen]);
+
+    /** Handle a nav-link tap: close the sidebar on mobile after navigating. */
+    const handleNavLink = useCallback(() => {
+        // Only auto-close on mobile breakpoints where the sidebar is an overlay.
+        if (window.innerWidth < 1024) {
+            closeSidebar();
+        }
+    }, [closeSidebar]);
+
     return (
         <div className="min-h-screen flex flex-col bg-page text-text lg:flex-row">
             {/* Mobile hamburger */}
             <button
                 type="button"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
+                onClick={() => setSidebarOpen((prev) => !prev)}
                 className="lg:hidden p-3 text-text-muted hover:text-primary rounded-[var(--radius-control)] hover:bg-surface-raised transition-colors"
                 aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
                 aria-expanded={sidebarOpen}
             >
                 <i className={`fas ${sidebarOpen ? 'fa-times' : 'fa-bars'}`} aria-hidden="true" />
             </button>
+
+            {/* Mobile backdrop: dims the workspace and closes the sidebar when tapped. */}
+            {sidebarOpen && window.innerWidth < 1024 && (
+                <div
+                    className="fixed inset-0 z-[35] bg-black/40 backdrop-blur-sm lg:hidden"
+                    onClick={closeSidebar}
+                    aria-hidden="true"
+                />
+            )}
 
             <aside
                 className={`glow-border glow-sidebar fixed inset-y-0 left-0 z-40 min-h-screen w-64 flex-col border-r border-border bg-surface text-text shadow-raised transform transition-colors duration-300 lg:static lg:flex lg:translate-x-0 ${
@@ -51,7 +88,7 @@ export function Shell({ children, title, subtitle }: ShellProps) {
                     </div>
                     <button
                         type="button"
-                        onClick={() => setSidebarOpen(false)}
+                        onClick={closeSidebar}
                         className="rounded-[var(--radius-control)] p-2 text-text-muted hover:bg-page hover:text-text lg:hidden"
                         aria-label="Close sidebar"
                     >
@@ -82,6 +119,7 @@ export function Shell({ children, title, subtitle }: ShellProps) {
                             <Link
                                 key={item.href}
                                 href={item.href}
+                                onClick={handleNavLink}
                                 className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
                                     isActive(item.href)
                                         ? 'border-l-2 border-primary bg-primary/10 font-semibold text-primary'
@@ -109,8 +147,8 @@ export function Shell({ children, title, subtitle }: ShellProps) {
                     <div className="flex items-center gap-3">
                         <ThemeToggle />
                         {user && (
-                            <div className="hidden items-center gap-3 sm:flex">
-                                <div className="text-right">
+                            <div className="flex items-center gap-3">
+                                <div className="hidden sm:text-right">
                                     <p className="text-sm font-medium text-text">{user.name}</p>
                                     <p className="text-xs text-text-muted">{user.roleLabel}</p>
                                 </div>
@@ -127,7 +165,7 @@ export function Shell({ children, title, subtitle }: ShellProps) {
 
                         <button
                             type="button"
-                            onClick={() => router.post('/logout')}
+                            onClick={() => router.post(user?.role === 'admin' ? '/admin/logout' : '/logout')}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-raised text-text-muted transition-colors hover:text-danger"
                             aria-label="Sign out"
                         >

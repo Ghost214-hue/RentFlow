@@ -68,6 +68,21 @@ final class Authenticator
             $actor = $this->findByEmail($model);
 
             if ($actor !== null && $this->passwordMatches((string) $actor->password)) {
+                if ($actor instanceof Owner && $actor->isSuspended()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'email' => 'Your account has been suspended. Please contact support.',
+                    ]);
+                }
+
+                if ($actor instanceof Caretaker || $actor instanceof Renter) {
+                    $owner = Owner::find($actor->owner_id);
+                    if ($owner !== null && $owner->isSuspended()) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'email' => 'This account has been suspended. Please contact support.',
+                        ]);
+                    }
+                }
+
                 if (
                     config('hashing.rehash_on_login', true) &&
                     Hash::needsRehash((string) $actor->password)
